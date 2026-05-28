@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/*──────────────────────────────────────────────
+  DESIGN TOKENS
+──────────────────────────────────────────────*/
+:root{
+  /* Emerald × Gold luxury palette */
+  --em0:#030d08; --em1:#071a0f; --em2:#0c2b18; --em3:#154023;
+  --em4:#1f5c32; --em5:#2a7a44; --em6:#38a05a; --em7:#52c478;
+  --em8:#7dd99b; --em9:#b3eccc;
+  --gold:#c9a227; --gold2:#e4bc45; --gold3:#f5d878; --gold-dim:rgba(201,162,39,.15);
+  --surf0:#060f0a; --surf1:#0a1a10; --surf2:#0e2416; --surf3:#132d1c;
+  --surf4:#182f1e; --surf5:#1e3626;
+  --glass:rgba(255,255,255,.03); --glass2:rgba(255,255,255,.06);
+  --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
+  --text:#f0f8f3; --text2:#c4dccb; --text3:#7aaa88; --text4:#3d6650;
+  --sp: cubic-bezier(.16,1,.3,1);
+  --ease: cubic-bezier(.4,0,.2,1);
+  --bounce: cubic-bezier(.34,1.56,.64,1);
+  --font:'Tajawal',sans-serif;
+  --font2:'Noto Naskh Arabic',serif;
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font);direction:rtl;
+  background:var(--surf0);color:var(--text);
+  font-size:15px;overflow-x:hidden;min-height:100vh;
+}
+::selection{background:rgba(82,196,120,.25);color:var(--em8)}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--surf1)}
+::-webkit-scrollbar-thumb{background:var(--em5);border-radius:99px}
+
+/*──────────────────────────────────────────────
+  KEYFRAMES
+──────────────────────────────────────────────*/
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes slideR{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes slideL{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes float{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-10px) rotate(2deg)}}
+@keyframes floatR{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(1.08)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes goldShimmer{
+  0%{background-position:200% center}
+  100%{background-position:-200% center}
+}
+@keyframes borderGlow{
+  0%,100%{box-shadow:0 0 0 1px rgba(201,162,39,.2),0 0 20px rgba(201,162,39,.0)}
+  50%{box-shadow:0 0 0 1px rgba(201,162,39,.6),0 0 30px rgba(201,162,39,.15)}
+}
+@keyframes ripple{0%{transform:scale(0);opacity:.4}100%{transform:scale(4);opacity:0}}
+@keyframes orbMove{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(80px,-60px) scale(1.1)}66%{transform:translate(-40px,50px) scale(.9)}}
+@keyframes orbMove2{0%,100%{transform:translate(0,0)}50%{transform:translate(-70px,40px)}}
+@keyframes navIn{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes countUp{from{opacity:0;transform:scale(.5) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes particleFly{
+  0%{transform:translateY(0) translateX(0) scale(1);opacity:1}
+  100%{transform:translateY(-80px) translateX(var(--px,20px)) scale(0);opacity:0}
+}
+@keyframes scanLine{
+  0%{transform:translateY(-100%)}
+  100%{transform:translateY(100vh)}
+}
+@keyframes typeWriter{from{width:0}to{width:100%}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes gradientFlow{
+  0%{background-position:0% 50%}
+  50%{background-position:100% 50%}
+  100%{background-position:0% 50%}
+}
+@keyframes waveIn{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0% 0 0)}}
+@keyframes dropIn{from{opacity:0;transform:translateY(-15px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+/*──────────────────────────────────────────────
+  UTILITY CLASSES
+──────────────────────────────────────────────*/
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+@media print {
+  @page { margin: 0; size: auto; }
+  body {
+    background-color: #060f0a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+}

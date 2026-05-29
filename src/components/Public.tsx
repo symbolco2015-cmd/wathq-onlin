@@ -3,6 +3,7 @@ import type { AppState, SectionData } from '../types';
 import { calculateEvaluation } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
+import { RadialBarChart, RadialBar, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface PublicProps {
   state: AppState;
@@ -300,6 +301,59 @@ export default function Public({ state, sections, isSharedView }: PublicProps) {
                  </div>
                );
             })}
+          </div>
+        </div>
+
+        {/* RADIAL CHART - Visual Completion */}
+        <div className="max-w-[1000px] mx-auto pb-6 px-4 sm:px-7">
+          <div className="bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line)] p-6 sm:p-8">
+            <div className="mb-6">
+              <h2 className="text-[18px] font-black text-white flex items-center gap-2">
+                <i className="ti ti-chart-donut text-[var(--em8)]"></i>
+                نسب اكتمال الأقسام
+              </h2>
+              <p className="text-[13px] text-[var(--text3)] mt-1">عرض بصري لمدى اكتمال كل قسم من أقسام الملف</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {chartData.map((data, i) => {
+                const target = data.isStrat ? 10 : (data.subs.length + (state.csubs[data.id] || []).length);
+                let filled = 0;
+                if (data.isStrat) {
+                  filled = state.strats.length;
+                } else {
+                  const allSubs = [...data.subs, ...(state.csubs[data.id] || [])];
+                  filled = allSubs.filter(s => (state.ev[`${data.id}|${s}`] || []).length > 0).length;
+                }
+                const pct = Math.min(100, Math.round((filled / Math.max(target, filled, 1)) * 100));
+                const colors = ['#10b981','#3b82f6','#f59e0b','#ec4899','#8b5cf6','#06b6d4','#f97316','#84cc16','#14b8a6','#6366f1','#e11d48'];
+                const color = colors[i % colors.length];
+                const circumference = 2 * Math.PI * 28;
+                const dashOffset = circumference * (1 - pct / 100);
+                return (
+                  <div key={data.id} className="flex flex-col items-center gap-2 p-3 bg-white/3 rounded-2xl border border-white/5 hover:border-white/10 transition-all" style={{ animation: `fadeUp .4s var(--sp) both ${i * 0.04}s` }}>
+                    <div className="relative w-[70px] h-[70px]">
+                      <svg className="w-full h-full -rotate-90" viewBox="0 0 64 64">
+                        <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6"/>
+                        <circle
+                          cx="32" cy="32" r="28"
+                          fill="none"
+                          stroke={color}
+                          strokeWidth="6"
+                          strokeLinecap="round"
+                          strokeDasharray={circumference}
+                          strokeDashoffset={dashOffset}
+                          style={{ transition: 'stroke-dashoffset 1s ease' }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-[14px] font-black text-white">{pct}%</span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-[var(--text3)] text-center leading-tight font-semibold">{data.name}</p>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

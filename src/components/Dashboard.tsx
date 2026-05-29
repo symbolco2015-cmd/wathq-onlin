@@ -13,6 +13,7 @@ interface DashboardProps {
   onDeleteEv: (sid: number, sub: string, idx: number) => void;
   onAddStratClick: () => void;
   onOpenEvalClick: () => void;
+  onDelSub: (sid: number, subName: string) => void;
 }
 
 const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
@@ -22,12 +23,23 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
-export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick }: DashboardProps) {
+export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   const toggleSec = (id: number) => {
     setOpenSecs(prev => ({ ...prev, [id]: !prev[id] }));
   };
+
+  // Filter sections by search query
+  const filteredSections = searchQuery.trim()
+    ? sections.filter(sec => {
+        const q = searchQuery.toLowerCase();
+        if (sec.ttl.includes(q)) return true;
+        const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
+        return allSubs.some(s => s.includes(q));
+      })
+    : sections;
 
   const stats = calculateEvaluation(state, sections);
   const totalEvs = stats.totalEvs;
@@ -104,9 +116,42 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
           ))}
         </div>
 
+        {/* SEARCH BAR */}
+        <div className="relative mb-5" style={{ animation: 'fadeUp .4s var(--sp) both 0.25s' }}>
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
+            <i className="ti ti-search text-[18px] text-[var(--text4)]"></i>
+          </div>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="ابحث عن قسم أو قسم فرعي..."
+            className="w-full py-3.5 pr-12 pl-5 bg-white/5 border border-[var(--line2)] rounded-2xl text-[14px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.1)]"
+          />
+          {searchQuery && (
+            <button
+              className="absolute inset-y-0 left-4 flex items-center text-[var(--text4)] hover:text-white transition-colors"
+              onClick={() => setSearchQuery('')}
+            >
+              <i className="ti ti-x text-[16px]"></i>
+            </button>
+          )}
+        </div>
+
+        {/* No results */}
+        {filteredSections.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-[28px] text-[var(--text4)] mb-3">
+              <i className="ti ti-search-off"></i>
+            </div>
+            <p className="text-[var(--text3)] text-[15px] font-bold">لا توجد نتائج لـ "{searchQuery}"</p>
+            <p className="text-[var(--text4)] text-[13px] mt-1">جرب كلمة بحث مختلفة</p>
+          </div>
+        )}
+
         {/* SECTIONS */}
         <div className="flex flex-col gap-3.5">
-          {sections.map((sec, i) => {
+          {filteredSections.map((sec, i) => {
             const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
             const secTotalEvs = allSubs.reduce((acc, sub) => acc + (state.ev[`${sec.id}|${sub}`] || []).length, 0);
             const isOpen = !!openSecs[sec.id];
@@ -238,6 +283,15 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
                                {isCustom && <span className="text-[11px] bg-[var(--gold)]/10 text-[var(--gold)] border border-[var(--gold)]/20 py-0.5 px-2 rounded-lg font-bold">جديد</span>}
                              </div>
                              <div className="flex gap-1.5">
+                                {isCustom && (
+                                  <button
+                                    className="inline-flex items-center gap-1 py-2 px-3 rounded-xl text-[12px] font-bold cursor-pointer border border-red-500/20 text-red-400 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/40 transition-all duration-250"
+                                    onClick={() => onDelSub(sec.id, sub)}
+                                    title="حذف القسم الفرعي"
+                                  >
+                                    <i className="ti ti-trash text-[13px]"></i>
+                                  </button>
+                                )}
                                <button className="inline-flex items-center gap-1.5 py-2 px-4 rounded-xl text-[12.5px] font-bold cursor-pointer border-[1.5px] whitespace-nowrap border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/10 hover:bg-gradient-to-br hover:from-[var(--em4)] hover:to-[var(--em6)] hover:text-white hover:border-transparent hover:shadow-[0_6px_18px_rgba(42,122,68,.5)] hover:-translate-y-0.5 group transition-all duration-250 active:scale-95" onClick={() => onAddEvClick(sec.id, sub)}>
                                  <i className="ti ti-plus text-[15px] transition-transform duration-300 group-hover:scale-125 group-hover:rotate-[-5deg]"></i> إضافة دليل
                                </button>

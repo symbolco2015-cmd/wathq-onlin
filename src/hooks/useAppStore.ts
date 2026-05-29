@@ -211,6 +211,20 @@ export function useAppStore() {
     saveState({ ...state, csubs: newSubs });
   };
 
+  const delSub = (sid: number, subName: string) => {
+    const newSubs = { ...state.csubs };
+    if (newSubs[sid]) {
+      newSubs[sid] = newSubs[sid].filter(s => s !== subName);
+    }
+    // Also remove any evidence linked to this sub
+    const k = `${sid}|${subName}`;
+    const newEv = { ...state.ev };
+    delete newEv[k];
+    const newNotes = { ...state.notes };
+    delete newNotes[k];
+    saveState({ ...state, csubs: newSubs, ev: newEv, notes: newNotes });
+  };
+
   const updateNote = (k: string, val: string) => {
     saveState({ ...state, notes: { ...state.notes, [k]: val } });
   };
@@ -231,6 +245,7 @@ export function useAppStore() {
     delEv, 
     toggleStrat, 
     addSub, 
+    delSub,
     updateNote, 
     addStrat, 
     updateProfile, 

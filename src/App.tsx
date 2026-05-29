@@ -31,6 +31,7 @@ export default function App() {
     delEv, 
     toggleStrat, 
     addSub, 
+    delSub,
     updateNote, 
     addStrat, 
     updateProfile, 
@@ -53,6 +54,7 @@ export default function App() {
       } else {
         if (currentPage === 'dashboard') {
           setCurrentPage('auth');
+          showToast('انتهت جلستك، يرجى تسجيل الدخول مجدداً 🔒', '🔒');
         }
       }
     }
@@ -242,6 +244,22 @@ export default function App() {
               </div>
             )}
           </div>
+
+          {/* Custom name field */}
+          {uploadSuccess && (
+            <div className="mt-4">
+              <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">
+                <i className="ti ti-pencil text-[14px] text-[var(--em7)]"></i> اسم الدليل (يمكنك تعديله)
+              </div>
+              <input
+                type="text"
+                defaultValue={fileName || ''}
+                onChange={e => { pendingName = e.target.value || fileName || ''; }}
+                className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-xl text-[14px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40"
+                placeholder="اسم الدليل الذي سيظهر في الملف"
+              />
+            </div>
+          )}
         </div>
       );
     };
@@ -580,8 +598,25 @@ export default function App() {
   };
 
   const handleDeleteEv = (sid: number, sub: string, idx: number) => {
-    delEv(sid, sub, idx);
-    showToast('تم حذف الدليل', '🗑️');
+    setModalConfig({
+      isOpen: true,
+      title: 'تأكيد الحذف',
+      subtitle: 'هل أنت متأكد من حذف هذا الدليل؟ لا يمكن التراجع عن هذا الإجراء.',
+      icon: 'ti-trash',
+      body: (
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[32px] text-red-400">
+            <i className="ti ti-trash"></i>
+          </div>
+          <p className="text-[14px] text-[var(--text3)] text-center">سيتم حذف الدليل نهائياً من ملفك ولا يمكن استرجاعه.</p>
+        </div>
+      ),
+      onConfirm: () => {
+        delEv(sid, sub, idx);
+        showToast('تم حذف الدليل 🗑️', '🗑️');
+        closeModal();
+      }
+    });
   };
 
   // Show loading screen for shared profile view
@@ -687,6 +722,7 @@ export default function App() {
             onDeleteEv={handleDeleteEv}
             onAddStratClick={openAddStratModal}
             onOpenEvalClick={openEvalModal}
+            onDelSub={delSub}
           />
         )}
         

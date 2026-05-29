@@ -1,4 +1,4 @@
-export type PageType = 'auth' | 'dashboard' | 'public';
+export type PageType = 'auth' | 'dashboard' | 'public' | 'admin';
 
 export interface Evidence {
   type: 'pdf' | 'img' | 'doc' | 'vid';

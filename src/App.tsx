@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import type { PageType, SectionData, UserProfile } from './types';
 import { useAppStore } from './hooks/useAppStore';
+import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
 import { supabase } from './supabaseClient';
 
@@ -9,6 +10,7 @@ import Nav from './components/Nav';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import Public from './components/Public';
+import AdminDashboard from './components/Admin/AdminDashboard';
 import { Modal, Toast } from './components/UI';
 import { SECS } from './data';
 import { calculateEvaluation } from './utils';
@@ -26,7 +28,8 @@ export default function App() {
   const { 
     state, 
     user, 
-    loading, 
+    loading,
+    isAdmin,
     addEv, 
     delEv, 
     toggleStrat, 
@@ -37,6 +40,18 @@ export default function App() {
     updateProfile, 
     signOut 
   } = useAppStore();
+
+  const {
+    users: adminUsers,
+    stats: adminStats,
+    loading: adminLoading,
+    error: adminError,
+    reload: adminReload,
+    deleteUserPortfolio,
+    resetUserPortfolio,
+    exportCSV,
+    getShareUrl,
+  } = useAdminStore(isAdmin);
 
   // Load shared profile (only when ?share= param is present)
   const { state: sharedState, loading: sharedLoading, error: sharedError } = usePublicProfile(
@@ -706,7 +721,7 @@ export default function App() {
   return (
     <>
       <Background />
-      <Nav currentPage={currentPage} setPage={setCurrentPage} onToast={showToast} profile={state.profile} onOpenProfileSettings={openProfileSettings} />
+      <Nav currentPage={currentPage} setPage={setCurrentPage} onToast={showToast} profile={state.profile} onOpenProfileSettings={openProfileSettings} isAdmin={isAdmin} />
       
       <main className="md:pb-0 pb-[80px]">
         {currentPage === 'auth' && <Auth onLoginSuccess={() => setCurrentPage('dashboard')} onToast={showToast} spawnParticles={spawnParticles} />}
@@ -727,6 +742,21 @@ export default function App() {
         )}
         
         {currentPage === 'public' && <Public state={state} sections={SECS} />}
+        
+        {currentPage === 'admin' && isAdmin && (
+          <AdminDashboard
+            users={adminUsers}
+            stats={adminStats}
+            loading={adminLoading}
+            error={adminError}
+            onReload={adminReload}
+            onDeleteUser={deleteUserPortfolio}
+            onResetUser={resetUserPortfolio}
+            onExportCSV={exportCSV}
+            onToast={showToast}
+            getShareUrl={getShareUrl}
+          />
+        )}
       </main>
       
       <Modal {...modalConfig} onClose={closeModal}>{modalConfig.body}</Modal>

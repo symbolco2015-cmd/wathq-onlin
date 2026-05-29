@@ -27,6 +27,7 @@ export function useAppStore() {
   const [state, setState] = useState<AppState>(defaultState);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // 1. Listen to Auth State
   useEffect(() => {
@@ -46,6 +47,7 @@ export function useAppStore() {
       if (!session?.user) {
         // Reset state on logout
         setState(defaultState);
+        setIsAdmin(false);
       }
     });
 
@@ -53,6 +55,24 @@ export function useAppStore() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // 1b. Check admin role whenever user changes
+  useEffect(() => {
+    async function checkAdmin() {
+      if (!user || !supabase) { setIsAdmin(false); return; }
+      try {
+        const { data, error } = await supabase
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        setIsAdmin(!error && !!data);
+      } catch {
+        setIsAdmin(false);
+      }
+    }
+    checkAdmin();
+  }, [user]);
 
   // 2. Load State (from Supabase if logged in, otherwise localStorage)
   useEffect(() => {
@@ -240,7 +260,8 @@ export function useAppStore() {
   return { 
     state, 
     user, 
-    loading, 
+    loading,
+    isAdmin,
     addEv, 
     delEv, 
     toggleStrat, 

@@ -7,9 +7,10 @@ interface NavProps {
   onToast: (msg: string, icon?: string) => void;
   profile: UserProfile;
   onOpenProfileSettings: () => void;
+  isAdmin?: boolean;
 }
 
-export default function Nav({ currentPage, setPage, onToast, profile, onOpenProfileSettings }: NavProps) {
+export default function Nav({ currentPage, setPage, onToast, profile, onOpenProfileSettings, isAdmin = false }: NavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
   const lastScrollY = useRef(0);
@@ -65,7 +66,8 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
           {[
             { id: 'auth', icon: 'ti-login', label: 'الدخول' },
             { id: 'dashboard', icon: 'ti-layout-dashboard', label: 'لوحة التحكم' },
-            { id: 'public', icon: 'ti-eye', label: 'الصفحة العامة' }
+            { id: 'public', icon: 'ti-eye', label: 'الصفحة العامة' },
+            ...(isAdmin ? [{ id: 'admin', icon: 'ti-shield-check', label: 'الأدمن' }] : [])
           ].map((item) => {
              const isActive = currentPage === item.id;
              return (
@@ -73,7 +75,13 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
                 key={item.id}
                 onClick={() => setPage(item.id as PageType)}
                 className={`group flex items-center gap-2 px-5 py-2 rounded-lg text-[13.5px] font-semibold cursor-pointer border-none font-[var(--font)] transition-all duration-300 relative overflow-hidden ${
-                  isActive ? 'bg-[linear-gradient(135deg,var(--em4),var(--em6))] text-white shadow-[0_4px_16px_rgba(42,122,68,.5)]' : 'bg-transparent text-[var(--text3)] hover:text-[var(--text)] hover:bg-[var(--glass2)]'
+                  item.id === 'admin'
+                    ? isActive
+                      ? 'bg-[linear-gradient(135deg,#7c3aed,#4f46e5)] text-white shadow-[0_4px_16px_rgba(124,58,237,.5)]'
+                      : 'bg-transparent text-[#a78bfa] hover:text-white hover:bg-[rgba(124,58,237,.15)]'
+                    : isActive
+                      ? 'bg-[linear-gradient(135deg,var(--em4),var(--em6))] text-white shadow-[0_4px_16px_rgba(42,122,68,.5)]'
+                      : 'bg-transparent text-[var(--text3)] hover:text-[var(--text)] hover:bg-[var(--glass2)]'
                 }`}
               >
                 <i className={`ti ${item.icon} text-[18px] transition-transform duration-300 relative z-10 ${isActive ? 'scale-110' : 'group-hover:scale-125 group-hover:rotate-[-5deg]'}`}></i>
@@ -110,7 +118,8 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
         {[
           { id: 'auth', icon: 'ti-login', label: 'الدخول' },
           { id: 'dashboard', icon: 'ti-layout-dashboard', label: 'لوحة التحكم' },
-          { id: 'public', icon: 'ti-eye', label: 'الرئيسية' }
+          { id: 'public', icon: 'ti-eye', label: 'الرئيسية' },
+          ...(isAdmin ? [{ id: 'admin', icon: 'ti-shield-check', label: 'الأدمن' }] : [])
         ].map((item) => {
           const isActive = currentPage === item.id;
           return (
@@ -118,11 +127,17 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
               key={item.id}
               onClick={() => setPage(item.id as PageType)}
               className={`flex flex-col items-center justify-center w-full h-full relative transition-all duration-300 ${
-                isActive ? 'text-[var(--em8)]' : 'text-[var(--text4)] hover:text-white'
+                isActive
+                  ? item.id === 'admin' ? 'text-[#a78bfa]' : 'text-[var(--em8)]'
+                  : item.id === 'admin' ? 'text-[#a78bfa]/60 hover:text-[#a78bfa]' : 'text-[var(--text4)] hover:text-white'
               }`}
             >
               {isActive && (
-                <div className="absolute top-0 w-8 h-[3px] bg-gradient-to-r from-[var(--em4)] to-[var(--em7)] rounded-b-full shadow-[0_2px_8px_rgba(82,196,120,0.5)]"></div>
+                <div className={`absolute top-0 w-8 h-[3px] rounded-b-full shadow-[0_2px_8px_rgba(82,196,120,0.5)] ${
+                  item.id === 'admin'
+                    ? 'bg-gradient-to-r from-[#7c3aed] to-[#4f46e5]'
+                    : 'bg-gradient-to-r from-[var(--em4)] to-[var(--em7)]'
+                }`}></div>
               )}
               <i className={`ti ${item.icon} text-[24px] mb-1 transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}></i>
               <span className={`text-[10.5px] font-bold ${isActive ? 'text-white' : ''}`}>{item.label}</span>

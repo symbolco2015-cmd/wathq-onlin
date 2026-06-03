@@ -579,7 +579,7 @@ export default function AdminDashboard({
               </thead>
               <tbody>
                 {filteredUsers.map((u, i) => (
-                  <UserRow key={u.id} user={u} onView={setSelectedUser} idx={i} />
+                    <UserRow key={u.id} user={u} onView={setSelectedUser} idx={i} />
                 ))}
               </tbody>
             </table>

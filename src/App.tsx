@@ -26,11 +26,13 @@ export default function App() {
   );
   const [toastData, setToastData] = useState({ msg: '', icon: '✓', show: false });
   const { 
-    state, 
-    user, 
+    state,
+    user,
     loading,
     isAdmin,
-    addEv, 
+    passwordRecovery,
+    clearPasswordRecovery,
+    addEv,
     delEv, 
     toggleStrat, 
     addSub, 
@@ -61,6 +63,12 @@ export default function App() {
   // Redirect users dynamically based on auth status — but not when in shared-profile view
   useEffect(() => {
     if (shareUserId) return; // Don't redirect if viewing a shared profile
+    if (passwordRecovery) {
+      // Keep the user on the auth screen to set a new password, even though a
+      // temporary recovery session makes them "logged in".
+      setCurrentPage('auth');
+      return;
+    }
     if (!loading) {
       if (user) {
         if (currentPage === 'auth') {
@@ -73,7 +81,7 @@ export default function App() {
         }
       }
     }
-  }, [user, loading, currentPage, shareUserId]);
+  }, [user, loading, currentPage, shareUserId, passwordRecovery]);
 
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
@@ -724,7 +732,18 @@ export default function App() {
       <Nav currentPage={currentPage} setPage={setCurrentPage} onToast={showToast} profile={state.profile} onOpenProfileSettings={openProfileSettings} isAdmin={isAdmin} />
       
       <main className="md:pb-0 pb-[80px]">
-        {currentPage === 'auth' && <Auth onLoginSuccess={() => setCurrentPage('dashboard')} onToast={showToast} spawnParticles={spawnParticles} />}
+        {currentPage === 'auth' && (
+          <Auth
+            onLoginSuccess={() => setCurrentPage('dashboard')}
+            onToast={showToast}
+            spawnParticles={spawnParticles}
+            recovery={passwordRecovery}
+            onRecoveryComplete={() => {
+              clearPasswordRecovery();
+              setCurrentPage('dashboard');
+            }}
+          />
+        )}
         
         {currentPage === 'dashboard' && (
           <Dashboard 

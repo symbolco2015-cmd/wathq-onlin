@@ -28,6 +28,8 @@ export function useAppStore() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  // True while the user arrived via a password-recovery link and must set a new password
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   // 1. Listen to Auth State
   useEffect(() => {
@@ -42,7 +44,11 @@ export function useAppStore() {
     });
 
     // Listen to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Supabase fires PASSWORD_RECOVERY after the user opens the reset link in their email
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true);
+      }
       setUser(session?.user ?? null);
       if (!session?.user) {
         // Reset state on logout
@@ -257,20 +263,25 @@ export function useAppStore() {
     setState(defaultState);
   };
 
-  return { 
-    state, 
-    user, 
+  // Called once the user has finished setting a new password via the recovery flow
+  const clearPasswordRecovery = () => setPasswordRecovery(false);
+
+  return {
+    state,
+    user,
     loading,
     isAdmin,
-    addEv, 
-    delEv, 
-    toggleStrat, 
-    addSub, 
+    passwordRecovery,
+    clearPasswordRecovery,
+    addEv,
+    delEv,
+    toggleStrat,
+    addSub,
     delSub,
-    updateNote, 
-    addStrat, 
-    updateProfile, 
-    signOut 
+    updateNote,
+    addStrat,
+    updateProfile,
+    signOut
   };
 }
 

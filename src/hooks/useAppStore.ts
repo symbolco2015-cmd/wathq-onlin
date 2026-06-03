@@ -1,6 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import type { AppState, Evidence, UserProfile } from '../types';
+import type { AppState, UserProfile, Announcement } from '../types';
+
+// ═══════════════════════════════════════════════════════════
+// قائمة المشرفين — أضف إيميلك هنا لمنح صلاحيات الأدمن
+// ═══════════════════════════════════════════════════════════
+const ADMIN_EMAILS = [
+  'azozsaleh@gmail.com',
+];
+// ═══════════════════════════════════════════════════════════
 
 const defaultProfile: UserProfile = {
   name: 'أحمد محمد العمري',
@@ -20,16 +28,40 @@ const defaultState: AppState = {
   strats: ['الصف المقلوب', 'التعلم التعاوني', 'التعلم النشط'],
   csubs: {},
   notes: {},
-  profile: defaultProfile
+  profile: defaultProfile,
+  readAnnouncements: []
 };
+
+const mockAnnouncements: Announcement[] = [
+  {
+    id: 'mock-1',
+    title: 'إطلاق لوحة إعلانات التحديثات والتعاميم البرمجية والإدارية',
+    content: 'نرحب بكم في لوحة إعلانات وثّق الجديدة! هنا تجدون آخر التعاميم الإدارية الصادرة، والتحديثات البرمجية للمنصة لتبسيط توثيق ملفاتكم وإنجازاتكم المهنية والتعليمية.',
+    category: 'tech',
+    created_at: new Date('2026-06-03T12:00:00Z').toISOString(),
+  },
+  {
+    id: 'mock-2',
+    title: 'بدء رفع أدلة وشواهد التقييم للعام الدراسي 1446',
+    content: 'وفقاً لتوجيهات وزارة التعليم، نحث جميع الزملاء المعلمين والمعلمات على البدء في رفع الأدلة والشواهد الخاصة ببنود التقييم المهني. يرجى توثيق ما لا يقل عن 5 شواهد وتفعيل استراتيجيتين للحصول على شارة التوثيق الكامل.',
+    category: 'admin',
+    created_at: new Date('2026-06-02T08:00:00Z').toISOString(),
+  },
+  {
+    id: 'mock-3',
+    title: 'موعد إغلاق إدخال الشواهد النهائية لملف الإنجاز',
+    content: 'تنبيه هام لجميع المعلمين: آخر موعد لرفع وتعديل الشواهد واستراتيجيات التدريس هو نهاية الفصل الدراسي الثاني 1447/01/15 هـ. يرجى مراجعة وتدقيق ملفاتكم والتأكد من إكمال جميع المتمتطلبات المهنية.',
+    category: 'urgent',
+    created_at: new Date('2026-06-01T15:30:00Z').toISOString(),
+  }
+];
 
 export function useAppStore() {
   const [state, setState] = useState<AppState>(defaultState);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  // True while the user arrived via a password-recovery link and must set a new password
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   // 1. Listen to Auth State
   useEffect(() => {
@@ -53,7 +85,6 @@ export function useAppStore() {
       if (!session?.user) {
         // Reset state on logout
         setState(defaultState);
-        setIsAdmin(false);
       }
     });
 
@@ -62,22 +93,49 @@ export function useAppStore() {
     };
   }, []);
 
-  // 1b. Check admin role whenever user changes
-  useEffect(() => {
-    async function checkAdmin() {
-      if (!user || !supabase) { setIsAdmin(false); return; }
+  // 1b. حساب صلاحية الأدمن بشكل فوري من الإيميل — بدون Supabase
+  const isAdmin = useMemo(() => {
+    if (!user?.email) return false;
+    const email = user.email.toLowerCase().trim();
+    const result = ADMIN_EMAILS.map(e => e.toLowerCase().trim()).includes(email);
+    console.log('[Admin] email:', email, '| isAdmin:', result);
+    return result;
+  }, [user]);
+
+  // Fetch announcements — مع fallback لبيانات تجريبية إذا لم يوجد الجدول
+  const fetchAnnouncements = async () => {
+    if (supabase) {
       try {
         const { data, error } = await supabase
-          .from('admin_users')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        setIsAdmin(!error && !!data);
-      } catch {
-        setIsAdmin(false);
+          .from('announcements')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) {
+          // استخدم البيانات الحقيقية إذا وُجدت، وإلا استخدم التجريبية
+          setAnnouncements(data.length > 0 ? data : mockAnnouncements);
+          return;
+        }
+        console.warn('[Announcements] Error or missing table, using mock data. Error:', error?.message);
+      } catch (err) {
+        console.warn('[Announcements] Exception, using mock data:', err);
       }
     }
-    checkAdmin();
+    setAnnouncements(mockAnnouncements);
+  };
+
+  useEffect(() => {
+    fetchAnnouncements();
+    if (supabase) {
+      const channel = supabase
+        .channel('public:announcements')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
+          fetchAnnouncements();
+        })
+        .subscribe();
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, [user]);
 
   // 2. Load State (from Supabase if logged in, otherwise localStorage)
@@ -266,6 +324,17 @@ export function useAppStore() {
   // Called once the user has finished setting a new password via the recovery flow
   const clearPasswordRecovery = () => setPasswordRecovery(false);
 
+  const markAnnouncementAsRead = (id: string) => {
+    const read = state.readAnnouncements || [];
+    if (!read.includes(id)) {
+      const nextRead = [...read, id];
+      saveState({
+        ...state,
+        readAnnouncements: nextRead
+      });
+    }
+  };
+
   return {
     state,
     user,
@@ -281,7 +350,10 @@ export function useAppStore() {
     updateNote,
     addStrat,
     updateProfile,
-    signOut
+    signOut,
+    announcements,
+    markAnnouncementAsRead,
+    fetchAnnouncements
   };
 }
 

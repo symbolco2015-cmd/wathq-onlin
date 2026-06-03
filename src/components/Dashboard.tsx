@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { AppState, SectionData } from '../types';
+import type { AppState, SectionData, Announcement } from '../types';
 import Sidebar from './Sidebar';
 import { calculateEvaluation } from '../utils';
 
@@ -14,6 +14,8 @@ interface DashboardProps {
   onAddStratClick: () => void;
   onOpenEvalClick: () => void;
   onDelSub: (sid: number, subName: string) => void;
+  announcements?: Announcement[];
+  onMarkAsRead?: (id: string) => void;
 }
 
 const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
@@ -23,9 +25,21 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
-export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub }: DashboardProps) {
+export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
+
+  const handleOpenAnnouncementModal = (ann: Announcement) => {
+    setActiveAnn(ann);
+    if (onMarkAsRead) {
+      onMarkAsRead(ann.id);
+    }
+  };
+
+  const handleCloseAnnModal = () => {
+    setActiveAnn(null);
+  };
 
   const toggleSec = (id: number) => {
     setOpenSecs(prev => ({ ...prev, [id]: !prev[id] }));
@@ -90,6 +104,75 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
             </div>
           </div>
         </div>
+
+        {/* ANNOUNCEMENTS SECTION */}
+        {announcements && announcements.length > 0 && (
+          <div className="mb-8" style={{ animation: 'fadeUp .55s var(--sp) both 0.1s' }}>
+            <div className="flex items-center gap-2 mb-3.5 px-1">
+              <div className="w-2.5 h-2.5 rounded-full bg-[var(--em7)] shadow-[0_0_8px_rgba(82,196,120,.5)]"></div>
+              <h2 className="text-[16px] font-black text-white font-[var(--font)]">آخر التحديثات والتعاميم</h2>
+              <span className="text-[11px] bg-[var(--em7)]/15 text-[var(--em8)] px-2 py-0.5 rounded-md font-extrabold">
+                {announcements.filter(a => !state.readAnnouncements?.includes(a.id)).length} جديد
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {announcements.slice(0, 3).map((ann) => {
+                const isRead = state.readAnnouncements?.includes(ann.id);
+                const dateStr = new Date(ann.created_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' });
+                
+                // Category styling
+                let catLabel = 'تحديث';
+                let catClass = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+                let catIcon = 'ti-settings';
+                if (ann.category === 'admin') {
+                  catLabel = 'تعميم إداري';
+                  catClass = 'bg-[var(--gold)]/10 text-[var(--gold)] border-[var(--gold)]/20';
+                  catIcon = 'ti-file-text';
+                } else if (ann.category === 'urgent') {
+                  catLabel = 'تنبيه عاجل';
+                  catClass = 'bg-red-500/10 text-red-400 border-red-500/20';
+                  catIcon = 'ti-alert-triangle';
+                }
+
+                return (
+                  <div 
+                    key={ann.id} 
+                    onClick={() => handleOpenAnnouncementModal(ann)}
+                    className="group relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] rounded-[20px] p-5 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:border-[var(--line2)] hover:shadow-[0_12px_32px_rgba(0,0,0,.4)] overflow-hidden"
+                  >
+                    {/* Pulsing indicator for unread */}
+                    {!isRead && (
+                      <span className="absolute top-4 left-4 flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                      </span>
+                    )}
+                    
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={`inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-[11px] font-bold border ${catClass}`}>
+                        <i className={`ti ${catIcon}`}></i> {catLabel}
+                      </span>
+                      <span className="text-[11px] text-[var(--text4)]">{dateStr}</span>
+                    </div>
+                    
+                    <h3 className="text-[14px] font-extrabold text-white mb-2 line-clamp-1 group-hover:text-[var(--em8)] transition-colors duration-200">
+                      {ann.title}
+                    </h3>
+                    
+                    <p className="text-[12.5px] text-[var(--text3)] line-clamp-2 leading-relaxed mb-1">
+                      {ann.content}
+                    </p>
+                    
+                    <div className="text-[11.5px] text-[var(--em8)] font-bold mt-3.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <span>اقرأ المزيد</span>
+                      <i className="ti ti-arrow-left text-[13px] translate-x-1 group-hover:translate-x-0 transition-transform"></i>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* STATS GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
@@ -356,6 +439,57 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
           })}
         </div>
       </main>
+
+      {/* Announcement Detail Modal */}
+      {activeAnn && (
+        <div className="modal-overlay" style={{ zIndex: 400 }} onClick={e => { if (e.target === e.currentTarget) handleCloseAnnModal(); }}>
+          <div className="user-modal max-w-lg" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
+            <div className="umodal-header border-b border-white/5 pb-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[20px] ${
+                  activeAnn.category === 'admin' ? 'bg-[var(--gold)]/10 text-[var(--gold)]' :
+                  activeAnn.category === 'urgent' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'
+                }`}>
+                  <i className={`ti ${activeAnn.category === 'admin' ? 'ti-file-text' : activeAnn.category === 'urgent' ? 'ti-alert-triangle' : 'ti-settings'}`}></i>
+                </div>
+                <div>
+                  <div className="text-[11.5px] text-[var(--text4)]">
+                    {activeAnn.category === 'admin' ? 'تعميم إداري' : activeAnn.category === 'urgent' ? 'تنبيه عاجل' : 'تحديث برمجي'}
+                  </div>
+                  <div className="text-[12px] text-[var(--text3)] mt-0.5">
+                    {new Date(activeAnn.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                  </div>
+                </div>
+              </div>
+              <button className="umodal-close" onClick={handleCloseAnnModal}><i className="ti ti-x" /></button>
+            </div>
+
+            <div className="px-6 py-2">
+              <h3 className="text-[17px] font-black text-white mb-3.5 leading-snug">{activeAnn.title}</h3>
+              <p className="text-[14px] text-[var(--text2)] leading-relaxed whitespace-pre-wrap mb-5">{activeAnn.content}</p>
+
+              {activeAnn.attachment_url && (
+                <div className="mb-4">
+                  <a 
+                    href={activeAnn.attachment_url} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="inline-flex items-center gap-2 py-2 px-4 rounded-xl text-[12.5px] font-bold bg-[var(--em7)]/15 border border-[var(--em7)]/25 text-[var(--em8)] hover:bg-[var(--em7)]/25 transition-all no-underline"
+                  >
+                    <i className="ti ti-paperclip"></i> تحميل الملف المرفق
+                  </a>
+                </div>
+              )}
+            </div>
+
+            <div className="umodal-actions border-t border-white/5 pt-4 mt-2 flex justify-end gap-2">
+              <button className="umodal-btn primary-btn py-2.5 px-6 rounded-xl" onClick={handleCloseAnnModal}>
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

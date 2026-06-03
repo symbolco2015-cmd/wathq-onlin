@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { AdminUser, PlatformStats } from '../../hooks/useAdminStore';
+import type { Announcement } from '../../types';
 
 /* ─────────────────────────────────────────────
    Stat Card
@@ -343,17 +344,80 @@ interface AdminDashboardProps {
   onExportCSV: (users: AdminUser[]) => void;
   onToast: (msg: string, icon?: string) => void;
   getShareUrl: (id: string) => string;
+  onPublishAnnouncement?: (title: string, content: string, category: 'tech' | 'admin' | 'urgent', attachmentUrl?: string) => Promise<boolean>;
+  onDeleteAnnouncement?: (id: string) => Promise<boolean>;
+  announcements?: Announcement[];
 }
 
 export default function AdminDashboard({
-  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl
+  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onDeleteAnnouncement, announcements
 }: AdminDashboardProps) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'evidenceCount' | 'updated_at' | 'created_at'>('updated_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users'>('users');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'announcements'>('users');
+
+  const [annTitle, setAnnTitle] = useState('');
+  const [annContent, setAnnContent] = useState('');
+  const [annCategory, setAnnCategory] = useState<'tech' | 'admin' | 'urgent'>('admin');
+  const [annAttachmentUrl, setAnnAttachmentUrl] = useState('');
+  const [publishingAnn, setPublishingAnn] = useState(false);
+
+  const handleDeleteAnnouncement = async (id: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا التعميم؟ سيتم إزالته من عند جميع المستخدمين فوراً.')) {
+      return;
+    }
+    
+    try {
+      if (onDeleteAnnouncement) {
+        const ok = await onDeleteAnnouncement(id);
+        if (ok) {
+          onToast('تم حذف التعميم بنجاح 🗑️', '🗑️');
+        } else {
+          onToast('فشل حذف التعميم. تأكد من صلاحيات الأدمن ❌', '❌');
+        }
+      } else {
+        onToast('ميزة الحذف غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+      }
+    } catch (err) {
+      console.error(err);
+      onToast('حدث خطأ أثناء محاولة الحذف ❌', '❌');
+    }
+  };
+
+  const handlePublishAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!annTitle.trim() || !annContent.trim()) {
+      onToast('يرجى ملء جميع الحقول المطلوبة ⚠️', '⚠️');
+      return;
+    }
+    
+    setPublishingAnn(true);
+    try {
+      if (onPublishAnnouncement) {
+        const ok = await onPublishAnnouncement(annTitle.trim(), annContent.trim(), annCategory, annAttachmentUrl.trim());
+        if (ok) {
+          onToast('تم نشر التعميم بنجاح لجميع المستخدمين 🚀', '🚀');
+          setAnnTitle('');
+          setAnnContent('');
+          setAnnCategory('admin');
+          setAnnAttachmentUrl('');
+          setActiveTab('users');
+        } else {
+          onToast('فشل نشر التعميم. تأكد من اتصالك وصلاحيات الأدمن ❌', '❌');
+        }
+      } else {
+        onToast('ميزة النشر غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+      }
+    } catch (err) {
+      console.error(err);
+      onToast('حدث خطأ غير متوقع أثناء النشر ❌', '❌');
+    } finally {
+      setPublishingAnn(false);
+    }
+  };
 
   const filteredUsers = useMemo(() => {
     let list = [...users];
@@ -472,6 +536,12 @@ export default function AdminDashboard({
           <i className="ti ti-users" /> المستخدمون
           <span className="tab-count">{users.length}</span>
         </button>
+        <button
+          className={`admin-tab ${activeTab === 'announcements' ? 'active' : ''}`}
+          onClick={() => setActiveTab('announcements')}
+        >
+          <i className="ti ti-speakerphone" /> نشر تعميم
+        </button>
       </div>
 
       {/* ── OVERVIEW TAB ── */}
@@ -587,6 +657,166 @@ export default function AdminDashboard({
               <div className="empty-state">
                 <i className="ti ti-search-off" />
                 <span>لا توجد نتائج مطابقة</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── ANNOUNCEMENTS TAB ── */}
+      {activeTab === 'announcements' && (
+        <div className="admin-announcements-tab" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
+          <div className="announcement-form-card">
+            <div className="form-header">
+              <i className="ti ti-speakerphone" />
+              <span>نشر تعميم أو تحديث جديد للمستخدمين</span>
+            </div>
+            
+            <form onSubmit={handlePublishAnnouncement} className="ann-form">
+              <div className="form-group">
+                <label>عنوان التعميم / التحديث</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: تحديثات هامة بخصوص تعبئة ملف الإنجاز"
+                  value={annTitle}
+                  onChange={e => setAnnTitle(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group flex-1">
+                  <label>التصنيف</label>
+                  <select
+                    value={annCategory}
+                    onChange={e => setAnnCategory(e.target.value as any)}
+                    className="form-select"
+                  >
+                    <option value="admin">📄 تعميم إداري</option>
+                    <option value="tech">⚙️ تحديث برمجي</option>
+                    <option value="urgent">⚠️ تنبيه عاجل</option>
+                  </select>
+                </div>
+                <div className="form-group flex-1">
+                  <label>رابط مرفق (اختياري)</label>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/document.pdf"
+                    value={annAttachmentUrl}
+                    onChange={e => setAnnAttachmentUrl(e.target.value)}
+                    className="form-input"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>محتوى التعميم</label>
+                <textarea
+                  required
+                  rows={6}
+                  placeholder="اكتب تفاصيل التعميم أو التحديث هنا بالتفصيل..."
+                  value={annContent}
+                  onChange={e => setAnnContent(e.target.value)}
+                  className="form-textarea"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={publishingAnn}
+                className="publish-submit-btn"
+              >
+                {publishingAnn ? (
+                  <>
+                    <i className="ti ti-loader animate-spin" />
+                    <span>جاري النشر...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="ti ti-send" />
+                    <span>نشر التعميم الآن</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+
+          {/* List of existing announcements */}
+          <div className="announcements-manage-section" style={{ marginTop: '32px' }}>
+            <div className="form-header" style={{ marginBottom: '16px' }}>
+              <i className="ti ti-list" />
+              <span>التعاميم النشطة حالياً ({announcements?.length || 0})</span>
+            </div>
+
+            {announcements && announcements.length > 0 ? (
+              <div className="ann-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {announcements.map((ann) => {
+                  let catLabel = 'تحديث';
+                  let catClass = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+                  if (ann.category === 'admin') {
+                    catLabel = 'تعميم إداري';
+                    catClass = 'bg-[var(--gold)]/10 text-[var(--gold)] border-[var(--gold)]/20';
+                  } else if (ann.category === 'urgent') {
+                    catLabel = 'تنبيه عاجل';
+                    catClass = 'bg-red-500/10 text-red-400 border-red-500/20';
+                  }
+
+                  return (
+                    <div 
+                      key={ann.id} 
+                      className="ann-manage-item"
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid var(--line2)',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '16px',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                          <span className={`inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border ${catClass}`}>
+                            {catLabel}
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'var(--text4)' }}>
+                            {new Date(ann.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                        <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ann.title}</h4>
+                        <p style={{ fontSize: '12px', color: 'var(--text3)', margin: '4px 0 0', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{ann.content}</p>
+                      </div>
+                      
+                      <button
+                        style={{
+                          padding: '8px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(248,113,113,.2)',
+                          color: '#f87171',
+                          background: 'rgba(248,113,113,.05)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s'
+                        }}
+                        title="حذف التعميم"
+                        onClick={() => handleDeleteAnnouncement(ann.id)}
+                      >
+                        <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '32px 16px', textAlign: 'center', color: 'var(--text4)' }}>
+                <i className="ti ti-speakerphone" style={{ fontSize: '24px', marginBottom: '8px', display: 'block', opacity: 0.4 }}></i>
+                <span>لا توجد تعاميم منشورة حالياً</span>
               </div>
             )}
           </div>
@@ -1060,4 +1290,103 @@ const adminStyles = `
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
 @keyframes spin { to { transform: rotate(360deg) } }
 .animate-spin { animation: spin 1s linear infinite; }
+
+/* ── Announcements Form Tab ── */
+.admin-announcements-tab {
+  animation: scaleIn .35s var(--sp) both;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.announcement-form-card {
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--line2);
+  border-radius: 20px;
+  padding: 24px;
+}
+.form-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  color: white;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--line2);
+  padding-bottom: 16px;
+}
+.form-header i {
+  color: var(--em8);
+  font-size: 20px;
+}
+.ann-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.form-group label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+}
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+@media (max-width: 600px) {
+  .form-row {
+    flex-direction: column;
+  }
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  color: white;
+  font-size: 14px;
+  font-family: var(--font);
+  outline: none;
+  transition: all .2s;
+  box-sizing: border-box;
+}
+.form-select option {
+  background: #0d1f14;
+  color: white;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: rgba(82,196,120,.4);
+  background: rgba(82,196,120,.04);
+  box-shadow: 0 0 0 3px rgba(82,196,120,.1);
+}
+.publish-submit-btn {
+  margin-top: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--em4), var(--em7));
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: opacity .2s, transform .2s;
+  font-family: var(--font);
+}
+.publish-submit-btn:hover {
+  opacity: .9;
+  transform: translateY(-1px);
+}
+.publish-submit-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
 `;

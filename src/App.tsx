@@ -40,7 +40,9 @@ export default function App() {
     updateNote, 
     addStrat, 
     updateProfile, 
-    signOut 
+    signOut,
+    announcements,
+    markAnnouncementAsRead
   } = useAppStore();
 
   const {
@@ -53,6 +55,8 @@ export default function App() {
     resetUserPortfolio,
     exportCSV,
     getShareUrl,
+    createAnnouncement,
+    deleteAnnouncement,
   } = useAdminStore(isAdmin);
 
   // Load shared profile (only when ?share= param is present)
@@ -760,6 +764,8 @@ export default function App() {
             onAddStratClick={openAddStratModal}
             onOpenEvalClick={openEvalModal}
             onDelSub={delSub}
+            announcements={announcements}
+            onMarkAsRead={markAnnouncementAsRead}
           />
         )}
         
@@ -777,6 +783,9 @@ export default function App() {
             onExportCSV={exportCSV}
             onToast={showToast}
             getShareUrl={getShareUrl}
+            onPublishAnnouncement={createAnnouncement}
+            onDeleteAnnouncement={deleteAnnouncement}
+            announcements={announcements}
           />
         )}
       </main>

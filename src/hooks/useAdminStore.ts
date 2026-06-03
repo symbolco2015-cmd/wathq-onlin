@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import type { AppState } from '../types';
+import type { AppState, Announcement } from '../types';
 
 export interface AdminUser {
   id: string;
@@ -251,6 +251,49 @@ export function useAdminStore(isAdmin: boolean) {
     return `${window.location.origin}${window.location.pathname}?share=${userId}`;
   };
 
+  // Create a new announcement (admin only)
+  const createAnnouncement = async (
+    title: string,
+    content: string,
+    category: 'tech' | 'admin' | 'urgent',
+    attachmentUrl?: string
+  ): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { error: insertError } = await supabase
+        .from('announcements')
+        .insert({
+          title,
+          content,
+          category,
+          attachment_url: attachmentUrl || null,
+          created_by: currentUser?.id || null
+        });
+      if (insertError) throw insertError;
+      return true;
+    } catch (e) {
+      console.error('Create announcement error:', e);
+      return false;
+    }
+  };
+
+  // Delete an announcement (admin only)
+  const deleteAnnouncement = async (id: string): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.error('Delete announcement error:', e);
+      return false;
+    }
+  };
+
   return {
     users,
     stats,
@@ -261,5 +304,7 @@ export function useAdminStore(isAdmin: boolean) {
     resetUserPortfolio,
     exportCSV,
     getShareUrl,
+    createAnnouncement,
+    deleteAnnouncement,
   };
 }

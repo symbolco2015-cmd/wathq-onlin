@@ -32,29 +32,7 @@ const defaultState: AppState = {
   readAnnouncements: []
 };
 
-const mockAnnouncements: Announcement[] = [
-  {
-    id: 'mock-1',
-    title: 'إطلاق لوحة إعلانات التحديثات والتعاميم البرمجية والإدارية',
-    content: 'نرحب بكم في لوحة إعلانات وثّق الجديدة! هنا تجدون آخر التعاميم الإدارية الصادرة، والتحديثات البرمجية للمنصة لتبسيط توثيق ملفاتكم وإنجازاتكم المهنية والتعليمية.',
-    category: 'tech',
-    created_at: new Date('2026-06-03T12:00:00Z').toISOString(),
-  },
-  {
-    id: 'mock-2',
-    title: 'بدء رفع أدلة وشواهد التقييم للعام الدراسي 1446',
-    content: 'وفقاً لتوجيهات وزارة التعليم، نحث جميع الزملاء المعلمين والمعلمات على البدء في رفع الأدلة والشواهد الخاصة ببنود التقييم المهني. يرجى توثيق ما لا يقل عن 5 شواهد وتفعيل استراتيجيتين للحصول على شارة التوثيق الكامل.',
-    category: 'admin',
-    created_at: new Date('2026-06-02T08:00:00Z').toISOString(),
-  },
-  {
-    id: 'mock-3',
-    title: 'موعد إغلاق إدخال الشواهد النهائية لملف الإنجاز',
-    content: 'تنبيه هام لجميع المعلمين: آخر موعد لرفع وتعديل الشواهد واستراتيجيات التدريس هو نهاية الفصل الدراسي الثاني 1447/01/15 هـ. يرجى مراجعة وتدقيق ملفاتكم والتأكد من إكمال جميع المتمتطلبات المهنية.',
-    category: 'urgent',
-    created_at: new Date('2026-06-01T15:30:00Z').toISOString(),
-  }
-];
+
 
 export function useAppStore() {
   const [state, setState] = useState<AppState>(defaultState);
@@ -102,7 +80,7 @@ export function useAppStore() {
     return result;
   }, [user]);
 
-  // Fetch announcements — مع fallback لبيانات تجريبية إذا لم يوجد الجدول
+  // Fetch announcements من Supabase
   const fetchAnnouncements = async () => {
     if (supabase) {
       try {
@@ -111,16 +89,15 @@ export function useAppStore() {
           .select('*')
           .order('created_at', { ascending: false });
         if (!error && data) {
-          // استخدم البيانات الحقيقية إذا وُجدت، وإلا استخدم التجريبية
-          setAnnouncements(data.length > 0 ? data : mockAnnouncements);
+          setAnnouncements(data);
           return;
         }
-        console.warn('[Announcements] Error or missing table, using mock data. Error:', error?.message);
+        console.warn('[Announcements] Error or missing table. Error:', error?.message);
       } catch (err) {
-        console.warn('[Announcements] Exception, using mock data:', err);
+        console.warn('[Announcements] Exception:', err);
       }
     }
-    setAnnouncements(mockAnnouncements);
+    setAnnouncements([]);
   };
 
   useEffect(() => {

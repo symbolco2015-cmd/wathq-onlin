@@ -345,12 +345,13 @@ interface AdminDashboardProps {
   onToast: (msg: string, icon?: string) => void;
   getShareUrl: (id: string) => string;
   onPublishAnnouncement?: (title: string, content: string, category: 'tech' | 'admin' | 'urgent', attachmentUrl?: string) => Promise<boolean>;
+  onUpdateAnnouncement?: (id: string, title: string, content: string, category: 'tech' | 'admin' | 'urgent', attachmentUrl?: string) => Promise<boolean>;
   onDeleteAnnouncement?: (id: string) => Promise<boolean>;
   announcements?: Announcement[];
 }
 
 export default function AdminDashboard({
-  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onDeleteAnnouncement, announcements
+  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onUpdateAnnouncement, onDeleteAnnouncement, announcements
 }: AdminDashboardProps) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'evidenceCount' | 'updated_at' | 'created_at'>('updated_at');
@@ -364,6 +365,28 @@ export default function AdminDashboard({
   const [annCategory, setAnnCategory] = useState<'tech' | 'admin' | 'urgent'>('admin');
   const [annAttachmentUrl, setAnnAttachmentUrl] = useState('');
   const [publishingAnn, setPublishingAnn] = useState(false);
+  const [editingAnnId, setEditingAnnId] = useState<string | null>(null);
+
+  // Only real (DB) announcements are manageable — exclude the demo/placeholder ones
+  const manageableAnnouncements = (announcements || []).filter(a => !String(a.id).startsWith('mock-'));
+  const hasMockOnly = (announcements?.length || 0) > 0 && manageableAnnouncements.length === 0;
+
+  const resetAnnForm = () => {
+    setAnnTitle('');
+    setAnnContent('');
+    setAnnCategory('admin');
+    setAnnAttachmentUrl('');
+    setEditingAnnId(null);
+  };
+
+  const startEditAnnouncement = (ann: Announcement) => {
+    setEditingAnnId(ann.id);
+    setAnnTitle(ann.title);
+    setAnnContent(ann.content);
+    setAnnCategory(ann.category);
+    setAnnAttachmentUrl(ann.attachment_url || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const handleDeleteAnnouncement = async (id: string) => {
     if (!window.confirm('هل أنت متأكد من حذف هذا التعميم؟ سيتم إزالته من عند جميع المستخدمين فوراً.')) {
@@ -396,24 +419,36 @@ export default function AdminDashboard({
     
     setPublishingAnn(true);
     try {
-      if (onPublishAnnouncement) {
-        const ok = await onPublishAnnouncement(annTitle.trim(), annContent.trim(), annCategory, annAttachmentUrl.trim());
-        if (ok) {
-          onToast('تم نشر التعميم بنجاح لجميع المستخدمين 🚀', '🚀');
-          setAnnTitle('');
-          setAnnContent('');
-          setAnnCategory('admin');
-          setAnnAttachmentUrl('');
-          setActiveTab('users');
+      if (editingAnnId) {
+        // ── Edit mode ──
+        if (onUpdateAnnouncement) {
+          const ok = await onUpdateAnnouncement(editingAnnId, annTitle.trim(), annContent.trim(), annCategory, annAttachmentUrl.trim());
+          if (ok) {
+            onToast('تم تحديث التعميم بنجاح ✏️', '✏️');
+            resetAnnForm();
+          } else {
+            onToast('فشل تحديث التعميم. تأكد من صلاحيات الأدمن ❌', '❌');
+          }
         } else {
-          onToast('فشل نشر التعميم. تأكد من اتصالك وصلاحيات الأدمن ❌', '❌');
+          onToast('ميزة التعديل غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
         }
       } else {
-        onToast('ميزة النشر غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+        // ── Create mode ──
+        if (onPublishAnnouncement) {
+          const ok = await onPublishAnnouncement(annTitle.trim(), annContent.trim(), annCategory, annAttachmentUrl.trim());
+          if (ok) {
+            onToast('تم نشر التعميم بنجاح لجميع المستخدمين 🚀', '🚀');
+            resetAnnForm();
+          } else {
+            onToast('فشل نشر التعميم. تأكد من اتصالك وصلاحيات الأدمن ❌', '❌');
+          }
+        } else {
+          onToast('ميزة النشر غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+        }
       }
     } catch (err) {
       console.error(err);
-      onToast('حدث خطأ غير متوقع أثناء النشر ❌', '❌');
+      onToast('حدث خطأ غير متوقع ❌', '❌');
     } finally {
       setPublishingAnn(false);
     }
@@ -668,10 +703,10 @@ export default function AdminDashboard({
         <div className="admin-announcements-tab" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
           <div className="announcement-form-card">
             <div className="form-header">
-              <i className="ti ti-speakerphone" />
-              <span>نشر تعميم أو تحديث جديد للمستخدمين</span>
+              <i className={`ti ${editingAnnId ? 'ti-edit' : 'ti-speakerphone'}`} />
+              <span>{editingAnnId ? 'تعديل التعميم' : 'نشر تعميم أو تحديث جديد للمستخدمين'}</span>
             </div>
-            
+
             <form onSubmit={handlePublishAnnouncement} className="ann-form">
               <div className="form-group">
                 <label>عنوان التعميم / التحديث</label>
@@ -722,23 +757,36 @@ export default function AdminDashboard({
                 />
               </div>
 
-              <button
-                type="submit"
-                disabled={publishingAnn}
-                className="publish-submit-btn"
-              >
-                {publishingAnn ? (
-                  <>
-                    <i className="ti ti-loader animate-spin" />
-                    <span>جاري النشر...</span>
-                  </>
-                ) : (
-                  <>
-                    <i className="ti ti-send" />
-                    <span>نشر التعميم الآن</span>
-                  </>
+              <div className="ann-form-actions">
+                <button
+                  type="submit"
+                  disabled={publishingAnn}
+                  className="publish-submit-btn"
+                >
+                  {publishingAnn ? (
+                    <>
+                      <i className="ti ti-loader animate-spin" />
+                      <span>{editingAnnId ? 'جاري حفظ التعديلات...' : 'جاري النشر...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className={`ti ${editingAnnId ? 'ti-device-floppy' : 'ti-send'}`} />
+                      <span>{editingAnnId ? 'حفظ التعديلات' : 'نشر التعميم الآن'}</span>
+                    </>
+                  )}
+                </button>
+                {editingAnnId && (
+                  <button
+                    type="button"
+                    onClick={resetAnnForm}
+                    disabled={publishingAnn}
+                    className="ann-cancel-btn"
+                  >
+                    <i className="ti ti-x" />
+                    <span>إلغاء التعديل</span>
+                  </button>
                 )}
-              </button>
+              </div>
             </form>
           </div>
 
@@ -746,12 +794,12 @@ export default function AdminDashboard({
           <div className="announcements-manage-section" style={{ marginTop: '32px' }}>
             <div className="form-header" style={{ marginBottom: '16px' }}>
               <i className="ti ti-list" />
-              <span>التعاميم النشطة حالياً ({announcements?.length || 0})</span>
+              <span>التعاميم المنشورة حالياً ({manageableAnnouncements.length})</span>
             </div>
 
-            {announcements && announcements.length > 0 ? (
+            {manageableAnnouncements.length > 0 ? (
               <div className="ann-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {announcements.map((ann) => {
+                {manageableAnnouncements.map((ann) => {
                   let catLabel = 'تحديث';
                   let catClass = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
                   if (ann.category === 'admin') {
@@ -763,12 +811,12 @@ export default function AdminDashboard({
                   }
 
                   return (
-                    <div 
-                      key={ann.id} 
+                    <div
+                      key={ann.id}
                       className="ann-manage-item"
                       style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid var(--line2)',
+                        background: editingAnnId === ann.id ? 'rgba(82,196,120,.08)' : 'rgba(255, 255, 255, 0.03)',
+                        border: editingAnnId === ann.id ? '1px solid rgba(82,196,120,.4)' : '1px solid var(--line2)',
                         borderRadius: '16px',
                         padding: '16px',
                         display: 'flex',
@@ -791,24 +839,44 @@ export default function AdminDashboard({
                         <p style={{ fontSize: '12px', color: 'var(--text3)', margin: '4px 0 0', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{ann.content}</p>
                       </div>
                       
-                      <button
-                        style={{
-                          padding: '8px',
-                          borderRadius: '8px',
-                          border: '1px solid rgba(248,113,113,.2)',
-                          color: '#f87171',
-                          background: 'rgba(248,113,113,.05)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.2s'
-                        }}
-                        title="حذف التعميم"
-                        onClick={() => handleDeleteAnnouncement(ann.id)}
-                      >
-                        <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        <button
+                          style={{
+                            padding: '8px',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(82,196,120,.25)',
+                            color: 'var(--em8)',
+                            background: 'rgba(82,196,120,.06)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s'
+                          }}
+                          title="تعديل التعميم"
+                          onClick={() => startEditAnnouncement(ann)}
+                        >
+                          <i className="ti ti-edit" style={{ fontSize: '16px' }}></i>
+                        </button>
+                        <button
+                          style={{
+                            padding: '8px',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(248,113,113,.2)',
+                            color: '#f87171',
+                            background: 'rgba(248,113,113,.05)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s'
+                          }}
+                          title="حذف التعميم"
+                          onClick={() => handleDeleteAnnouncement(ann.id)}
+                        >
+                          <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -817,6 +885,12 @@ export default function AdminDashboard({
               <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '32px 16px', textAlign: 'center', color: 'var(--text4)' }}>
                 <i className="ti ti-speakerphone" style={{ fontSize: '24px', marginBottom: '8px', display: 'block', opacity: 0.4 }}></i>
                 <span>لا توجد تعاميم منشورة حالياً</span>
+                {hasMockOnly && (
+                  <p style={{ fontSize: '12px', color: 'var(--text4)', margin: '10px 0 0', lineHeight: 1.6, maxWidth: '420px' }}>
+                    التعاميم الظاهرة للمستخدمين الآن هي <b>نماذج ترحيبية تجريبية</b> (غير قابلة للتعديل أو الحذف).
+                    انشر تعميماً حقيقياً من الأعلى وسيحل محلها تلقائياً.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -1364,8 +1438,13 @@ const adminStyles = `
   background: rgba(82,196,120,.04);
   box-shadow: 0 0 0 3px rgba(82,196,120,.1);
 }
-.publish-submit-btn {
+.ann-form-actions {
+  display: flex;
+  gap: 10px;
   margin-top: 8px;
+}
+.publish-submit-btn {
+  flex: 1;
   padding: 14px;
   border-radius: 12px;
   background: linear-gradient(135deg, var(--em4), var(--em7));
@@ -1381,6 +1460,25 @@ const adminStyles = `
   transition: opacity .2s, transform .2s;
   font-family: var(--font);
 }
+.ann-cancel-btn {
+  padding: 14px 20px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--line2);
+  color: var(--text3);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all .2s;
+  font-family: var(--font);
+  white-space: nowrap;
+}
+.ann-cancel-btn:hover { background: rgba(255,255,255,.1); color: white; }
+.ann-cancel-btn:disabled { opacity: .5; cursor: not-allowed; }
 .publish-submit-btn:hover {
   opacity: .9;
   transform: translateY(-1px);

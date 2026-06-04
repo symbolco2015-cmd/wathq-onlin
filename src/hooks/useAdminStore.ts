@@ -278,6 +278,33 @@ export function useAdminStore(isAdmin: boolean) {
     }
   };
 
+  // Update an existing announcement (admin only)
+  const updateAnnouncement = async (
+    id: string,
+    title: string,
+    content: string,
+    category: 'tech' | 'admin' | 'urgent',
+    attachmentUrl?: string
+  ): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('announcements')
+        .update({
+          title,
+          content,
+          category,
+          attachment_url: attachmentUrl || null
+        })
+        .eq('id', id);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.error('Update announcement error:', e);
+      return false;
+    }
+  };
+
   // Delete an announcement (admin only)
   const deleteAnnouncement = async (id: string): Promise<boolean> => {
     if (!isAdmin || !supabase) return false;
@@ -305,6 +332,7 @@ export function useAdminStore(isAdmin: boolean) {
     exportCSV,
     getShareUrl,
     createAnnouncement,
+    updateAnnouncement,
     deleteAnnouncement,
   };
 }

@@ -56,6 +56,7 @@ export default function App() {
     exportCSV,
     getShareUrl,
     createAnnouncement,
+    updateAnnouncement,
     deleteAnnouncement,
   } = useAdminStore(isAdmin);
 
@@ -784,6 +785,7 @@ export default function App() {
             onToast={showToast}
             getShareUrl={getShareUrl}
             onPublishAnnouncement={createAnnouncement}
+            onUpdateAnnouncement={updateAnnouncement}
             onDeleteAnnouncement={deleteAnnouncement}
             announcements={announcements}
           />

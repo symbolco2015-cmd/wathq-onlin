@@ -5,7 +5,7 @@ export default function Background() {
     <>
       <div
         id="bg-canvas"
-        className="fixed inset-0 z-0 pointer-events-none"
+        className="fixed inset-0 -z-10 pointer-events-none"
         style={{
           background: `
             radial-gradient(ellipse 60% 40% at 70% 20%, rgba(38,110,66,.18) 0%, transparent 60%),
@@ -26,14 +26,14 @@ export default function Background() {
         }} />
       </div>
       <div 
-        className="fixed rounded-full blur-[100px] pointer-events-none z-0 orb orb1 w-[700px] h-[700px] -top-[200px] -right-[200px]"
+        className="fixed rounded-full blur-[100px] pointer-events-none -z-10 orb orb1 w-[700px] h-[700px] -top-[200px] -right-[200px]"
         style={{
           background: 'radial-gradient(circle,rgba(42,122,68,.2),transparent 70%)',
           animation: 'orbMove 20s ease-in-out infinite'
         }}
       />
       <div 
-        className="fixed rounded-full blur-[100px] pointer-events-none z-0 orb orb2 w-[500px] h-[500px] -bottom-[150px] -left-[100px]"
+        className="fixed rounded-full blur-[100px] pointer-events-none -z-10 orb orb2 w-[500px] h-[500px] -bottom-[150px] -left-[100px]"
         style={{
           background: 'radial-gradient(circle,rgba(201,162,39,.08),transparent 70%)',
           animation: 'orbMove2 25s ease-in-out infinite'

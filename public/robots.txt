@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /$
+Allow: /index.html
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /?share=
+Disallow: /?*
+
+Sitemap: https://wathq.ai/sitemap.xml

@@ -228,6 +228,10 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
           <div className="font-[var(--font2)] text-[14px] text-[var(--text3)] tracking-wide leading-relaxed">
             ملف الإنجاز الرقمي للمعلم السعودي
           </div>
+          
+          <p className="mt-4 text-[13.5px] text-[var(--text2)] leading-relaxed bg-[var(--em7)]/5 border border-[var(--em7)]/10 p-4 rounded-xl text-right font-[var(--font)]">
+            🎯 <strong>ابنِ ملف إنجازك المهني بذكاء:</strong> نظّم شواهدك وأنشطتك التعليمية في 11 قسماً مبرمجاً، واحسب نقاط تقييمك تلقائياً، وصدر ملفك كـ PDF منسق وجاهز للطباعة والمشاركة بنقرة واحدة.
+          </p>
         </div>
 
         {(mode === 'login' || mode === 'reg') && (

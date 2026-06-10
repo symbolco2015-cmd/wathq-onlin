@@ -39,6 +39,11 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       return;
     }
 
+    if (mode === 'reg' && password.length < 12) {
+      onToast('كلمة المرور يجب أن تكون 12 حرفاً على الأقل.', '⚠️');
+      return;
+    }
+
     const btn = e.currentTarget;
     const rect = btn.getBoundingClientRect();
     spawnParticles(rect);
@@ -144,8 +149,8 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       return;
     }
 
-    if (password.length < 6) {
-      onToast('كلمة المرور يجب أن تكون 6 أحرف على الأقل.', '⚠️');
+    if (password.length < 12) {
+      onToast('كلمة المرور يجب أن تكون 12 حرفاً على الأقل.', '⚠️');
       return;
     }
 

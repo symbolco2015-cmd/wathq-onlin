@@ -12,11 +12,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run dev       # Start Vite dev server on port 3000
+npm run server    # Start Express Gemini proxy on port 3001 (required for AI features)
 npm run build     # Production build (outputs to dist/)
 npm run lint      # Type-check with tsc --noEmit (no test suite exists)
 npm run preview   # Preview the production build locally
 npm run clean     # Remove dist/
 ```
+
+For development with AI features, run `npm run dev` and `npm run server` in two separate terminals. The Vite dev server proxies `/api/*` to `localhost:3001`.
 
 There is no test framework configured. `npm run lint` is the only automated code verification step.
 
@@ -29,11 +32,12 @@ Copy `.env.example` and populate:
 ```
 VITE_SUPABASE_URL=       # Supabase project URL
 VITE_SUPABASE_ANON_KEY=  # Supabase anon public key
-GEMINI_API_KEY=          # Google Gemini API (injected at build by vite.config.ts)
-APP_URL=                 # App host (used for OAuth callbacks and share links)
+GEMINI_API_KEY=          # Google Gemini API key — server-side only (server.js)
+APP_URL=                 # App host (used for CORS in server.js and OAuth callbacks)
+SERVER_PORT=3001         # Port for the Express proxy server
 ```
 
-`GEMINI_API_KEY` is **not** prefixed with `VITE_` — it is injected into the build by `vite.config.ts` via `define`.
+`GEMINI_API_KEY` must **never** be prefixed with `VITE_` and must **not** appear in `vite.config.ts` define. It is read exclusively by `server.js`. The Vite dev server proxies `/api/*` to `http://localhost:3001`. In production, route `/api/*` through a reverse proxy to the Node.js server.
 
 ---
 

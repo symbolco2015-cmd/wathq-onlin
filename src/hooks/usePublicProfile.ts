@@ -32,17 +32,14 @@ export function usePublicProfile(userId: string | null): PublicProfileResult {
     setError(null);
 
     supabase
-      .from('portfolios')
-      .select('state')
-      .eq('id', userId)
-      .single()
+      .rpc('get_shared_portfolio', { target_id: userId })
       .then(({ data, error: sbError }) => {
         if (cancelled) return;
-        if (sbError || !data?.state) {
+        if (sbError || !data) {
           setError('لم يتم العثور على ملف الإنجاز لهذا المستخدم.');
           setState(null);
         } else {
-          setState(data.state as AppState);
+          setState(data as AppState);
         }
         setLoading(false);
       });

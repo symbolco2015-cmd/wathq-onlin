@@ -63,10 +63,11 @@ ALTER TABLE public.portfolios ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DE
 
 ALTER TABLE public.portfolios ENABLE ROW LEVEL SECURITY;
 
--- قراءة عامة (مطلوبة لميزة المشاركة + قراءة الأدمن لكل الملفات)
-DROP POLICY IF EXISTS "portfolios_public_read" ON public.portfolios;
-CREATE POLICY "portfolios_public_read" ON public.portfolios
-  FOR SELECT USING (true);
+-- قراءة مقيّدة: المالك أو الأدمن فقط (ميزة المشاركة تعمل عبر get_shared_portfolio RPC)
+DROP POLICY IF EXISTS "portfolios_public_read"          ON public.portfolios;
+DROP POLICY IF EXISTS "portfolios_owner_or_admin_read"  ON public.portfolios;
+CREATE POLICY "portfolios_owner_or_admin_read" ON public.portfolios
+  FOR SELECT USING (auth.uid() = id OR public.is_admin());
 
 -- إدخال: صاحب الملف فقط
 DROP POLICY IF EXISTS "portfolios_owner_insert" ON public.portfolios;
@@ -225,10 +226,26 @@ WHERE schemaname = 'public'
 ORDER BY tablename, cmd;
 
 -- ════════════════════════════════════════════════════════════════════════
--- 🔒 ملاحظة خصوصية (اختيارية للمعالجة لاحقاً):
--- سياسة "portfolios_public_read" تجعل قراءة كل الملفات متاحة لأي شخص يملك
--- مفتاح anon (وهو مضمَّن في كود الواجهة). هذا ضروري لميزة المشاركة الحالية،
--- لكنه يكشف الأسماء والإيميلات والجوالات. الحل الأنظف: تقييد القراءة لصاحب
--- الملف/الأدمن، وإضافة دالة RPC عامة تُرجع ملفاً واحداً عبر معرّفه فقط، ثم
--- تعديل usePublicProfile لاستدعائها. أخبرني إن رغبت بتطبيق هذا التحسين.
+-- (8) دالة آمنة لميزة المشاركة العامة (?share=UUID)
+--     تعمل خارج RLS بشكل متحكّم — تُرجع state لملف واحد فقط بمعرّفه.
+--     يتمّ استدعاؤها من usePublicProfile عبر supabase.rpc('get_shared_portfolio').
 -- ════════════════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION public.get_shared_portfolio(target_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  result jsonb;
+BEGIN
+  SELECT state INTO result
+  FROM public.portfolios
+  WHERE id = target_id;
+
+  RETURN result;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_shared_portfolio(uuid) TO anon, authenticated;

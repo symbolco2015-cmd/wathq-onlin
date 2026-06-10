@@ -7,7 +7,37 @@
     <meta name="description" content="وثّق هي منصة متكاملة وذكية لبناء وتوثيق ملف الإنجاز المهني للمعلمين والمعلمات بسهولة، وتنظيم الأدلة والشواهد التعليمية سحابياً ومشاركتها بشكل احترافي." />
     <meta name="keywords" content="ملف إنجاز المعلم, ملف إنجاز رقمي, وثق, ملف الإنجاز المهني, أدلة المعلم, شواهد تعليمية, المعلم المتميز" />
     <meta name="author" content="وثّق" />
-    
+
+    <!--
+      Content Security Policy
+      ─────────────────────────────────────────────────────────────────────
+      • script-src 'self'          — only our own bundled JS; no inline scripts
+      • style-src  'unsafe-inline' — required: Tailwind v4 injects <style> at
+                                     runtime; React components use inline styles
+      • font-src                   — Google Fonts files + our bundled icons
+      • img-src    data: blob:     — avatars (base64), previews (blob URLs),
+                                     Supabase Storage public files
+      • media-src  blob:           — video evidence previews
+      • connect-src wss:           — Supabase Realtime WebSocket channels
+      • object-src / frame-src     — hard block; no plugins, no iframes
+      • base-uri / form-action     — prevent base-tag hijacking and form redirect
+      ─────────────────────────────────────────────────────────────────────
+      Note: frame-ancestors is HTTP-header only; set in server.js as well.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com;
+      img-src 'self' data: blob: https://*.supabase.co;
+      media-src 'self' blob: https://*.supabase.co;
+      connect-src 'self' https://*.supabase.co wss://*.supabase.co;
+      object-src 'none';
+      frame-src 'none';
+      base-uri 'self';
+      form-action 'self';
+    ">
+
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://wathq.ai" />
@@ -20,8 +50,14 @@
     <meta property="twitter:title" content="وثّق — ملف الإنجاز الرقمي المهني للمعلمين" />
     <meta property="twitter:description" content="منصة ذكية متكاملة لبناء وتوثيق ملف الإنجاز المهني للمعلمين والمعلمات بسهولة، وتنظيم الأدلة والشواهد ومشاركتها." />
     
+    <!-- Google Fonts — Tajawal (geometric) + Noto Naskh Arabic (serif) -->
+    <!-- Note: Google Fonts serves dynamic CSS (per-UA font format), so SRI  -->
+    <!-- hashes are not applicable. Fonts load only from fonts.gstatic.com   -->
+    <!-- which is allowlisted in the CSP font-src directive above.            -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin="anonymous">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" crossorigin="anonymous">
+    <!-- Tabler Icons — bundled via npm (@tabler/icons-webfont), no CDN -->
   </head>
   <body>
     <div id="root"></div>

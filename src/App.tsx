@@ -196,7 +196,12 @@ export default function App() {
           showToast('تم رفع الملف بنجاح ☁️', '🚀');
         } catch (err: any) {
           console.error("Upload error:", err);
-          showToast(`فشل رفع الملف: ${err.message || 'حدث خطأ غير معروف'}`, '❌');
+          const uploadMsg = /size/i.test(err?.message ?? '')
+            ? 'حجم الملف يتجاوز الحد المسموح (10 MB).'
+            : /type|mime/i.test(err?.message ?? '')
+              ? 'نوع الملف غير مدعوم.'
+              : 'تعذّر رفع الملف، يرجى المحاولة مجدداً.';
+          showToast(uploadMsg, '❌');
           setFileName(null);
         } finally {
           setUploading(false);

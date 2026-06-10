@@ -13,6 +13,31 @@ interface AuthProps {
 
 type AuthMode = 'login' | 'reg' | 'forgot' | 'update';
 
+// Maps raw Supabase / network error messages to friendly Arabic strings.
+// Never expose internal error details to the user.
+function mapAuthError(err: any, fallback: string): string {
+  const msg: string = (err?.message ?? '').toLowerCase();
+
+  if (msg.includes('invalid login credentials') || msg.includes('invalid credentials'))
+    return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+  if (msg.includes('email not confirmed'))
+    return 'يرجى تأكيد بريدك الإلكتروني أولاً.';
+  if (msg.includes('user already registered') || msg.includes('already been registered'))
+    return 'هذا البريد الإلكتروني مسجّل مسبقاً.';
+  if (msg.includes('email address is invalid') || msg.includes('unable to validate email'))
+    return 'صيغة البريد الإلكتروني غير صالحة.';
+  if (msg.includes('password should be at least') || msg.includes('weak_password'))
+    return 'كلمة المرور قصيرة جداً، يرجى اختيار كلمة أقوى.';
+  if (msg.includes('too many requests') || msg.includes('rate limit') || msg.includes('over_email_send_rate_limit'))
+    return 'عدد المحاولات تجاوز الحد المسموح، يرجى الانتظار قليلاً ثم المحاولة مجدداً.';
+  if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch'))
+    return 'تعذّر الاتصال بالخادم، يرجى التحقق من اتصالك بالإنترنت.';
+  if (msg.includes('session') || msg.includes('token') || msg.includes('expired'))
+    return 'انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً.';
+
+  return fallback;
+}
+
 export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery, onRecoveryComplete }: AuthProps) {
   const [mode, setMode] = useState<AuthMode>(recovery ? 'update' : 'login');
   const [email, setEmail] = useState('');
@@ -94,7 +119,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       }
     } catch (err: any) {
       console.error("Auth error:", err);
-      onToast(err.message || 'حدث خطأ أثناء عملية المصادقة', '❌');
+      onToast(mapAuthError(err, 'حدث خطأ أثناء عملية المصادقة، يرجى المحاولة مجدداً.'), '❌');
     } finally {
       setLoading(false);
     }
@@ -129,7 +154,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       setMode('login');
     } catch (err: any) {
       console.error('Reset password error:', err);
-      onToast(err.message || 'تعذّر إرسال رابط الاستعادة', '❌');
+      onToast(mapAuthError(err, 'تعذّر إرسال رابط الاستعادة، يرجى المحاولة لاحقاً.'), '❌');
     } finally {
       setLoading(false);
     }
@@ -176,7 +201,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       }, 700);
     } catch (err: any) {
       console.error('Update password error:', err);
-      onToast(err.message || 'تعذّر تحديث كلمة المرور', '❌');
+      onToast(mapAuthError(err, 'تعذّر تحديث كلمة المرور، يرجى المحاولة مجدداً.'), '❌');
     } finally {
       setLoading(false);
     }
@@ -199,7 +224,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       if (error) throw error;
     } catch (err: any) {
       console.error(`${provider} Login error:`, err);
-      onToast(err.message || 'حدث خطأ أثناء محاولة تسجيل الدخول الاجتماعي', '❌');
+      onToast(mapAuthError(err, 'حدث خطأ أثناء محاولة تسجيل الدخول، يرجى المحاولة مجدداً.'), '❌');
     }
   };
 

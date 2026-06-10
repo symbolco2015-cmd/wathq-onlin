@@ -13,6 +13,31 @@ const API_KEY = process.env.GEMINI_API_KEY;
 const APP_URL  = process.env.APP_URL || 'http://localhost:3000';
 const PORT     = process.env.SERVER_PORT || 3001;
 
+// Security headers (applied to all responses from this server)
+app.use((_req, res, next) => {
+  // CSP — mirrors the meta tag in index.html; adds frame-ancestors (header-only)
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https://*.supabase.co",
+    "media-src 'self' blob: https://*.supabase.co",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+    "object-src 'none'",
+    "frame-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; '));
+
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
 // CORS: accept only requests from the app itself
 app.use((req, res, next) => {
   const origin = req.headers.origin ?? '';

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { AppState, SectionData, Announcement } from '../types';
 import Sidebar from './Sidebar';
 import { calculateEvaluation } from '../utils';
+import { useEvidenceStore } from '../hooks/useEvidenceStore';
 
 interface DashboardProps {
   state: AppState;
@@ -30,6 +31,13 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
 
+  // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية
+  const { stats: evStats, getSectionStat } = useEvidenceStore({
+    ev: state.ev,
+    sections,
+    csubs: state.csubs,
+  });
+
   const handleOpenAnnouncementModal = (ann: Announcement) => {
     setActiveAnn(ann);
     if (onMarkAsRead) {
@@ -56,8 +64,9 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
     : sections;
 
   const stats = calculateEvaluation(state, sections);
-  const totalEvs = stats.totalEvs;
-  const filledSecs = stats.filledSecs;
+  // استخدام القيم الحقيقية من useEvidenceStore
+  const totalEvs = evStats.total;
+  const filledSecs = evStats.filledSectionCount;
 
   return (
     <div className="flex min-h-[calc(100vh-72px)]">
@@ -177,10 +186,10 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
         {/* STATS GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
           {[
-            { id: 1, val: totalEvs, lbl: 'إجمالي الأدلة', ico: 'ti-files', bIco: 'ti-trending-up', bLbl: 'حي', theme: { bg: 'bg-gradient-to-br from-[var(--em2)]/30 to-[var(--em7)]/15', color: 'text-[var(--em7)]', badgeBg: 'bg-[var(--em7)]/10', badgeColor: 'text-[var(--em8)]' }, dly: '0.05s' },
-            { id: 2, val: 11, lbl: 'أقسام التوثيق', ico: 'ti-layout-grid', bIco: 'ti-check', bLbl: 'مكتمل', theme: { bg: 'bg-gradient-to-br from-[#1d4ed8]/30 to-[#93c5fd]/15', color: 'text-[#93c5fd]', badgeBg: 'bg-[#93c5fd]/10', badgeColor: 'text-[#93c5fd]' }, dly: '0.1s' },
-            { id: 3, val: state.strats.length, lbl: 'استراتيجيات مفعّلة', ico: 'ti-bulb', bIco: 'ti-star', bLbl: 'نشطة', theme: { bg: 'bg-gradient-to-br from-[#b45309]/30 to-[#fcd34d]/15', color: 'text-[#fcd34d]', badgeBg: 'bg-[#fcd34d]/10', badgeColor: 'text-[#fcd34d]' }, dly: '0.15s' },
-            { id: 4, val: filledSecs, lbl: 'أقسام موثّقة', ico: 'ti-trophy', bIco: 'ti-chart-bar', bLbl: 'من 11', theme: { bg: 'bg-gradient-to-br from-[#c0399a]/30 to-[#f472b6]/15', color: 'text-[#f472b6]', badgeBg: 'bg-[#f472b6]/10', badgeColor: 'text-[#f472b6]' }, dly: '0.2s' }
+            { id: 1, val: totalEvs, lbl: 'إجمالي الأدلة', ico: 'ti-files', bIco: 'ti-trending-up', bLbl: 'حي', theme: { bg: 'bg-gradient-to-br from-[var(--em2)]/30 to-[var(--em7)]/15', color: 'text-[var(--em7)]', badgeBg: 'bg-[var(--em7)]/10', badgeColor: 'text-[var(--em8)]' }, dly: '0.05s', sub: `${evStats.byType.pdf} PDF · ${evStats.byType.img} صور` },
+            { id: 2, val: sections.length, lbl: 'أقسام التوثيق', ico: 'ti-layout-grid', bIco: 'ti-check', bLbl: `${filledSecs} موثّق`, theme: { bg: 'bg-gradient-to-br from-[#1d4ed8]/30 to-[#93c5fd]/15', color: 'text-[#93c5fd]', badgeBg: 'bg-[#93c5fd]/10', badgeColor: 'text-[#93c5fd]' }, dly: '0.1s', sub: `${evStats.byType.doc} مستندات · ${evStats.byType.vid} فيديو` },
+            { id: 3, val: state.strats.length, lbl: 'استراتيجيات مفعّلة', ico: 'ti-bulb', bIco: 'ti-star', bLbl: 'نشطة', theme: { bg: 'bg-gradient-to-br from-[#b45309]/30 to-[#fcd34d]/15', color: 'text-[#fcd34d]', badgeBg: 'bg-[#fcd34d]/10', badgeColor: 'text-[#fcd34d]' }, dly: '0.15s', sub: null },
+            { id: 4, val: filledSecs, lbl: 'أقسام موثّقة', ico: 'ti-trophy', bIco: 'ti-chart-bar', bLbl: `من ${sections.length}`, theme: { bg: 'bg-gradient-to-br from-[#c0399a]/30 to-[#f472b6]/15', color: 'text-[#f472b6]', badgeBg: 'bg-[#f472b6]/10', badgeColor: 'text-[#f472b6]' }, dly: '0.2s', sub: `${Math.round((filledSecs / sections.length) * 100)}% اكتمال` },
           ].map(st => (
             <div key={st.id} className="group bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[20px] p-6 border border-[var(--line)] relative overflow-hidden transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--line2)] hover:shadow-[0_20px_50px_rgba(0,0,0,.5)] cursor-default" style={{ animation: `fadeUp .5s var(--sp) both ${st.dly}` }}>
               <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(255,255,255,.03),transparent_60%)]"></div>
@@ -195,6 +204,7 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
               </div>
               <div className="text-[36px] font-black leading-none text-white transition-all duration-300 font-[var(--font)] group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-[linear-gradient(135deg,var(--em7),var(--gold))] relative z-10">{st.val}</div>
               <div className="text-[13px] text-[var(--text3)] mt-1.5 font-medium relative z-10">{st.lbl}</div>
+              {st.sub && <div className="text-[11px] text-[var(--text4)] mt-1 font-medium relative z-10 opacity-70">{st.sub}</div>}
             </div>
           ))}
         </div>
@@ -238,6 +248,11 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
             const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
             const secTotalEvs = allSubs.reduce((acc, sub) => acc + (state.ev[`${sec.id}|${sub}`] || []).length, 0);
             const isOpen = !!openSecs[sec.id];
+            // نسبة الاكتمال الحقيقية من useEvidenceStore
+            const secStat = getSectionStat(sec.id);
+            const completionPct = secStat?.completionPct ?? 0;
+            const filledSubs = secStat?.filledSubs ?? 0;
+            const totalSubs = secStat?.totalSubs ?? allSubs.length;
 
             return (
               <div key={sec.id} id={`sc-${sec.id}`} className="bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', animation: `fadeUp .45s var(--sp) both ${i * 0.04}s` }}>
@@ -248,14 +263,38 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
                      <i className={`ti ${sec.icon}`}></i>
                    </div>
                    
-                   <div className="flex-1">
+                   <div className="flex-1 min-w-0">
                      <div className="text-[16px] font-extrabold text-white font-[var(--font)]">{sec.ttl}</div>
-                     <div className="text-[12px] text-[var(--text4)] mt-0.5">{allSubs.length} قسم فرعي{secTotalEvs ? ` · ${secTotalEvs} دليل` : ''}</div>
+                     <div className="text-[12px] text-[var(--text4)] mt-0.5">{totalSubs} قسم فرعي{secTotalEvs ? ` · ${secTotalEvs} دليل` : ''}</div>
+                     {/* شريط التقدم الحقيقي */}
+                     <div className="mt-2.5 flex items-center gap-2">
+                       <div className="flex-1 h-[5px] rounded-full bg-white/8 overflow-hidden">
+                         <div
+                           className="h-full rounded-full transition-all duration-700 ease-out"
+                           style={{
+                             width: `${completionPct}%`,
+                             background: completionPct >= 70
+                               ? 'linear-gradient(90deg, var(--em6), var(--em7))'
+                               : completionPct >= 35
+                               ? 'linear-gradient(90deg, #b45309, #fcd34d)'
+                               : 'linear-gradient(90deg, #9f1239, #f43f5e)',
+                             boxShadow: completionPct >= 70 ? '0 0 8px rgba(82,196,120,.4)' : 'none'
+                           }}
+                         />
+                       </div>
+                       <span className={`text-[11px] font-black shrink-0 ${
+                         completionPct >= 70 ? 'text-[var(--em8)]' :
+                         completionPct >= 35 ? 'text-[#fcd34d]' : 'text-[#f87171]'
+                       }`}>{completionPct}%</span>
+                     </div>
                    </div>
                    
                    {secTotalEvs > 0 && (
-                     <div className="flex items-center gap-1 text-[12px] font-bold py-1.5 px-3.5 rounded-full bg-[var(--em7)]/10 text-[var(--em8)] border border-[var(--em7)]/15">
-                       <i className="ti ti-files text-[13px]"></i> {secTotalEvs}
+                     <div className="flex flex-col items-center gap-0.5 shrink-0">
+                       <div className="flex items-center gap-1 text-[12px] font-bold py-1.5 px-3.5 rounded-full bg-[var(--em7)]/10 text-[var(--em8)] border border-[var(--em7)]/15">
+                         <i className="ti ti-files text-[13px]"></i> {secTotalEvs}
+                       </div>
+                       <div className="text-[10px] text-[var(--text4)] font-bold">{filledSubs}/{totalSubs} مكتمل</div>
                      </div>
                    )}
                    
@@ -323,7 +362,7 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
                                                 onClick={() => ev.url && window.open(ev.url, '_blank')}
                                                 title={ev.url ? 'اضغط لعرض الملف' : ''}
                                               >
-                                                <div className="text-[12px] font-bold text-white truncate group-hover:text-[var(--em8)] transition-colors">{ev.name}</div>
+                                                <div className="text-[12px] font-bold text-white truncate group-hover:text-[var(--em8)] transition-colors" dir="ltr" style={{unicodeBidi:'isolate'}}>{ev.name}</div>
                                                 {ev.url && <div className="text-[10px] text-[var(--em8)] mt-0.5 flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</div>}
                                               </div>
                                              <button className="text-[var(--text4)] hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => onDeleteEv(sec.id, k, ei)}>
@@ -395,7 +434,7 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
                                         onClick={() => ev.url && window.open(ev.url, '_blank')}
                                         title={ev.url ? 'اضغط لعرض الملف' : ''}
                                       >
-                                        <div className="text-[13.5px] font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis group-hover:text-[var(--em8)] transition-colors">{ev.name}</div>
+                                        <div className="text-[13.5px] font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis group-hover:text-[var(--em8)] transition-colors" dir="ltr" style={{unicodeBidi:'isolate'}}>{ev.name}</div>
                                         <div className="text-[11px] text-[var(--text4)] mt-1 flex items-center gap-1.5">
                                           <i className="ti ti-calendar"></i>{ev.date} · <i className="ti ti-tag"></i>{t.label}
                                           {ev.url && <span className="text-[var(--em8)] flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</span>}

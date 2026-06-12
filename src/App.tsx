@@ -741,7 +741,7 @@ export default function App() {
       <Background />
       {/* Hide the navigation bar on the login page — only show it after the user signs in */}
       {user && currentPage !== 'auth' && (
-        <Nav currentPage={currentPage} setPage={setCurrentPage} onToast={showToast} profile={state.profile} onOpenProfileSettings={openProfileSettings} isAdmin={isAdmin} />
+        <Nav currentPage={currentPage} setPage={setCurrentPage} onToast={showToast} profile={state.profile} onOpenProfileSettings={openProfileSettings} isAdmin={isAdmin} isLoggedIn={!!user} />
       )}
 
       <main className="md:pb-0 pb-[80px]">

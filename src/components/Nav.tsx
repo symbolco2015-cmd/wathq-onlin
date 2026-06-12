@@ -8,9 +8,10 @@ interface NavProps {
   profile: UserProfile;
   onOpenProfileSettings: () => void;
   isAdmin?: boolean;
+  isLoggedIn?: boolean;
 }
 
-export default function Nav({ currentPage, setPage, onToast, profile, onOpenProfileSettings, isAdmin = false }: NavProps) {
+export default function Nav({ currentPage, setPage, onToast, profile, onOpenProfileSettings, isAdmin = false, isLoggedIn = false }: NavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
   const lastScrollY = useRef(0);
@@ -64,7 +65,7 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
 
         <div className="hidden md:flex gap-0.5 bg-[var(--glass)] p-1 rounded-xl border border-[var(--line)]">
           {[
-            { id: 'auth', icon: 'ti-login', label: 'الدخول' },
+            ...(!isLoggedIn ? [{ id: 'auth', icon: 'ti-login', label: 'الدخول' }] : []),
             { id: 'dashboard', icon: 'ti-layout-dashboard', label: 'لوحة التحكم' },
             { id: 'public', icon: 'ti-eye', label: 'الصفحة العامة' },
             ...(isAdmin ? [{ id: 'admin', icon: 'ti-shield-check', label: 'الأدمن' }] : [])
@@ -116,7 +117,7 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
       {/* Mobile Bottom Navigation */}
       <div className={`md:hidden fixed bottom-0 left-0 right-0 h-[64px] bg-[#060f0a]/90 backdrop-blur-[28px] border-t border-[var(--line)] flex items-center justify-around z-[300] px-2 pb-safe shadow-[0_-4px_24px_rgba(0,0,0,0.4)] transition-transform duration-300 ${!mobileNavVisible ? 'translate-y-full' : 'translate-y-0'}`}>
         {[
-          { id: 'auth', icon: 'ti-login', label: 'الدخول' },
+          ...(!isLoggedIn ? [{ id: 'auth', icon: 'ti-login', label: 'الدخول' }] : []),
           { id: 'dashboard', icon: 'ti-layout-dashboard', label: 'لوحة التحكم' },
           { id: 'public', icon: 'ti-eye', label: 'الرئيسية' },
           ...(isAdmin ? [{ id: 'admin', icon: 'ti-shield-check', label: 'الأدمن' }] : [])

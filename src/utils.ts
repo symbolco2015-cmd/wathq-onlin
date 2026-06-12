@@ -1,5 +1,17 @@
 import type { AppState, SectionData } from './types';
 
+export const getCompletionColor = (pct: number): string => {
+  if (pct >= 70) return '#1D9E75';
+  if (pct >= 35) return '#BA7517';
+  return '#D85A30';
+};
+
+export const getCompletionLabel = (pct: number): string => {
+  if (pct >= 70) return 'متقدم';
+  if (pct >= 35) return 'في التقدم';
+  return 'يحتاج عمل';
+};
+
 export function calculateEvaluation(state: AppState, sections: SectionData[]) {
   let totalEvs = 0;
   let filledSecs = 0;

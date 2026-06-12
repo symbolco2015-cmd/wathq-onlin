@@ -1,6 +1,6 @@
 import React from 'react';
 import type { AppState } from '../types';
-import { calculateEvaluation } from '../utils';
+import { calculateEvaluation, getCompletionColor } from '../utils';
 
 interface SidebarProps {
   state: AppState;
@@ -49,20 +49,29 @@ export default function Sidebar({ state, sections }: SidebarProps) {
       {sections.map(s => {
         const subs = [...s.subs, ...(state.csubs[s.id] || [])];
         const count = subs.reduce((acc, sub) => acc + (state.ev[`${s.id}|${sub}`] || []).length, 0);
-        
+        const subTotal = subs.length;
+        const filledSubs = subs.filter(sub => (state.ev[`${s.id}|${sub}`] || []).length > 0).length;
+        const subPct = subTotal > 0 ? Math.round((filledSubs / subTotal) * 100) : 0;
+        const color = getCompletionColor(subPct);
+
         return (
-          <div 
+          <div
             key={s.id}
             onClick={() => scrollToSection(s.id)}
-            className={`group flex items-center gap-2.5 py-2 px-2.5 rounded-xl cursor-pointer text-[12.5px] text-[var(--text3)] mb-px transition-all duration-[220ms] relative hover:bg-[var(--glass2)] hover:text-white hover:pr-3.5 ${count ? 'filled' : ''}`}
+            className="group py-2 px-2.5 rounded-xl cursor-pointer mb-px transition-all duration-[220ms] relative hover:bg-[var(--glass2)]"
           >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[2px] h-0 bg-gradient-to-b from-[var(--em7)] to-[var(--gold)] rounded-sm transition-all duration-300 group-hover:h-[60%]"></div>
-            <div className="w-[30px] h-[30px] rounded-lg shrink-0 bg-[var(--glass)] text-[var(--text4)] flex items-center justify-center text-[15px] border border-[var(--line)] transition-all duration-[220ms] group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em6)] group-hover:text-white group-hover:border-transparent group-hover:shadow-[0_4px_12px_rgba(42,122,68,.4)]">
-              <i className={`ti ${s.icon}`}></i>
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="w-[26px] h-[26px] rounded-lg shrink-0 bg-[var(--glass)] text-[var(--text4)] flex items-center justify-center text-[13px] border border-[var(--line)] transition-all duration-[220ms] group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em6)] group-hover:text-white group-hover:border-transparent">
+                <i className={`ti ${s.icon}`}></i>
+              </div>
+              <span className="flex-1 text-[12px] text-[var(--text2)] group-hover:text-white transition-colors leading-tight">{s.ttl}</span>
+              <span className="text-[10px] font-extrabold shrink-0" style={{ color }}>{subPct}%</span>
             </div>
-            <span className="flex-1 text-[12.5px]">{s.ttl}</span>
-            <div className={`w-5 h-5 rounded-full shrink-0 bg-gradient-to-br from-[var(--em5)] to-[var(--em7)] text-white text-[10px] font-extrabold flex items-center justify-center transition-all duration-[250ms] ${count ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.4]'}`}>
-              {count || ''}
+            <div className="h-[3px] bg-white/8 rounded-full overflow-hidden mr-[34px]">
+              <div
+                className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${subPct}%`, backgroundColor: color }}
+              />
             </div>
           </div>
         );

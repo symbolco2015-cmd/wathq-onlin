@@ -3,7 +3,6 @@ import type { PageType, SectionData, UserProfile } from './types';
 import { useAppStore } from './hooks/useAppStore';
 import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
-import { supabase } from './supabaseClient';
 
 import Background from './components/Background';
 import Nav from './components/Nav';
@@ -12,8 +11,10 @@ import Dashboard from './components/Dashboard';
 import Public from './components/Public';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import { Modal, Toast } from './components/UI';
+import EvidenceModal from './components/EvidenceModal';
 import { SECS } from './data';
 import { calculateEvaluation } from './utils';
+import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
 
 const SECS_REMOVED = true;
 
@@ -59,6 +60,12 @@ export default function App() {
     updateAnnouncement,
     deleteAnnouncement,
   } = useAdminStore(isAdmin);
+
+  const supabaseEv = useSupabaseEvidence(user?.id ?? null);
+
+  const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string }>({
+    open: false, sectionId: 0, sub: '',
+  });
 
   // Load shared profile (only when ?share= param is present)
   const { state: sharedState, loading: sharedLoading, error: sharedError } = usePublicProfile(
@@ -132,192 +139,7 @@ export default function App() {
   const closeModal = () => setModalConfig(prev => ({ ...prev, isOpen: false }));
 
   const openAddEvModal = (sid: number, sub: string) => {
-    let pendingType: 'pdf' | 'img' | 'doc' | 'vid' | null = null;
-    let pendingName = '';
-    let pendingUrl = '';
-    
-    const Body = () => {
-      const [type, setType] = useState<'pdf' | 'img' | 'doc' | 'vid' | null>(null);
-      const [uploading, setUploading] = useState(false);
-      const [fileName, setFileName] = useState<string | null>(null);
-      const [uploadSuccess, setUploadSuccess] = useState(false);
-      const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-      pendingType = type;
-
-      const handleAreaClick = () => {
-        if (!type) {
-          showToast('يرجى اختيار نوع الملف أولاً ⚠️', '⚠️');
-          return;
-        }
-        fileInputRef.current?.click();
-      };
-
-      const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setFileName(file.name);
-        setUploading(true);
-        setUploadSuccess(false);
-
-        try {
-          const fileExt = file.name.split('.').pop();
-          const uniqueName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-          const filePath = `${user?.id || 'guest'}/${uniqueName}`;
-
-          let publicUrl = '';
-
-          if (user && supabase) {
-            // Real upload to Supabase Storage
-            const { error } = await supabase.storage
-              .from('evidence')
-              .upload(filePath, file, {
-                cacheControl: '3600',
-                upsert: false
-              });
-
-            if (error) throw error;
-
-            const { data: urlData } = supabase.storage
-              .from('evidence')
-              .getPublicUrl(filePath);
-
-            publicUrl = urlData.publicUrl;
-          } else {
-            // Simulation for offline/guest mode
-            await new Promise((resolve) => setTimeout(resolve, 1500));
-            publicUrl = URL.createObjectURL(file); // Temporary blob URL for guest preview
-          }
-
-          pendingName = file.name;
-          pendingUrl = publicUrl;
-          setUploadSuccess(true);
-          showToast('تم رفع الملف بنجاح ☁️', '🚀');
-        } catch (err: any) {
-          console.error("Upload error:", err);
-          const uploadMsg = /size/i.test(err?.message ?? '')
-            ? 'حجم الملف يتجاوز الحد المسموح (10 MB).'
-            : /type|mime/i.test(err?.message ?? '')
-              ? 'نوع الملف غير مدعوم.'
-              : 'تعذّر رفع الملف، يرجى المحاولة مجدداً.';
-          showToast(uploadMsg, '❌');
-          setFileName(null);
-        } finally {
-          setUploading(false);
-        }
-      };
-
-      const getAcceptAttribute = () => {
-        if (type === 'pdf') return '.pdf';
-        if (type === 'img') return 'image/*';
-        if (type === 'vid') return 'video/*';
-        if (type === 'doc') return '.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt';
-        return undefined;
-      };
-
-      return (
-        <div>
-          <p className="text-[13px] text-[var(--text3)] mb-4">أولاً: اختر نوع الملف:</p>
-          <div className="grid grid-cols-2 gap-3 mb-5">
-            {[
-              { id: 'pdf', icon: 'ti-file-type-pdf', label: 'PDF', color: '#f87171' },
-              { id: 'img', icon: 'ti-photo', label: 'صورة', color: '#93c5fd' },
-              { id: 'doc', icon: 'ti-file-text', label: 'مستند', color: '#c4b5fd' },
-              { id: 'vid', icon: 'ti-video', label: 'فيديو', color: '#fcd34d' }
-            ].map(item => (
-              <button 
-                key={item.id}
-                type="button"
-                className={`flex flex-col items-center gap-2.5 p-4 rounded-2xl border-[1.5px] cursor-pointer text-center font-[var(--font)] text-[14px] font-bold transition-all duration-300 hover:-translate-y-[4px] hover:shadow-[0_12px_30px_rgba(0,0,0,.4)] hover:scale-[1.02] group ${type === item.id ? 'bg-white/10 text-white' : 'border-[var(--line2)] bg-white/5 text-[var(--text2)]'}`}
-                style={type === item.id ? { borderColor: item.color, color: item.color, backgroundColor: `${item.color}15` } : {}}
-                onClick={() => setType(item.id as any)}
-                disabled={uploading}
-              >
-                <i className={`ti ${item.icon} text-[34px] transition-transform duration-300 group-hover:scale-120`}></i>
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          <p className="text-[13px] text-[var(--text3)] mb-4">ثانياً: ارفع الملف الخاص بالدليل:</p>
-          
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            className="hidden" 
-            onChange={handleFileChange}
-            accept={getAcceptAttribute()}
-          />
-
-          <div 
-            className={`border-[1.5px] border-dashed rounded-2xl p-7 text-center cursor-pointer transition-all duration-250 relative overflow-hidden group ${uploadSuccess ? 'border-[var(--em8)]/50 bg-[var(--em7)]/5' : (type ? 'border-[var(--em7)]/25 hover:border-[var(--em7)]/40' : 'border-white/10 opacity-50 cursor-not-allowed')}`} 
-            onClick={handleAreaClick}
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(82,196,120,.05),transparent_70%)] opacity-0 group-hover:opacity-100 transition-opacity duration-250"></div>
-            
-            {uploading ? (
-              <div className="flex flex-col items-center py-2">
-                <i className="ti ti-loader animate-spin text-[40px] text-[var(--em8)] mb-3 block"></i>
-                <p className="text-[14px] text-white font-bold animate-pulse">جاري رفع الملف سحابياً...</p>
-                <span className="text-[11px] text-[var(--text4)] mt-1.5">{fileName}</span>
-              </div>
-            ) : uploadSuccess ? (
-              <div className="flex flex-col items-center py-2">
-                <i className="ti ti-cloud-check text-[42px] text-[var(--em8)] mb-2.5 block animate-bounce"></i>
-                <p className="text-[14px] text-[var(--em8)] font-black">تم رفع الملف بنجاح! ☁️</p>
-                <span className="text-[12px] text-white mt-2 block font-semibold truncate max-w-full px-4">{fileName}</span>
-                <span className="text-[11.5px] text-[var(--text4)] mt-1.5 block">انقر لاستبدال الملف بملف آخر</span>
-              </div>
-            ) : (
-              <div className="py-2">
-                <i className="ti ti-cloud-upload text-[40px] text-[var(--em6)] mb-2.5 block transition-transform duration-400 group-hover:-translate-y-[6px] group-hover:scale-110"></i>
-                <p className="text-[14px] text-[var(--text3)] font-semibold">{type ? 'انقر هنا لاختيار الملف من جهازك' : 'يرجى اختيار نوع الملف أولاً في الأعلى'}</p>
-                <span className="text-[12px] text-[var(--text4)] mt-1 block">PNG · JPG · PDF · DOCX · MP4</span>
-              </div>
-            )}
-          </div>
-
-          {/* Custom name field */}
-          {uploadSuccess && (
-            <div className="mt-4">
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">
-                <i className="ti ti-pencil text-[14px] text-[var(--em7)]"></i> اسم الدليل (يمكنك تعديله)
-              </div>
-              <input
-                type="text"
-                defaultValue={fileName || ''}
-                onChange={e => { pendingName = e.target.value || fileName || ''; }}
-                className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-xl text-[14px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40"
-                placeholder="اسم الدليل الذي سيظهر في الملف"
-              />
-            </div>
-          )}
-        </div>
-      );
-    };
-
-    setModalConfig({
-      isOpen: true,
-      title: 'إضافة دليل جديد',
-      subtitle: sub.startsWith('strat:') ? `استراتيجية: ${sub.replace('strat:', '')}` : sub,
-      icon: 'ti-paperclip',
-      body: <Body />,
-      onConfirm: () => {
-        if (!pendingType) {
-          showToast('الرجاء اختيار نوع الملف والرفع أولاً', '⚠️');
-          return;
-        }
-        if (!pendingUrl) {
-          showToast('الرجاء اختيار ورفع دليل حقيقي أولاً', '⚠️');
-          return;
-        }
-
-        addEv(sid, sub, pendingType, pendingName, pendingUrl);
-        showToast('تم إضافة الدليل بنجاح ✅', '✅');
-        closeModal();
-      }
-    });
+    setEvidenceModal({ open: true, sectionId: sid, sub });
   };
 
   const openAddSubModal = (sid: number) => {
@@ -759,9 +581,9 @@ export default function App() {
         )}
         
         {currentPage === 'dashboard' && (
-          <Dashboard 
-            state={state} 
-            sections={SECS} 
+          <Dashboard
+            state={state}
+            sections={SECS}
             onAddEvClick={openAddEvModal}
             onAddSubClick={openAddSubModal}
             onToggleStrat={toggleStrat}
@@ -772,6 +594,7 @@ export default function App() {
             onDelSub={delSub}
             announcements={announcements}
             onMarkAsRead={markAnnouncementAsRead}
+            userId={user?.id}
           />
         )}
         
@@ -798,6 +621,18 @@ export default function App() {
       </main>
       
       <Modal {...modalConfig} onClose={closeModal}>{modalConfig.body}</Modal>
+
+      <EvidenceModal
+        isOpen={evidenceModal.open}
+        onClose={() => setEvidenceModal(prev => ({ ...prev, open: false }))}
+        sectionId={evidenceModal.sectionId}
+        sub={evidenceModal.sub}
+        userId={user?.id}
+        supabaseEv={supabaseEv}
+        onAddEv={addEv}
+        onToast={showToast}
+      />
+
       <Toast {...toastData} />
     </>
   );

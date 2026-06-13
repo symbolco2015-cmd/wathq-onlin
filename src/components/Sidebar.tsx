@@ -1,16 +1,26 @@
 import React from 'react';
 import type { AppState } from '../types';
 import { calculateEvaluation, getCompletionColor } from '../utils';
+import { useSupabaseEvidence } from '../hooks/useSupabaseEvidence';
 
 interface SidebarProps {
   state: AppState;
   sections: any[];
+  userId?: string;
 }
 
-export default function Sidebar({ state, sections }: SidebarProps) {
+export default function Sidebar({ state, sections, userId }: SidebarProps) {
   const stats = calculateEvaluation(state, sections);
-  const filledCount = stats.filledSecs;
-  const pct = Math.round((filledCount / sections.length) * 100);
+  const supabaseEv = useSupabaseEvidence(userId ?? null);
+
+  // استخدم Supabase إذا متاح، وإلا ارجع للبيانات المحلية
+  const hasSupabaseData = supabaseEv.completion.length > 0;
+  const filledCount = hasSupabaseData
+    ? supabaseEv.completion.filter(c => c.completion_pct > 0).length
+    : stats.filledSecs;
+  const pct = hasSupabaseData
+    ? supabaseEv.overallPct
+    : Math.round((filledCount / sections.length) * 100);
 
   const scrollToSection = (id: number) => {
     document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' });
@@ -21,7 +31,7 @@ export default function Sidebar({ state, sections }: SidebarProps) {
       <div className="flex items-center gap-3 py-4 px-3.5 mb-5.5 bg-gradient-to-br from-[var(--surf3)] to-[var(--surf2)] rounded-2xl border border-[var(--line)] relative overflow-hidden">
         <div className="absolute top-0 right-0 left-0 h-[1px] bg-gradient-to-r from-transparent via-[var(--em7)]/30 to-transparent"></div>
         <div className="w-[46px] h-[46px] rounded-full shrink-0 bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white flex items-center justify-center text-[16px] font-black shadow-[0_0_0_2px_rgba(82,196,120,.25),0_4px_14px_rgba(42,122,68,.4)] bg-cover bg-center overflow-hidden"
-             style={state.profile.avatar ? { backgroundImage: `url(${state.profile.avatar})` } : {}}>
+          style={state.profile.avatar ? { backgroundImage: `url(${state.profile.avatar})` } : {}}>
           {!state.profile.avatar && state.profile.name.substring(0, 2)}
         </div>
         <div className="min-w-0 flex-1">
@@ -39,19 +49,23 @@ export default function Sidebar({ state, sections }: SidebarProps) {
         <div className="relative z-10 text-[12px] text-white/50 mb-2.5">المكتمل: {filledCount} من {sections.length}</div>
         <div className="relative z-10 h-[5px] bg-white/15 rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-[var(--em8)] to-white/90 rounded-full transition-all duration-[1400ms] ease-out relative" style={{ width: `${pct}%` }}>
-             <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent)] bg-[length:200%_auto] z-10" style={{ animation: 'goldShimmer 2s linear infinite' }}></div>
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent)] bg-[length:200%_auto] z-10" style={{ animation: 'goldShimmer 2s linear infinite' }}></div>
           </div>
         </div>
       </div>
 
       <div className="text-[10px] font-extrabold text-[var(--text4)] tracking-[1.2px] uppercase px-2.5 pb-2">الأقسام</div>
-      
+
       {sections.map(s => {
-        const subs = [...s.subs, ...(state.csubs[s.id] || [])];
-        const count = subs.reduce((acc, sub) => acc + (state.ev[`${s.id}|${sub}`] || []).length, 0);
-        const subTotal = subs.length;
-        const filledSubs = subs.filter(sub => (state.ev[`${s.id}|${sub}`] || []).length > 0).length;
-        const subPct = subTotal > 0 ? Math.round((filledSubs / subTotal) * 100) : 0;
+        // إذا في بيانات Supabase استخدمها، وإلا احسب محلياً
+        let subPct: number;
+        if (hasSupabaseData) {
+          subPct = supabaseEv.getCompletion(s.id);
+        } else {
+          const subs = [...s.subs, ...(state.csubs[s.id] || [])];
+          const filledSubs = subs.filter(sub => (state.ev[`${s.id}|${sub}`] || []).length > 0).length;
+          subPct = subs.length > 0 ? Math.round((filledSubs / subs.length) * 100) : 0;
+        }
         const color = getCompletionColor(subPct);
 
         return (

@@ -7,6 +7,7 @@ import { useEvidenceStore } from '../hooks/useEvidenceStore';
 interface DashboardProps {
   state: AppState;
   sections: SectionData[];
+  userId?: string;
   onAddEvClick: (sid: number, sub: string) => void;
   onAddSubClick: (sid: number) => void;
   onToggleStrat: (s: string) => void;
@@ -26,7 +27,7 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
-export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead }: DashboardProps) {
+export default function Dashboard({ state, sections, userId, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -70,7 +71,7 @@ export default function Dashboard({ state, sections, onAddEvClick, onAddSubClick
 
   return (
     <div className="flex min-h-[calc(100vh-72px)]">
-      <Sidebar state={state} sections={sections} />
+      <Sidebar state={state} sections={sections} userId={userId} />
       <main className="flex-1 p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
         {/* HERO BANNER */}
         <div className="relative overflow-hidden rounded-[28px] py-10 px-6 sm:px-12 mb-8 bg-gradient-to-br from-[var(--em1)] via-[var(--em3)] to-[rgba(30,90,50,.8)] border border-[var(--em7)]/15 shadow-[inset_0_2px_0_rgba(82,196,120,.1),0_24px_64px_rgba(0,0,0,.5)]" style={{ animation: 'fadeUp .6s var(--sp) both' }}>

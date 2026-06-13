@@ -1,0 +1,411 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../supabaseClient';
+import type { EvidenceType } from '../hooks/useSupabaseEvidence';
+import type { useSupabaseEvidence as UseSupabaseEvidenceType } from '../hooks/useSupabaseEvidence';
+
+type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
+
+interface Indicator {
+  id: string;
+  name_ar: string;
+}
+
+interface EvidenceModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  sectionId: number;
+  sub: string;
+  userId: string | undefined;
+  supabaseEv: SupabaseEvidenceHook;
+  /** يحفظ في state.ev المحلي أيضاً للتوافق مع النظام القديم */
+  onAddEv: (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => void;
+  onToast: (msg: string, icon?: string) => void;
+}
+
+const TYPE_CONFIG: {
+  id: EvidenceType;
+  icon: string;
+  label: string;
+  color: string;
+  accept?: string;
+  hasFile: boolean;
+  hasLink: boolean;
+}[] = [
+  { id: 'file',  icon: 'ti-file-type-pdf', label: 'ملف',    color: '#f87171', accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx', hasFile: true,  hasLink: false },
+  { id: 'image', icon: 'ti-photo',          label: 'صورة',   color: '#93c5fd', accept: 'image/*',                                 hasFile: true,  hasLink: false },
+  { id: 'link',  icon: 'ti-link',           label: 'رابط',   color: '#4ade80', accept: undefined,                                 hasFile: false, hasLink: true  },
+  { id: 'note',  icon: 'ti-notes',          label: 'ملاحظة', color: '#c4b5fd', accept: undefined,                                 hasFile: false, hasLink: false },
+];
+
+const toLocalType = (t: EvidenceType): 'pdf' | 'img' | 'doc' | 'vid' => {
+  if (t === 'image') return 'img';
+  if (t === 'video') return 'vid';
+  if (t === 'file')  return 'pdf';
+  return 'doc';
+};
+
+export default function EvidenceModal({
+  isOpen, onClose, sectionId, sub, userId, supabaseEv, onAddEv, onToast,
+}: EvidenceModalProps) {
+  // ── Form state ──────────────────────────────────────────────
+  const [title,          setTitle]          = useState('');
+  const [indicatorId,    setIndicatorId]    = useState('');
+  const [evidenceType,   setEvidenceType]   = useState<EvidenceType>('file');
+  const [description,    setDescription]    = useState('');
+  const [impact,         setImpact]         = useState('');
+  const [contextGrade,   setContextGrade]   = useState('');
+  const [academicTerm,   setAcademicTerm]   = useState('');
+  const [selfReflection, setSelfReflection] = useState('');
+  const [linkUrl,        setLinkUrl]        = useState('');
+
+  // ── Upload state ─────────────────────────────────────────────
+  const [fileUrl,        setFileUrl]        = useState('');
+  const [fileName,       setFileName]       = useState('');
+  const [uploading,      setUploading]      = useState(false);
+  const [uploadSuccess,  setUploadSuccess]  = useState(false);
+
+  // ── Indicators ───────────────────────────────────────────────
+  const [indicators, setIndicators] = useState<Indicator[]>([]);
+
+  // ── Misc ─────────────────────────────────────────────────────
+  const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset form whenever modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    setTitle(''); setIndicatorId(''); setEvidenceType('file');
+    setDescription(''); setImpact(''); setContextGrade('');
+    setAcademicTerm(''); setSelfReflection(''); setLinkUrl('');
+    setFileUrl(''); setFileName(''); setUploadSuccess(false);
+  }, [isOpen]);
+
+  // Fetch indicators for this section
+  useEffect(() => {
+    if (!isOpen || !sectionId || !supabase) return;
+    supabase
+      .from('section_indicators')
+      .select('id, name_ar')
+      .eq('section_id', sectionId)
+      .order('weight' as any)
+      .then(({ data }) => setIndicators(data ?? []));
+  }, [isOpen, sectionId]);
+
+  const currentTypeConfig = TYPE_CONFIG.find(t => t.id === evidenceType)!;
+
+  // ── File upload ───────────────────────────────────────────────
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setUploading(true);
+    setUploadSuccess(false);
+    setFileUrl('');
+    try {
+      const ext      = file.name.split('.').pop();
+      const rand     = Math.random().toString(36).substring(2, 9);
+      const filePath = `${userId ?? 'guest'}/${Date.now()}_${rand}.${ext}`;
+
+      if (userId && supabase) {
+        const { error } = await supabase.storage
+          .from('evidence')
+          .upload(filePath, file, { cacheControl: '3600', upsert: false });
+        if (error) throw error;
+        const { data: urlData } = supabase.storage.from('evidence').getPublicUrl(filePath);
+        setFileUrl(urlData.publicUrl);
+      } else {
+        await new Promise(r => setTimeout(r, 1200));
+        setFileUrl(URL.createObjectURL(file));
+      }
+      setUploadSuccess(true);
+      onToast('تم رفع الملف بنجاح ☁️', '🚀');
+    } catch (err: any) {
+      const msg = /size/i.test(err?.message ?? '')
+        ? 'حجم الملف يتجاوز الحد المسموح (10 MB).'
+        : 'تعذّر رفع الملف، يرجى المحاولة مجدداً.';
+      onToast(msg, '❌');
+      setFileName('');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ── Save ──────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!title.trim()) { onToast('يرجى إدخال عنوان الشاهد', '⚠️'); return; }
+    if (currentTypeConfig.hasFile && !fileUrl) { onToast('يرجى رفع الملف أولاً', '⚠️'); return; }
+    if (currentTypeConfig.hasLink && !linkUrl.trim()) { onToast('يرجى إدخال الرابط', '⚠️'); return; }
+
+    setSaving(true);
+    try {
+      const result = await supabaseEv.addEvidence({
+        section_id:      sectionId,
+        indicator_id:    indicatorId  || undefined,
+        title:           title.trim(),
+        description:     description.trim()    || undefined,
+        impact:          impact.trim()         || undefined,
+        context_grade:   contextGrade.trim()   || undefined,
+        academic_term:   academicTerm          || undefined,
+        evidence_type:   evidenceType,
+        file_url:        fileUrl               || undefined,
+        link_url:        linkUrl.trim()        || undefined,
+        self_reflection: selfReflection.trim() || undefined,
+      });
+
+      if (result) {
+        // أيضاً احفظ في state.ev المحلي
+        const url = fileUrl || linkUrl.trim() || undefined;
+        onAddEv(sectionId, sub, toLocalType(evidenceType), title.trim(), url);
+        onToast('تم إضافة الشاهد بنجاح ✅', '✅');
+        onClose();
+      } else {
+        onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', '❌');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const inputCls = 'w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-xl text-[13.5px] font-[var(--font)] text-white outline-none transition-all duration-200 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_3px_rgba(42,122,68,.12)]';
+  const labelCls = 'text-[11.5px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5 flex items-center gap-1.5';
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/75 backdrop-blur-md z-[500] flex items-center justify-center p-4"
+      style={{ animation: 'fadeIn .2s both' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[28px] w-full max-w-2xl border border-[var(--em7)]/15 shadow-[0_40px_100px_rgba(0,0,0,.8),inset_0_0_0_1px_rgba(82,196,120,.08)] relative overflow-hidden flex flex-col max-h-[90vh]"
+        style={{ animation: 'scaleIn .35s var(--sp) both' }}
+      >
+        {/* Top accent line */}
+        <div className="absolute top-0 right-[10%] left-[10%] h-[1.5px] bg-gradient-to-r from-transparent via-[var(--em7)] to-transparent" />
+
+        {/* ── Header ── */}
+        <div className="flex items-center gap-4 px-7 pt-7 pb-5 border-b border-[var(--line)] shrink-0">
+          <div className="w-[48px] h-[48px] rounded-2xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[22px] border border-[var(--em7)]/20 shadow-[0_4px_16px_rgba(42,122,68,.3)]">
+            <i className="ti ti-paperclip" />
+          </div>
+          <div className="flex-1">
+            <div className="text-[18px] font-black text-white">إضافة شاهد جديد</div>
+            <div className="text-[12px] text-[var(--text4)] mt-0.5">{sub.startsWith('strat:') ? `استراتيجية: ${sub.replace('strat:', '')}` : sub}</div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
+          >
+            <i className="ti ti-x" />
+          </button>
+        </div>
+
+        {/* ── Body (scrollable) ── */}
+        <div className="overflow-y-auto flex-1 px-7 py-6 space-y-5">
+
+          {/* العنوان */}
+          <div>
+            <div className={labelCls}><i className="ti ti-text-size text-[var(--em7)]" /> عنوان الشاهد <span className="text-red-400">*</span></div>
+            <input
+              type="text"
+              className={inputCls}
+              placeholder="مثال: تقرير نتائج الاختبار التكويني"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          {/* المؤشر الفرعي */}
+          {indicators.length > 0 && (
+            <div>
+              <div className={labelCls}><i className="ti ti-list-check text-[var(--em7)]" /> المؤشر الفرعي</div>
+              <select
+                className={inputCls + ' cursor-pointer'}
+                value={indicatorId}
+                onChange={e => setIndicatorId(e.target.value)}
+              >
+                <option value="">— اختر المؤشر (اختياري) —</option>
+                {indicators.map(ind => (
+                  <option key={ind.id} value={ind.id}>{ind.name_ar}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* نوع الشاهد */}
+          <div>
+            <div className={labelCls}><i className="ti ti-category text-[var(--em7)]" /> نوع الشاهد <span className="text-red-400">*</span></div>
+            <div className="grid grid-cols-4 gap-2">
+              {TYPE_CONFIG.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => { setEvidenceType(t.id); setFileUrl(''); setFileName(''); setUploadSuccess(false); setLinkUrl(''); }}
+                  className="flex flex-col items-center gap-2 py-3.5 px-2 rounded-2xl border-[1.5px] text-[12px] font-bold transition-all duration-250 hover:-translate-y-0.5 cursor-pointer font-[var(--font)]"
+                  style={evidenceType === t.id
+                    ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}18` }
+                    : { borderColor: 'rgba(255,255,255,.08)', color: 'var(--text3)', backgroundColor: 'rgba(255,255,255,.03)' }
+                  }
+                >
+                  <i className={`ti ${t.icon} text-[22px]`} />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* رفع الملف */}
+          {currentTypeConfig.hasFile && (
+            <div>
+              <div className={labelCls}><i className="ti ti-cloud-upload text-[var(--em7)]" /> الملف</div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept={currentTypeConfig.accept}
+                onChange={handleFileChange}
+              />
+              <div
+                onClick={() => !uploading && fileInputRef.current?.click()}
+                className={`border-[1.5px] border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all duration-250 relative overflow-hidden group ${
+                  uploadSuccess ? 'border-[var(--em8)]/40 bg-[var(--em7)]/5'
+                  : uploading    ? 'border-[var(--em7)]/20 opacity-80 cursor-wait'
+                  :                'border-white/10 hover:border-[var(--em7)]/30 hover:bg-white/3'
+                }`}
+              >
+                {uploading ? (
+                  <div className="flex flex-col items-center py-1">
+                    <i className="ti ti-loader animate-spin text-[32px] text-[var(--em8)] mb-2" />
+                    <p className="text-[13px] text-white font-bold animate-pulse">جاري الرفع...</p>
+                    <span className="text-[11px] text-[var(--text4)] mt-1" dir="ltr" style={{unicodeBidi:'isolate'}}>{fileName}</span>
+                  </div>
+                ) : uploadSuccess ? (
+                  <div className="flex flex-col items-center py-1">
+                    <i className="ti ti-cloud-check text-[32px] text-[var(--em8)] mb-2" />
+                    <p className="text-[13px] text-[var(--em8)] font-black">تم الرفع بنجاح ☁️</p>
+                    <span className="text-[11.5px] text-white mt-1.5 font-semibold" dir="ltr" style={{unicodeBidi:'isolate'}}>{fileName}</span>
+                    <span className="text-[10.5px] text-[var(--text4)] mt-1">انقر لاستبدال الملف</span>
+                  </div>
+                ) : (
+                  <div className="py-1">
+                    <i className="ti ti-cloud-upload text-[32px] text-[var(--em6)] mb-2 block transition-transform duration-300 group-hover:-translate-y-1" />
+                    <p className="text-[13px] text-[var(--text3)] font-semibold">انقر لاختيار الملف</p>
+                    <span className="text-[11px] text-[var(--text4)] mt-0.5 block">PDF · DOC · JPG · PNG · MP4</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* رابط خارجي */}
+          {currentTypeConfig.hasLink && (
+            <div>
+              <div className={labelCls}><i className="ti ti-link text-[var(--em7)]" /> الرابط <span className="text-red-400">*</span></div>
+              <input
+                type="url"
+                className={inputCls}
+                placeholder="https://..."
+                value={linkUrl}
+                onChange={e => setLinkUrl(e.target.value)}
+                dir="ltr"
+                style={{ unicodeBidi: 'isolate' }}
+              />
+            </div>
+          )}
+
+          {/* ── الحقول الاختيارية ── */}
+          <div className="border-t border-[var(--line)] pt-4">
+            <div className="text-[11px] font-extrabold text-[var(--text4)] tracking-widest uppercase mb-4">حقول اختيارية</div>
+            <div className="space-y-4">
+
+              {/* الوصف */}
+              <div>
+                <div className={labelCls}><i className="ti ti-align-right text-[var(--em7)]" /> وصف الشاهد</div>
+                <textarea
+                  className={inputCls + ' resize-none'}
+                  rows={2}
+                  placeholder="صف ما يُثبته هذا الشاهد..."
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                />
+              </div>
+
+              {/* الأثر */}
+              <div>
+                <div className={labelCls}><i className="ti ti-chart-bar text-[var(--em7)]" /> الأثر والنتيجة</div>
+                <textarea
+                  className={inputCls + ' resize-none'}
+                  rows={2}
+                  placeholder="ما الأثر الذي أحدثه هذا العمل على الطلاب أو البيئة التعليمية؟"
+                  value={impact}
+                  onChange={e => setImpact(e.target.value)}
+                />
+              </div>
+
+              {/* الصف + الفصل */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className={labelCls}><i className="ti ti-school text-[var(--em7)]" /> الصف الدراسي</div>
+                  <input
+                    type="text"
+                    className={inputCls}
+                    placeholder="مثال: الثالث متوسط"
+                    value={contextGrade}
+                    onChange={e => setContextGrade(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <div className={labelCls}><i className="ti ti-calendar text-[var(--em7)]" /> الفصل الدراسي</div>
+                  <select
+                    className={inputCls + ' cursor-pointer'}
+                    value={academicTerm}
+                    onChange={e => setAcademicTerm(e.target.value)}
+                  >
+                    <option value="">— اختر —</option>
+                    <option value="الأول">الفصل الأول</option>
+                    <option value="الثاني">الفصل الثاني</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* التأمل الذاتي */}
+              <div>
+                <div className={labelCls}><i className="ti ti-heart text-[var(--em7)]" /> تأمل ذاتي</div>
+                <textarea
+                  className={inputCls + ' resize-none'}
+                  rows={2}
+                  placeholder="ما الذي تعلمته من هذه التجربة؟ وكيف ستحسّن ممارستك مستقبلاً؟"
+                  value={selfReflection}
+                  onChange={e => setSelfReflection(e.target.value)}
+                />
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        {/* ── Footer ── */}
+        <div className="flex items-center justify-end gap-3 px-7 py-5 border-t border-[var(--line)] shrink-0">
+          <button
+            onClick={onClose}
+            className="py-2.5 px-6 rounded-xl border border-[var(--line2)] bg-transparent text-[13.5px] font-bold text-[var(--text3)] hover:text-white hover:bg-white/5 transition-all duration-200 font-[var(--font)] cursor-pointer"
+          >
+            إلغاء
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 py-2.5 px-7 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[13.5px] font-extrabold shadow-[0_6px_20px_rgba(42,122,68,.45)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(42,122,68,.6)] transition-all duration-250 disabled:opacity-60 disabled:cursor-not-allowed font-[var(--font)] cursor-pointer"
+          >
+            {saving
+              ? <><i className="ti ti-loader animate-spin" /> جاري الحفظ...</>
+              : <><i className="ti ti-check" /> حفظ الشاهد</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

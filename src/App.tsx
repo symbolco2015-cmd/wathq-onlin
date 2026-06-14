@@ -15,6 +15,7 @@ import EvidenceModal from './components/EvidenceModal';
 import { SECS } from './data';
 import { calculateEvaluation } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
+import { useMonthlyProgress } from './hooks/useMonthlyProgress';
 
 const SECS_REMOVED = true;
 
@@ -43,7 +44,8 @@ export default function App() {
     updateProfile, 
     signOut,
     announcements,
-    markAnnouncementAsRead
+    markAnnouncementAsRead,
+    updateYearStartMonth,
   } = useAppStore();
 
   const {
@@ -62,6 +64,17 @@ export default function App() {
   } = useAdminStore(isAdmin);
 
   const supabaseEv = useSupabaseEvidence(user?.id ?? null);
+
+  const monthlyProgress = useMonthlyProgress({
+    userId: user?.id ?? null,
+    yearStartMonth: state.yearStartMonth ?? 9,
+  });
+
+  // wrapper: يسجّل في monthly_progress عند كل إضافة شاهد
+  const handleAddEv = (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => {
+    addEv(sid, sub, type, name, url);
+    monthlyProgress.recordEvidence(sid);
+  };
 
   const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string }>({
     open: false, sectionId: 0, sub: '',
@@ -208,13 +221,22 @@ export default function App() {
     });
   };
 
+  const ARABIC_MONTHS_LIST = [
+    { v: 1, l: 'يناير' }, { v: 2, l: 'فبراير' }, { v: 3, l: 'مارس' },
+    { v: 4, l: 'أبريل' }, { v: 5, l: 'مايو'   }, { v: 6, l: 'يونيو' },
+    { v: 7, l: 'يوليو' }, { v: 8, l: 'أغسطس'  }, { v: 9, l: 'سبتمبر' },
+    { v: 10, l: 'أكتوبر' }, { v: 11, l: 'نوفمبر' }, { v: 12, l: 'ديسمبر' },
+  ];
+
   const openProfileSettings = () => {
     let p = { ...state.profile };
+    let yearStart = state.yearStartMonth ?? 9;
     
     const Body = () => {
       const [localP, setLocalP] = useState(p);
       const [isProcessing, setIsProcessing] = useState(false);
       const [originalAvatar, setOriginalAvatar] = useState<string | null>(null);
+      const [localYearStart, setLocalYearStart] = useState(yearStart);
 
       const handleUpdate = (field: string, value: any) => {
         const next = { ...localP, [field]: value };
@@ -351,7 +373,26 @@ export default function App() {
             <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">قناة YouTube</div>
             <input type="text" value={localP.youtube} onChange={e => handleUpdate('youtube', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="https://youtube.com/@..." />
           </div>
-          
+
+          <div className="border-t border-[var(--line2)] pt-5 mt-2">
+            <div className="text-[12.5px] font-bold text-[var(--em8)] mb-3 flex items-center gap-2">
+              <i className="ti ti-calendar-stats text-[15px]" /> إعدادات السنة الدراسية
+            </div>
+            <div>
+              <div className="text-[12px] font-bold text-[var(--text3)] mb-2">شهر بداية السنة الدراسية</div>
+              <select
+                value={localYearStart}
+                onChange={e => { const v = Number(e.target.value); setLocalYearStart(v); yearStart = v; }}
+                className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer"
+              >
+                {ARABIC_MONTHS_LIST.map(m => (
+                  <option key={m.v} value={m.v}>{m.l}</option>
+                ))}
+              </select>
+              <div className="text-[11px] text-[var(--text4)] mt-1.5">يُستخدم لحساب المعدل الشهري ونسب الإنجاز السنوي</div>
+            </div>
+          </div>
+
           {user && (
             <div className="border-t border-red-500/20 pt-5 mt-4">
               <button 
@@ -380,6 +421,7 @@ export default function App() {
       body: <Body />,
       onConfirm: () => {
         updateProfile(p);
+        updateYearStartMonth(yearStart);
         showToast('تم تحديث الحساب بنجاح ✨', '✨');
         closeModal();
       }
@@ -595,6 +637,7 @@ export default function App() {
             announcements={announcements}
             onMarkAsRead={markAnnouncementAsRead}
             supabaseEv={supabaseEv}
+            monthlyProgress={monthlyProgress}
           />
         )}
         
@@ -629,7 +672,7 @@ export default function App() {
         sub={evidenceModal.sub}
         userId={user?.id}
         supabaseEv={supabaseEv}
-        onAddEv={addEv}
+        onAddEv={handleAddEv}
         onToast={showToast}
       />
 

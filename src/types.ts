@@ -47,5 +47,6 @@ export interface AppState {
   notes: Record<string, string>;
   profile: UserProfile;
   readAnnouncements?: string[];
+  yearStartMonth?: number; // 1–12، الافتراضي 9 (سبتمبر)
 }
 

@@ -29,7 +29,8 @@ const defaultState: AppState = {
   csubs: {},
   notes: {},
   profile: defaultProfile,
-  readAnnouncements: []
+  readAnnouncements: [],
+  yearStartMonth: 9,
 };
 
 
@@ -301,6 +302,10 @@ export function useAppStore() {
   // Called once the user has finished setting a new password via the recovery flow
   const clearPasswordRecovery = () => setPasswordRecovery(false);
 
+  const updateYearStartMonth = (month: number) => {
+    saveState({ ...state, yearStartMonth: month });
+  };
+
   const markAnnouncementAsRead = (id: string) => {
     const read = state.readAnnouncements || [];
     if (!read.includes(id)) {
@@ -330,7 +335,8 @@ export function useAppStore() {
     signOut,
     announcements,
     markAnnouncementAsRead,
-    fetchAnnouncements
+    fetchAnnouncements,
+    updateYearStartMonth
   };
 }
 

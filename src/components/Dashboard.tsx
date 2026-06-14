@@ -6,6 +6,17 @@ import EvidenceList from './EvidenceList';
 import { calculateEvaluation } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
 
+export interface MonthlyProgressData {
+  currentMonthTotal: number;
+  currentMonthName: string;
+  currentYear: number;
+  monthlyAvg: number;
+  yearTotal: number;
+  monthsElapsed: number;
+  getSectionMonthCount: (sectionId: number) => number;
+  getSectionYearTotal: (sectionId: number) => number;
+}
+
 interface SupabaseEvHook {
   getBySection: (sectionId: number) => SupabaseEvidence[];
   deleteEvidence: (id: string) => Promise<void>;
@@ -26,6 +37,7 @@ interface DashboardProps {
   onDelSub: (sid: number, subName: string) => void;
   announcements?: Announcement[];
   onMarkAsRead?: (id: string) => void;
+  monthlyProgress?: MonthlyProgressData;
 }
 
 const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
@@ -35,7 +47,7 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, monthlyProgress }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -193,6 +205,68 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               >
                 <i className="ti ti-plus text-[15px]" /> أضف شاهداً الآن
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* MONTHLY PROGRESS CARDS */}
+        {monthlyProgress && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5" style={{ animation: 'fadeUp .5s var(--sp) both 0.08s' }}>
+
+            {/* البطاقة 1 — عداد الشهر الحالي */}
+            {(() => {
+              const total = monthlyProgress.currentMonthTotal;
+              const goal  = 33; // 11 بند × 3
+              const pct   = Math.min(100, Math.round((total / goal) * 100));
+              const msg   =
+                total === 0  ? 'لم تبدأ بعد هذا الشهر' :
+                total <= 10  ? 'بداية جيدة، واصل' :
+                total <= 22  ? 'أنت في المنتصف' :
+                total <= 32  ? 'اقتربت من الهدف' :
+                               '✓ أكملت هدف الشهر';
+              const barColor =
+                pct >= 80 ? 'linear-gradient(90deg,var(--em5),var(--em8))' :
+                pct >= 40 ? 'linear-gradient(90deg,#b45309,#fbbf24)' :
+                            'linear-gradient(90deg,#9f1239,#f87171)';
+              return (
+                <div className="rounded-[22px] p-5 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] relative overflow-hidden">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_0%_0%,rgba(82,196,120,.04),transparent_70%)]" />
+                  <div className="relative z-10 flex items-start justify-between mb-3.5">
+                    <div>
+                      <div className="text-[10.5px] font-extrabold text-[var(--text4)] tracking-widest uppercase mb-0.5">عداد الشهر الحالي</div>
+                      <div className="text-[14px] font-extrabold text-white">{monthlyProgress.currentMonthName} {monthlyProgress.currentYear}</div>
+                    </div>
+                    <div className="text-left shrink-0">
+                      <div className="text-[30px] font-black text-[var(--em8)] leading-none font-[var(--font)]">{total}</div>
+                      <div className="text-[10.5px] text-[var(--text4)] mt-0.5 text-right">من {goal} شاهداً</div>
+                    </div>
+                  </div>
+                  <div className="relative z-10 h-2 bg-white/8 rounded-full overflow-hidden mb-2.5">
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: barColor }} />
+                  </div>
+                  <div className="relative z-10 flex items-center justify-between">
+                    <span className="text-[12px] text-[var(--text3)]">{msg}</span>
+                    <span className="text-[11px] font-extrabold text-[var(--text4)]">{pct}%</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* البطاقة 2 — المعدل الشهري */}
+            <div className="rounded-[22px] p-5 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] relative overflow-hidden">
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_100%_0%,rgba(201,162,39,.04),transparent_70%)]" />
+              <div className="relative z-10">
+                <div className="text-[10.5px] font-extrabold text-[var(--text4)] tracking-widest uppercase mb-3">المعدل الشهري</div>
+                <div className="flex items-end gap-2 mb-3">
+                  <div className="text-[38px] font-black text-white leading-none font-[var(--font)]">{monthlyProgress.monthlyAvg}</div>
+                  <div className="text-[14px] font-bold text-[var(--text3)] mb-1">شاهد / شهر</div>
+                </div>
+                <div className="text-[12px] text-[var(--text4)] leading-relaxed">
+                  إجمالي <span className="text-white font-bold">{monthlyProgress.yearTotal}</span> شاهد
+                  خلال <span className="text-white font-bold">{monthlyProgress.monthsElapsed}</span>{' '}
+                  {monthlyProgress.monthsElapsed === 1 ? 'شهر' : 'أشهر'} من بداية السنة
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -408,6 +482,23 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                    <div className="flex-1 min-w-0">
                      <div className="text-[16px] font-extrabold text-white font-[var(--font)]">{sec.ttl}</div>
                      <div className="text-[12px] text-[var(--text4)] mt-0.5">{totalSubs} قسم فرعي{secTotalEvs ? ` · ${secTotalEvs} دليل` : ''}</div>
+                     {monthlyProgress && (
+                       <div className="flex items-center gap-3 mt-1.5">
+                         <span className="text-[10.5px] text-[var(--text4)] flex items-center gap-1">
+                           <i className="ti ti-calendar text-[10px]" />
+                           {monthlyProgress.currentMonthName}:{' '}
+                           <span className={monthlyProgress.getSectionMonthCount(sec.id) > 0 ? 'text-[var(--em8)] font-bold' : ''}>
+                             {monthlyProgress.getSectionMonthCount(sec.id)}
+                           </span>
+                           {' '}/ 3 شواهد
+                         </span>
+                         <span className="text-[var(--text4)] opacity-40">·</span>
+                         <span className="text-[10.5px] text-[var(--text4)] flex items-center gap-1">
+                           <i className="ti ti-trending-up text-[10px]" />
+                           {monthlyProgress.getSectionYearTotal(sec.id)} شاهد هذا العام
+                         </span>
+                       </div>
+                     )}
                      {/* شريط التقدم الحقيقي */}
                      <div className="mt-2.5 flex items-center gap-2">
                        <div className="flex-1 h-[5px] rounded-full bg-white/8 overflow-hidden">

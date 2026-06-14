@@ -29,9 +29,9 @@ body{
   font-size:15px;overflow-x:hidden;min-height:100vh;
 }
 ::selection{background:rgba(82,196,120,.25);color:var(--em8)}
-::-webkit-scrollbar{width:4px}
-::-webkit-scrollbar-track{background:var(--surf1)}
-::-webkit-scrollbar-thumb{background:var(--em5);border-radius:99px}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#374151;border-radius:3px}
 
 /*──────────────────────────────────────────────
   KEYFRAMES

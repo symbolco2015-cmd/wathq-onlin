@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import type { AppState, SectionData, Announcement } from '../types';
+import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import Sidebar from './Sidebar';
+import EvidenceList from './EvidenceList';
 import { calculateEvaluation } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
+
+interface SupabaseEvHook {
+  getBySection: (sectionId: number) => SupabaseEvidence[];
+  deleteEvidence: (id: string) => Promise<void>;
+  loading: boolean;
+}
 
 interface DashboardProps {
   state: AppState;
   sections: SectionData[];
-  userId?: string;
+  supabaseEv?: SupabaseEvHook;
   onAddEvClick: (sid: number, sub: string) => void;
   onAddSubClick: (sid: number) => void;
   onToggleStrat: (s: string) => void;
@@ -27,7 +35,7 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
-export default function Dashboard({ state, sections, userId, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -38,6 +46,29 @@ export default function Dashboard({ state, sections, userId, onAddEvClick, onAdd
     sections,
     csubs: state.csubs,
   });
+
+  // متوسط نسب الاكتمال عبر جميع الأقسام الـ 11
+  const overallPct = evStats.bySections.length > 0
+    ? Math.round(
+        evStats.bySections.reduce((sum, s) => sum + s.completionPct, 0) / evStats.bySections.length
+      )
+    : 0;
+
+  // البند الأقل اكتمالاً — الخطوة التالية
+  const incompleteSections = evStats.bySections.filter(s => s.completionPct < 100);
+  const nextSectionStat = incompleteSections.length > 0
+    ? incompleteSections.reduce((min, s) => s.completionPct < min.completionPct ? s : min)
+    : null;
+  const nextSectionData = nextSectionStat
+    ? sections.find(s => s.id === nextSectionStat.sectionId) ?? null
+    : null;
+
+  // رسالة تشجيعية حسب نسبة الجاهزية
+  const readinessMsg =
+    overallPct === 100 ? 'أحسنت! ملفك مكتمل' :
+    overallPct >= 71   ? 'اقتربت من الهدف، لا تتوقف الآن' :
+    overallPct >= 31   ? 'أنت في المنتصف، واصل الإنجاز' :
+                          'ابدأ رحلتك، كل شاهد يقربك من الاكتمال';
 
   const handleOpenAnnouncementModal = (ann: Announcement) => {
     setActiveAnn(ann);
@@ -64,6 +95,15 @@ export default function Dashboard({ state, sections, userId, onAddEvClick, onAdd
       })
     : sections;
 
+  // الأقسام مرتبة: الأقل اكتمالاً أولاً (بدون إعادة ترتيب عند البحث)
+  const sortedFilteredSections = searchQuery.trim()
+    ? filteredSections
+    : [...filteredSections].sort((a, b) => {
+        const pctA = getSectionStat(a.id)?.completionPct ?? 0;
+        const pctB = getSectionStat(b.id)?.completionPct ?? 0;
+        return pctA - pctB;
+      });
+
   const stats = calculateEvaluation(state, sections);
   // استخدام القيم الحقيقية من useEvidenceStore
   const totalEvs = evStats.total;
@@ -71,7 +111,13 @@ export default function Dashboard({ state, sections, userId, onAddEvClick, onAdd
 
   return (
     <div className="flex min-h-[calc(100vh-72px)]">
-      <Sidebar state={state} sections={sections} userId={userId} />
+      <Sidebar
+        state={state}
+        sections={sections}
+        sectionStats={evStats.bySections}
+        filledCount={evStats.filledSectionCount}
+        overallPct={overallPct}
+      />
       <main className="flex-1 p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
         {/* HERO BANNER */}
         <div className="relative overflow-hidden rounded-[28px] py-10 px-6 sm:px-12 mb-8 bg-gradient-to-br from-[var(--em1)] via-[var(--em3)] to-[rgba(30,90,50,.8)] border border-[var(--em7)]/15 shadow-[inset_0_2px_0_rgba(82,196,120,.1),0_24px_64px_rgba(0,0,0,.5)]" style={{ animation: 'fadeUp .6s var(--sp) both' }}>
@@ -110,6 +156,96 @@ export default function Dashboard({ state, sections, userId, onAddEvClick, onAdd
                   <div className="text-[22px] font-black">{filledSecs}</div>
                   <div className="text-[11px] text-[var(--text3)] mt-0.5">أقسام</div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* NEXT STEP CARD */}
+        {nextSectionData && nextSectionStat && (
+          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-amber-500/25 bg-gradient-to-br from-amber-950/40 via-amber-900/20 to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .55s var(--sp) both 0.05s' }}>
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_100%_at_0%_50%,rgba(251,191,36,.06),transparent_70%)]" />
+            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                <div className="w-12 h-12 rounded-xl shrink-0 bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-[22px] text-amber-400">
+                  <i className={`ti ${nextSectionData.icon}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-amber-400/80 tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
+                    <i className="ti ti-arrow-right text-[12px]" /> الخطوة التالية
+                  </div>
+                  <div className="text-[15px] font-extrabold text-white truncate leading-snug">{nextSectionData.ttl}</div>
+                  <div className="flex items-center gap-2.5 mt-1.5">
+                    <div className="h-1.5 w-28 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-700"
+                        style={{ width: `${nextSectionStat.completionPct}%` }}
+                      />
+                    </div>
+                    <span className="text-[11.5px] font-bold text-amber-400">{nextSectionStat.completionPct}% مكتمل</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => onAddEvClick(nextSectionData.id, nextSectionData.subs[0] ?? 'عام')}
+                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-amber-500 to-amber-600 text-white border border-amber-400/20 hover:from-amber-400 hover:to-amber-500 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(251,191,36,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
+              >
+                <i className="ti ti-plus text-[15px]" /> أضف شاهداً الآن
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* OVERALL READINESS BAR */}
+        <div className="mb-8 rounded-[22px] p-5 sm:p-6 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] relative overflow-hidden" style={{ animation: 'fadeUp .6s var(--sp) both 0.1s' }}>
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_80%_at_100%_50%,rgba(82,196,120,.04),transparent_60%)]" />
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline justify-between mb-3">
+                <span className="text-[13.5px] font-bold text-[var(--text3)]">جاهزية ملف الإنجاز</span>
+                <span className="text-[34px] font-black text-white font-[var(--font)] leading-none">
+                  {overallPct}<span className="text-[18px] text-[var(--text4)] font-bold">%</span>
+                </span>
+              </div>
+              <div className="h-3 bg-white/8 rounded-full overflow-hidden mb-3">
+                <div
+                  className="h-full rounded-full relative overflow-hidden"
+                  style={{
+                    width: `${overallPct}%`,
+                    transition: 'width 1200ms cubic-bezier(.16,1,.3,1)',
+                    background:
+                      overallPct >= 71 ? 'linear-gradient(90deg, var(--em5), var(--em7), var(--em8))' :
+                      overallPct >= 31 ? 'linear-gradient(90deg, #b45309, #d97706, #fbbf24)' :
+                                         'linear-gradient(90deg, #9f1239, #dc2626, #f87171)',
+                    boxShadow:
+                      overallPct >= 71 ? '0 0 12px rgba(82,196,120,.45)' :
+                      overallPct >= 31 ? '0 0 12px rgba(217,119,6,.35)' : 'none',
+                  }}
+                >
+                  <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)] bg-[length:200%_auto]" style={{ animation: 'goldShimmer 2.5s linear infinite' }} />
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <i className={`ti text-[15px] ${
+                  overallPct === 100 ? 'ti-star-filled text-[var(--gold)]' :
+                  overallPct >= 71   ? 'ti-flame text-[var(--em8)]' :
+                  overallPct >= 31   ? 'ti-trending-up text-amber-400' :
+                                       'ti-seeding text-[var(--em7)]'
+                }`} />
+                <span className="text-[12.5px] font-semibold text-[var(--text3)]">{readinessMsg}</span>
+              </div>
+            </div>
+            <div className="flex sm:flex-col gap-5 sm:gap-3 shrink-0 sm:border-r sm:border-[var(--line)] sm:pr-6">
+              <div className="sm:text-center">
+                <div className="text-[11px] font-bold text-[var(--text4)] mb-0.5">أقسام مكتملة</div>
+                <div className="text-[24px] font-black text-[var(--em8)] font-[var(--font)] leading-none">
+                  {filledSecs}<span className="text-[14px] text-[var(--text4)] font-semibold"> / {sections.length}</span>
+                </div>
+              </div>
+              <div className="sm:text-center">
+                <div className="text-[11px] font-bold text-[var(--text4)] mb-0.5">إجمالي الأدلة</div>
+                <div className="text-[24px] font-black text-white font-[var(--font)] leading-none">{totalEvs}</div>
               </div>
             </div>
           </div>
@@ -245,7 +381,7 @@ export default function Dashboard({ state, sections, userId, onAddEvClick, onAdd
 
         {/* SECTIONS */}
         <div className="flex flex-col gap-3.5">
-          {filteredSections.map((sec, i) => {
+          {sortedFilteredSections.map((sec, i) => {
             const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
             const secTotalEvs = allSubs.reduce((acc, sub) => acc + (state.ev[`${sec.id}|${sub}`] || []).length, 0);
             const isOpen = !!openSecs[sec.id];
@@ -255,8 +391,13 @@ export default function Dashboard({ state, sections, userId, onAddEvClick, onAdd
             const filledSubs = secStat?.filledSubs ?? 0;
             const totalSubs = secStat?.totalSubs ?? allSubs.length;
 
+            const borderColor =
+              completionPct > 70  ? '#22c55e' :
+              completionPct >= 35 ? '#f59e0b' :
+                                    '#ef4444';
+
             return (
-              <div key={sec.id} id={`sc-${sec.id}`} className="bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', animation: `fadeUp .45s var(--sp) both ${i * 0.04}s` }}>
+              <div key={sec.id} id={`sc-${sec.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', animation: `fadeUp .45s var(--sp) both ${i * 0.04}s`, borderRight: `4px solid ${borderColor}` }}>
                 <div className="flex items-center gap-4 py-5 px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => toggleSec(sec.id)}>
                    <div className="absolute bottom-0 right-6 left-6 h-px bg-gradient-to-r from-transparent via-[var(--em7)]/15 to-transparent opacity-0 transition-opacity duration-250 group-hover:opacity-100"></div>
                    
@@ -473,6 +614,36 @@ export default function Dashboard({ state, sections, userId, onAddEvClick, onAdd
                       <i className="ti ti-folder-plus text-[18px] transition-transform duration-300 group-hover:rotate-90"></i> إضافة قسم فرعي جديد
                     </button>
                   </div>
+
+                  {/* ── قائمة الشواهد من Supabase ── */}
+                  {supabaseEv && (
+                    <div className="px-6 pb-6 border-t border-[var(--line)] pt-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2 text-[12px] font-extrabold text-[var(--text3)] tracking-wide uppercase">
+                          <i className="ti ti-files text-[16px] text-[var(--em7)]" />
+                          الشواهد الموثّقة
+                          {supabaseEv.getBySection(sec.id).length > 0 && (
+                            <span className="text-[10px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-full border border-[var(--em7)]/20">
+                              {supabaseEv.getBySection(sec.id).length}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => onAddEvClick(sec.id, sec.subs[0] ?? 'عام')}
+                          className="inline-flex items-center gap-1.5 py-1.5 px-3.5 rounded-lg text-[12px] font-bold bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all cursor-pointer font-[var(--font)]"
+                        >
+                          <i className="ti ti-plus text-[13px]" /> إضافة شاهد
+                        </button>
+                      </div>
+                      <EvidenceList
+                        sectionId={sec.id}
+                        evidence={supabaseEv.getBySection(sec.id)}
+                        loading={supabaseEv.loading}
+                        onDelete={supabaseEv.deleteEvidence}
+                        onAddClick={() => onAddEvClick(sec.id, sec.subs[0] ?? 'عام')}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             );

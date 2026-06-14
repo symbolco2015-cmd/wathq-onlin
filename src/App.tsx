@@ -594,7 +594,7 @@ export default function App() {
             onDelSub={delSub}
             announcements={announcements}
             onMarkAsRead={markAnnouncementAsRead}
-            userId={user?.id}
+            supabaseEv={supabaseEv}
           />
         )}
         

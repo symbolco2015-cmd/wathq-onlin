@@ -1,27 +1,36 @@
-import React from 'react';
 import type { AppState } from '../types';
-import { calculateEvaluation, getCompletionColor } from '../utils';
-import { useSupabaseEvidence } from '../hooks/useSupabaseEvidence';
+import type { SectionEvidenceStat } from '../hooks/useEvidenceStore';
+import { getCompletionColor } from '../utils';
+
+function getBorderColor(pct: number): string {
+  if (pct > 70) return '#22c55e';
+  if (pct >= 35) return '#f59e0b';
+  return '#ef4444';
+}
+
+interface StatusBadge {
+  label: string;
+  bg: string;
+  text: string;
+}
+
+function getStatusBadge(pct: number): StatusBadge {
+  if (pct === 0)   return { label: 'لم يبدأ',        bg: 'rgba(255,255,255,.06)', text: '#6b7280' };
+  if (pct <= 34)   return { label: 'يحتاج اهتماماً', bg: 'rgba(216,90,48,.15)',  text: '#f87171' };
+  if (pct <= 70)   return { label: 'قيد التقدم',     bg: 'rgba(186,117,23,.15)', text: '#fbbf24' };
+  if (pct <= 99)   return { label: 'شبه مكتمل',      bg: 'rgba(29,158,117,.15)', text: '#6ee7b7' };
+  return             { label: '✓ مكتمل',             bg: 'rgba(29,158,117,.22)', text: '#34d399' };
+}
 
 interface SidebarProps {
   state: AppState;
   sections: any[];
-  userId?: string;
+  sectionStats: SectionEvidenceStat[];
+  filledCount: number;
+  overallPct: number;
 }
 
-export default function Sidebar({ state, sections, userId }: SidebarProps) {
-  const stats = calculateEvaluation(state, sections);
-  const supabaseEv = useSupabaseEvidence(userId ?? null);
-
-  // استخدم Supabase إذا متاح، وإلا ارجع للبيانات المحلية
-  const hasSupabaseData = supabaseEv.completion.length > 0;
-  const filledCount = hasSupabaseData
-    ? supabaseEv.completion.filter(c => c.completion_pct > 0).length
-    : stats.filledSecs;
-  const pct = hasSupabaseData
-    ? supabaseEv.overallPct
-    : Math.round((filledCount / sections.length) * 100);
-
+export default function Sidebar({ state, sections, sectionStats, filledCount, overallPct }: SidebarProps) {
   const scrollToSection = (id: number) => {
     document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -44,11 +53,11 @@ export default function Sidebar({ state, sections, userId }: SidebarProps) {
         <div className="absolute inset-0 z-0 opacity-10" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='40' height='40' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='20' cy='20' r='1' fill='white'/%3E%3C/svg%3E\")" }}></div>
         <div className="relative z-10 flex justify-between items-baseline mb-2">
           <span className="text-[11.5px] text-white/70 tracking-wide uppercase">التقدم العام</span>
-          <span className="text-[28px] font-black text-white font-[var(--font)]">{pct}%</span>
+          <span className="text-[28px] font-black text-white font-[var(--font)]">{overallPct}%</span>
         </div>
         <div className="relative z-10 text-[12px] text-white/50 mb-2.5">المكتمل: {filledCount} من {sections.length}</div>
         <div className="relative z-10 h-[5px] bg-white/15 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-[var(--em8)] to-white/90 rounded-full transition-all duration-[1400ms] ease-out relative" style={{ width: `${pct}%` }}>
+          <div className="h-full bg-gradient-to-r from-[var(--em8)] to-white/90 rounded-full transition-all duration-[1400ms] ease-out relative" style={{ width: `${overallPct}%` }}>
             <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent)] bg-[length:200%_auto] z-10" style={{ animation: 'goldShimmer 2s linear infinite' }}></div>
           </div>
         </div>
@@ -56,40 +65,49 @@ export default function Sidebar({ state, sections, userId }: SidebarProps) {
 
       <div className="text-[10px] font-extrabold text-[var(--text4)] tracking-[1.2px] uppercase px-2.5 pb-2">الأقسام</div>
 
-      {sections.map(s => {
-        // إذا في بيانات Supabase استخدمها، وإلا احسب محلياً
-        let subPct: number;
-        if (hasSupabaseData) {
-          subPct = supabaseEv.getCompletion(s.id);
-        } else {
-          const subs = [...s.subs, ...(state.csubs[s.id] || [])];
-          const filledSubs = subs.filter(sub => (state.ev[`${s.id}|${sub}`] || []).length > 0).length;
-          subPct = subs.length > 0 ? Math.round((filledSubs / subs.length) * 100) : 0;
-        }
-        const color = getCompletionColor(subPct);
+      {[...sections]
+        .sort((a, b) => {
+          const pctA = sectionStats.find(st => st.sectionId === a.id)?.completionPct ?? 0;
+          const pctB = sectionStats.find(st => st.sectionId === b.id)?.completionPct ?? 0;
+          return pctA - pctB;
+        })
+        .map(s => {
+          const stat = sectionStats.find(st => st.sectionId === s.id);
+          const subPct = stat?.completionPct ?? 0;
+          const color = getCompletionColor(subPct);
+          const badge = getStatusBadge(subPct);
 
-        return (
-          <div
-            key={s.id}
-            onClick={() => scrollToSection(s.id)}
-            className="group py-2 px-2.5 rounded-xl cursor-pointer mb-px transition-all duration-[220ms] relative hover:bg-[var(--glass2)]"
-          >
-            <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-[26px] h-[26px] rounded-lg shrink-0 bg-[var(--glass)] text-[var(--text4)] flex items-center justify-center text-[13px] border border-[var(--line)] transition-all duration-[220ms] group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em6)] group-hover:text-white group-hover:border-transparent">
-                <i className={`ti ${s.icon}`}></i>
+          return (
+            <div
+              key={s.id}
+              onClick={() => scrollToSection(s.id)}
+              className="group py-2 px-2.5 rounded-xl cursor-pointer mb-px transition-all duration-[220ms] relative hover:bg-[var(--glass2)]"
+              style={{ borderRight: `4px solid ${getBorderColor(subPct)}`, borderRadius: '12px 4px 4px 12px' }}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="w-[26px] h-[26px] rounded-lg shrink-0 bg-[var(--glass)] text-[var(--text4)] flex items-center justify-center text-[13px] border border-[var(--line)] transition-all duration-[220ms] group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em6)] group-hover:text-white group-hover:border-transparent">
+                  <i className={`ti ${s.icon}`}></i>
+                </div>
+                <span className="flex-1 text-[12px] text-[var(--text2)] group-hover:text-white transition-colors leading-tight">{s.ttl}</span>
+                <span className="text-[10px] font-extrabold shrink-0" style={{ color }}>{subPct}%</span>
               </div>
-              <span className="flex-1 text-[12px] text-[var(--text2)] group-hover:text-white transition-colors leading-tight">{s.ttl}</span>
-              <span className="text-[10px] font-extrabold shrink-0" style={{ color }}>{subPct}%</span>
+              <div className="flex items-center justify-between mr-[34px]">
+                <div className="flex-1 h-[3px] bg-white/8 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{ width: `${subPct}%`, backgroundColor: color }}
+                  />
+                </div>
+                <span
+                  className="mr-2 shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none"
+                  style={{ background: badge.bg, color: badge.text }}
+                >
+                  {badge.label}
+                </span>
+              </div>
             </div>
-            <div className="h-[3px] bg-white/8 rounded-full overflow-hidden mr-[34px]">
-              <div
-                className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${subPct}%`, backgroundColor: color }}
-              />
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
     </aside>
   );
 }

@@ -32,14 +32,23 @@ export function usePublicProfile(userId: string | null): PublicProfileResult {
     setError(null);
 
     supabase
-      .rpc('get_shared_portfolio', { target_id: userId })
+      .from('portfolios')
+      .select('state')
+      .eq('id', userId)
+      .single()
       .then(({ data, error: sbError }) => {
         if (cancelled) return;
-        if (sbError || !data) {
+
+        // PGRST116 = "no rows found" — ملف غير موجود
+        if (sbError && sbError.code !== 'PGRST116') {
+          console.error('[usePublicProfile]', sbError);
+        }
+
+        if (!data?.state) {
           setError('لم يتم العثور على ملف الإنجاز لهذا المستخدم.');
           setState(null);
         } else {
-          setState(data as AppState);
+          setState(data.state as AppState);
         }
         setLoading(false);
       });

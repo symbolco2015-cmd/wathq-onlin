@@ -77,7 +77,6 @@ export function useAppStore() {
     if (!user?.email) return false;
     const email = user.email.toLowerCase().trim();
     const result = ADMIN_EMAILS.map(e => e.toLowerCase().trim()).includes(email);
-    console.log('[Admin] email:', email, '| isAdmin:', result);
     return result;
   }, [user]);
 
@@ -195,7 +194,7 @@ export function useAppStore() {
     }
 
     loadData();
-  }, [user]);
+  }, [user?.id]); // يعتمد على ID فقط — لا يُعاد التحميل عند تجديد الـ token (TOKEN_REFRESHED)
 
   // 3. Save State (local & DB)
   const saveState = async (newState: AppState) => {

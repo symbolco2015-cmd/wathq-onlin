@@ -19,14 +19,18 @@ const TYPE_META: Record<EvidenceType, { icon: string; label: string; color: stri
 };
 
 export default function EvidenceList({ evidence, loading, onDelete, onAddClick }: EvidenceListProps) {
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [deleting,  setDeleting]  = useState(false);
+  const [confirmId,   setConfirmId]   = useState<string | null>(null);
+  const [deleting,    setDeleting]    = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
-    if (confirmId !== id) { setConfirmId(id); return; }
+    if (confirmId !== id) { setConfirmId(id); setDeleteError(null); return; }
     setDeleting(true);
+    setDeleteError(null);
     try {
       await onDelete(id);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'فشل حذف الشاهد، حاول مجدداً');
     } finally {
       setDeleting(false);
       setConfirmId(null);
@@ -64,6 +68,12 @@ export default function EvidenceList({ evidence, loading, onDelete, onAddClick }
 
   return (
     <div className="space-y-2">
+      {deleteError && (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-red-400 text-[12px] font-bold">
+          <i className="ti ti-alert-circle text-[15px] shrink-0" />
+          {deleteError}
+        </div>
+      )}
       {evidence.map(ev => {
         const meta        = TYPE_META[ev.evidence_type] ?? TYPE_META.file;
         const url         = ev.file_url ?? ev.link_url ?? null;
@@ -134,8 +144,8 @@ export default function EvidenceList({ evidence, loading, onDelete, onAddClick }
               )}
             </div>
 
-            {/* أزرار الإجراءات — تظهر عند hover */}
-            <div className="shrink-0 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            {/* أزرار الإجراءات — تظهر عند hover أو عند التأكيد */}
+            <div className={`shrink-0 flex items-center gap-1.5 transition-opacity duration-200 ${isConfirming ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
               {url && (
                 <a
                   href={url}

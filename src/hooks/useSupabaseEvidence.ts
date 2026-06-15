@@ -28,7 +28,10 @@ export interface SectionCompletion {
   evidence_count: number;
 }
 
-export function useSupabaseEvidence(portfolioId: string | null) {
+export function useSupabaseEvidence(
+  portfolioId: string | null,
+  onEvRemoved?: (sectionId: number) => void,
+) {
   const [evidence, setEvidence]     = useState<SupabaseEvidence[]>([]);
   const [completion, setCompletion] = useState<SectionCompletion[]>([]);
   const [loading, setLoading]       = useState(false);
@@ -81,10 +84,32 @@ export function useSupabaseEvidence(portfolioId: string | null) {
     return data as SupabaseEvidence;
   };
 
-  const deleteEvidence = async (id: string) => {
+  const deleteEvidence = async (id: string): Promise<void> => {
     if (!supabase) return;
-    await supabase.from('evidence').delete().eq('id', id);
-    await fetch();
+
+    const evItem = evidence.find(e => e.id === id);
+
+    const { data, error } = await supabase
+      .from('evidence')
+      .delete()
+      .eq('id', id)
+      .select('id');
+
+    if (error) {
+      console.error('[Supabase Evidence] delete error:', error.message, error);
+      throw new Error(error.message);
+    }
+
+    // إذا لم يُحذف أي صف (RLS تمنع الحذف بصمت) — أبلغ بالخطأ ولا تحدّث الواجهة
+    if (!data || data.length === 0) {
+      throw new Error('لم يُحذف الشاهد من قاعدة البيانات');
+    }
+
+    if (evItem && onEvRemoved) {
+      onEvRemoved(evItem.section_id);
+    }
+
+    setEvidence(prev => prev.filter(e => e.id !== id));
   };
 
   const getBySection = (sectionId: number) =>

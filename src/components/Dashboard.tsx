@@ -59,20 +59,22 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     csubs: state.csubs,
   });
 
-  // متوسط نسب الاكتمال عبر جميع الأقسام الـ 11
-  const overallPct = evStats.bySections.length > 0
-    ? Math.round(
-        evStats.bySections.reduce((sum, s) => sum + s.completionPct, 0) / evStats.bySections.length
-      )
+  // نسبة اكتمال البند بناءً على monthly_progress (عداد الشهر الحالي ÷ 3)
+  const getMonthlyPct = (sectionId: number): number =>
+    Math.min(100, Math.round(((monthlyProgress?.getSectionMonthCount(sectionId) ?? 0) / 3) * 100));
+
+  // التقدم العام = مجموع شواهد الشهر لكل البنود / (عدد البنود × 3) × 100
+  const overallPct = sections.length > 0
+    ? Math.min(100, Math.round(
+        sections.reduce((sum, s) => sum + (monthlyProgress?.getSectionMonthCount(s.id) ?? 0), 0)
+        / (sections.length * 3) * 100
+      ))
     : 0;
 
-  // البند الأقل اكتمالاً — الخطوة التالية
-  const incompleteSections = evStats.bySections.filter(s => s.completionPct < 100);
-  const nextSectionStat = incompleteSections.length > 0
-    ? incompleteSections.reduce((min, s) => s.completionPct < min.completionPct ? s : min)
-    : null;
-  const nextSectionData = nextSectionStat
-    ? sections.find(s => s.id === nextSectionStat.sectionId) ?? null
+  // البند الأقل اكتمالاً — الخطوة التالية (بناءً على monthly_progress)
+  const incompleteSections = sections.filter(s => getMonthlyPct(s.id) < 100);
+  const nextSectionData = incompleteSections.length > 0
+    ? incompleteSections.reduce((min, s) => getMonthlyPct(s.id) < getMonthlyPct(min.id) ? s : min)
     : null;
 
   // رسالة تشجيعية حسب نسبة الجاهزية
@@ -110,43 +112,70 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // الأقسام مرتبة: الأقل اكتمالاً أولاً (بدون إعادة ترتيب عند البحث)
   const sortedFilteredSections = searchQuery.trim()
     ? filteredSections
-    : [...filteredSections].sort((a, b) => {
-        const pctA = getSectionStat(a.id)?.completionPct ?? 0;
-        const pctB = getSectionStat(b.id)?.completionPct ?? 0;
-        return pctA - pctB;
-      });
+    : [...filteredSections].sort((a, b) => getMonthlyPct(a.id) - getMonthlyPct(b.id));
 
   const stats = calculateEvaluation(state, sections);
-  // استخدام القيم الحقيقية من useEvidenceStore
-  const totalEvs = evStats.total;
-  const filledSecs = evStats.filledSectionCount;
+  // إجمالي الأدلة من Supabase مباشرة — يتزامن بعد كل حذف أو إضافة
+  const totalEvs = supabaseEv
+    ? sections.reduce((sum, s) => sum + supabaseEv.getBySection(s.id).length, 0)
+    : evStats.total;
+  // أقسام موثّقة: عدد البنود التي فيها evidence_count > 0 في monthly_progress للشهر الحالي
+  const filledSecs = monthlyProgress
+    ? sections.filter(s => monthlyProgress.getSectionMonthCount(s.id) > 0).length
+    : evStats.filledSectionCount;
 
   return (
     <div className="flex min-h-[calc(100vh-72px)]">
       <Sidebar
         state={state}
         sections={sections}
-        sectionStats={evStats.bySections}
         filledCount={evStats.filledSectionCount}
         overallPct={overallPct}
+        monthlyProgress={monthlyProgress}
       />
-      <main className="flex-1 p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
+      <main className="flex-1 p-3 sm:p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
+        {/* بطاقة الملف الشخصي المضغوطة — جوال فقط */}
+        <div className="lg:hidden flex items-center gap-3 mb-3 px-1" style={{ animation: 'fadeUp .4s var(--sp) both' }}>
+          <div
+            className="w-[42px] h-[42px] rounded-full shrink-0 bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white flex items-center justify-center text-[14px] font-black shadow-[0_0_0_2px_rgba(82,196,120,.25)] bg-cover bg-center overflow-hidden"
+            style={state.profile.avatar ? { backgroundImage: `url(${state.profile.avatar})` } : {}}
+          >
+            {!state.profile.avatar && state.profile.name.substring(0, 2)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] font-extrabold text-white truncate leading-tight">
+              {state.profile.name}
+            </div>
+            <div className="text-[11px] text-[var(--text4)] truncate mt-0.5">
+              {state.profile.role}
+            </div>
+          </div>
+          <div className="shrink-0 flex flex-col items-center gap-1">
+            <div className="text-[18px] font-black text-white leading-none font-[var(--font)]">
+              {overallPct}<span className="text-[11px] text-[var(--text4)] font-bold">%</span>
+            </div>
+            <div className="text-[9px] text-[var(--text4)] font-bold tracking-wide">جاهزية</div>
+          </div>
+        </div>
+
         {/* HERO BANNER */}
-        <div className="relative overflow-hidden rounded-[28px] py-10 px-6 sm:px-12 mb-8 bg-gradient-to-br from-[var(--em1)] via-[var(--em3)] to-[rgba(30,90,50,.8)] border border-[var(--em7)]/15 shadow-[inset_0_2px_0_rgba(82,196,120,.1),0_24px_64px_rgba(0,0,0,.5)]" style={{ animation: 'fadeUp .6s var(--sp) both' }}>
+        <div className="hidden lg:block relative overflow-hidden rounded-[20px] sm:rounded-[28px] py-5 sm:py-10 px-4 sm:px-12 mb-4 sm:mb-8 bg-gradient-to-br from-[var(--em1)] via-[var(--em3)] to-[rgba(30,90,50,.8)] border border-[var(--em7)]/15 shadow-[inset_0_2px_0_rgba(82,196,120,.1),0_24px_64px_rgba(0,0,0,.5)]" style={{ animation: 'fadeUp .6s var(--sp) both' }}>
           <div className="absolute inset-0 z-0 bg-[radial-gradient(ellipse_50%_80%_at_80%_50%,rgba(201,162,39,.08),transparent_60%)]"></div>
           <div className="absolute top-0 right-0 left-0 h-[2px] bg-gradient-to-r from-transparent via-[var(--em7)] via-30% via-[var(--gold)] via-50% via-[var(--em7)] via-70% to-transparent opacity-70 z-0"></div>
           
           <div className="absolute border border-[var(--em7)]/5 rounded-full w-[500px] h-[500px] -top-[200px] -left-[150px] z-0 pointer-events-none"></div>
           <div className="absolute border border-[var(--em7)]/5 rounded-full w-[300px] h-[300px] -bottom-[150px] right-[10%] z-0 pointer-events-none"></div>
 
-          <div className="relative z-10 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-8">
+          <div className="relative z-10 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 sm:gap-8">
             <div>
               <div className="inline-flex items-center gap-2 text-[11.5px] font-bold text-[var(--em8)] tracking-wide uppercase bg-[var(--em7)]/10 border border-[var(--em7)]/20 py-1 px-3.5 rounded-full mb-3.5">
                 <i className={`ti ${stats.levelIcon} text-[14px] ${stats.levelClass.includes('gold') ? 'text-[var(--gold)]' : 'text-[var(--em8)]'}`}></i> ملف إنجاز {stats.levelStr}
               </div>
               <div className="text-[28px] sm:text-[32px] font-black text-white tracking-tight leading-tight mb-2">{state.profile.name}</div>
-              <div className="text-[14.5px] text-[var(--text3)] mb-5.5 leading-relaxed">{state.profile.role} — {state.profile.school} · وزارة التعليم</div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="text-[14.5px] text-[var(--text3)] mb-5.5 leading-relaxed">
+                {state.profile.role}<span> — {state.profile.school} · وزارة التعليم</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <div className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-full text-[12.5px] font-bold bg-white/5 border border-white/10 text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/30 hover:-translate-y-0.5">
                   <i className="ti ti-calendar text-[14px]"></i> السنة الدراسية 1446
                 </div>
@@ -156,7 +185,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               </div>
             </div>
             <div className="shrink-0 flex flex-col items-center gap-3.5 self-start xl:self-auto">
-              <div className="w-[100px] h-[100px] rounded-3xl bg-white/5 border-[1.5px] border-white/10 flex items-center justify-center text-[50px] text-[var(--em8)] backdrop-blur-md shadow-[0_0_0_1px_rgba(82,196,120,.1),0_8px_32px_rgba(0,0,0,.4),inset_0_1px_0_rgba(255,255,255,.08)]" style={{ animation: 'float 4s ease-in-out infinite' }}>
+              <div className="w-[72px] h-[72px] sm:w-[100px] sm:h-[100px] rounded-2xl sm:rounded-3xl bg-white/5 border-[1.5px] border-white/10 flex items-center justify-center text-[34px] sm:text-[50px] text-[var(--em8)] backdrop-blur-md shadow-[0_0_0_1px_rgba(82,196,120,.1),0_8px_32px_rgba(0,0,0,.4),inset_0_1px_0_rgba(255,255,255,.08)]" style={{ animation: 'float 4s ease-in-out infinite' }}>
                 <i className="ti ti-school"></i>
               </div>
               <div className="flex gap-2.5">
@@ -174,7 +203,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
 
         {/* NEXT STEP CARD */}
-        {nextSectionData && nextSectionStat && (
+        {nextSectionData && (
           <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-amber-500/25 bg-gradient-to-br from-amber-950/40 via-amber-900/20 to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .55s var(--sp) both 0.05s' }}>
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_100%_at_0%_50%,rgba(251,191,36,.06),transparent_70%)]" />
             <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
@@ -192,10 +221,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                     <div className="h-1.5 w-28 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-700"
-                        style={{ width: `${nextSectionStat.completionPct}%` }}
+                        style={{ width: `${getMonthlyPct(nextSectionData.id)}%` }}
                       />
                     </div>
-                    <span className="text-[11.5px] font-bold text-amber-400">{nextSectionStat.completionPct}% مكتمل</span>
+                    <span className="text-[11.5px] font-bold text-amber-400">{getMonthlyPct(nextSectionData.id)}% مكتمل</span>
                   </div>
                 </div>
               </div>
@@ -241,12 +270,12 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                       <div className="text-[10.5px] text-[var(--text4)] mt-0.5 text-right">من {goal} شاهداً</div>
                     </div>
                   </div>
-                  <div className="relative z-10 h-2 bg-white/8 rounded-full overflow-hidden mb-2.5">
+                  <div className="relative z-10 h-3 sm:h-2 bg-white/8 rounded-full overflow-hidden mb-2.5">
                     <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: barColor }} />
                   </div>
                   <div className="relative z-10 flex items-center justify-between">
                     <span className="text-[12px] text-[var(--text3)]">{msg}</span>
-                    <span className="text-[11px] font-extrabold text-[var(--text4)]">{pct}%</span>
+                    <span className="text-[12px] sm:text-[11px] font-extrabold text-white">{pct}%</span>
                   </div>
                 </div>
               );
@@ -272,7 +301,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         )}
 
         {/* OVERALL READINESS BAR */}
-        <div className="mb-8 rounded-[22px] p-5 sm:p-6 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] relative overflow-hidden" style={{ animation: 'fadeUp .6s var(--sp) both 0.1s' }}>
+        <div className="mb-4 sm:mb-8 rounded-[18px] sm:rounded-[22px] p-4 sm:p-6 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] relative overflow-hidden" style={{ animation: 'fadeUp .6s var(--sp) both 0.1s' }}>
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_80%_at_100%_50%,rgba(82,196,120,.04),transparent_60%)]" />
           <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5">
             <div className="flex-1 min-w-0">
@@ -395,27 +424,27 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         )}
 
         {/* STATS GRID */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4 mb-5 sm:mb-8">
           {[
             { id: 1, val: totalEvs, lbl: 'إجمالي الأدلة', ico: 'ti-files', bIco: 'ti-trending-up', bLbl: 'حي', theme: { bg: 'bg-gradient-to-br from-[var(--em2)]/30 to-[var(--em7)]/15', color: 'text-[var(--em7)]', badgeBg: 'bg-[var(--em7)]/10', badgeColor: 'text-[var(--em8)]' }, dly: '0.05s', sub: `${evStats.byType.pdf} PDF · ${evStats.byType.img} صور` },
             { id: 2, val: sections.length, lbl: 'أقسام التوثيق', ico: 'ti-layout-grid', bIco: 'ti-check', bLbl: `${filledSecs} موثّق`, theme: { bg: 'bg-gradient-to-br from-[#1d4ed8]/30 to-[#93c5fd]/15', color: 'text-[#93c5fd]', badgeBg: 'bg-[#93c5fd]/10', badgeColor: 'text-[#93c5fd]' }, dly: '0.1s', sub: `${evStats.byType.doc} مستندات · ${evStats.byType.vid} فيديو` },
             { id: 3, val: state.strats.length, lbl: 'استراتيجيات مفعّلة', ico: 'ti-bulb', bIco: 'ti-star', bLbl: 'نشطة', theme: { bg: 'bg-gradient-to-br from-[#b45309]/30 to-[#fcd34d]/15', color: 'text-[#fcd34d]', badgeBg: 'bg-[#fcd34d]/10', badgeColor: 'text-[#fcd34d]' }, dly: '0.15s', sub: null },
             { id: 4, val: filledSecs, lbl: 'أقسام موثّقة', ico: 'ti-trophy', bIco: 'ti-chart-bar', bLbl: `من ${sections.length}`, theme: { bg: 'bg-gradient-to-br from-[#c0399a]/30 to-[#f472b6]/15', color: 'text-[#f472b6]', badgeBg: 'bg-[#f472b6]/10', badgeColor: 'text-[#f472b6]' }, dly: '0.2s', sub: `${Math.round((filledSecs / sections.length) * 100)}% اكتمال` },
           ].map(st => (
-            <div key={st.id} className="group bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[20px] p-6 border border-[var(--line)] relative overflow-hidden transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--line2)] hover:shadow-[0_20px_50px_rgba(0,0,0,.5)] cursor-default" style={{ animation: `fadeUp .5s var(--sp) both ${st.dly}` }}>
+            <div key={st.id} className="group bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] p-3 sm:p-6 border border-[var(--line)] relative overflow-hidden transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--line2)] hover:shadow-[0_20px_50px_rgba(0,0,0,.5)] cursor-default" style={{ animation: `fadeUp .5s var(--sp) both ${st.dly}` }}>
               <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(255,255,255,.03),transparent_60%)]"></div>
-              <div className="flex justify-between items-start mb-4.5 relative z-10">
-                <div className={`w-[54px] h-[54px] rounded-2xl flex items-center justify-center text-[26px] transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-8deg] relative ${st.theme.bg}`}>
-                  <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent rounded-2xl"></div>
+              <div className="flex justify-between items-start mb-2 sm:mb-4.5 relative z-10">
+                <div className={`w-[38px] h-[38px] sm:w-[54px] sm:h-[54px] rounded-xl sm:rounded-2xl flex items-center justify-center text-[18px] sm:text-[26px] transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-8deg] relative ${st.theme.bg}`}>
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent rounded-xl sm:rounded-2xl"></div>
                    <i className={`ti ${st.ico} relative z-10 ${st.theme.color}`}></i>
                 </div>
-                <div className={`text-[11px] font-bold py-1 px-2.5 rounded-lg flex items-center gap-1 ${st.theme.badgeBg} ${st.theme.badgeColor}`}>
-                  <i className={`ti ${st.bIco}`}></i> {st.bLbl}
+                <div className={`text-[9px] sm:text-[11px] font-bold py-0.5 sm:py-1 px-1.5 sm:px-2.5 rounded-md sm:rounded-lg flex items-center gap-1 ${st.theme.badgeBg} ${st.theme.badgeColor}`}>
+                  <i className={`ti ${st.bIco}`}></i><span className="hidden sm:inline"> {st.bLbl}</span>
                 </div>
               </div>
-              <div className="text-[36px] font-black leading-none text-white transition-all duration-300 font-[var(--font)] group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-[linear-gradient(135deg,var(--em7),var(--gold))] relative z-10">{st.val}</div>
-              <div className="text-[13px] text-[var(--text3)] mt-1.5 font-medium relative z-10">{st.lbl}</div>
-              {st.sub && <div className="text-[11px] text-[var(--text4)] mt-1 font-medium relative z-10 opacity-70">{st.sub}</div>}
+              <div className="text-[26px] sm:text-[36px] font-black leading-none text-white transition-all duration-300 font-[var(--font)] group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-[linear-gradient(135deg,var(--em7),var(--gold))] relative z-10">{st.val}</div>
+              <div className="text-[11px] sm:text-[13px] text-[var(--text3)] mt-1 sm:mt-1.5 font-medium relative z-10">{st.lbl}</div>
+              {st.sub && <div className="hidden sm:block text-[11px] text-[var(--text4)] mt-1 font-medium relative z-10 opacity-70">{st.sub}</div>}
             </div>
           ))}
         </div>
@@ -454,14 +483,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         )}
 
         {/* SECTIONS */}
-        <div className="flex flex-col gap-3.5">
+        <div className="flex flex-col gap-2 sm:gap-3.5">
           {sortedFilteredSections.map((sec, i) => {
             const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
             const secTotalEvs = allSubs.reduce((acc, sub) => acc + (state.ev[`${sec.id}|${sub}`] || []).length, 0);
             const isOpen = !!openSecs[sec.id];
             // نسبة الاكتمال الحقيقية من useEvidenceStore
             const secStat = getSectionStat(sec.id);
-            const completionPct = secStat?.completionPct ?? 0;
+            const completionPct = getMonthlyPct(sec.id);
             const filledSubs = secStat?.filledSubs ?? 0;
             const totalSubs = secStat?.totalSubs ?? allSubs.length;
 
@@ -471,31 +500,31 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                                     '#ef4444';
 
             return (
-              <div key={sec.id} id={`sc-${sec.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', animation: `fadeUp .45s var(--sp) both ${i * 0.04}s`, borderRight: `4px solid ${borderColor}` }}>
-                <div className="flex items-center gap-4 py-5 px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => toggleSec(sec.id)}>
+              <div key={sec.id} id={`sc-${sec.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', animation: `fadeUp .45s var(--sp) both ${i * 0.04}s`, borderRight: `4px solid ${borderColor}` }}>
+                <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => toggleSec(sec.id)}>
                    <div className="absolute bottom-0 right-6 left-6 h-px bg-gradient-to-r from-transparent via-[var(--em7)]/15 to-transparent opacity-0 transition-opacity duration-250 group-hover:opacity-100"></div>
                    
-                   <div className={`w-[42px] h-[42px] rounded-xl shrink-0 flex items-center justify-center text-[20px] border shadow-[0_4px_14px_rgba(42,122,68,.3)] transition-all duration-350 ${isOpen ? 'bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white border-transparent scale-110 !rotate-[-5deg] shadow-[0_6px_20px_rgba(42,122,68,.5)]' : 'bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border-[var(--em7)]/20 group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em7)] group-hover:text-white group-hover:scale-110 group-hover:rotate-[-5deg] group-hover:shadow-[0_6px_20px_rgba(42,122,68,.5)]'}`}>
+                   <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border shadow-[0_4px_14px_rgba(42,122,68,.3)] transition-all duration-350 ${isOpen ? 'bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white border-transparent scale-110 !rotate-[-5deg] shadow-[0_6px_20px_rgba(42,122,68,.5)]' : 'bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border-[var(--em7)]/20 group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em7)] group-hover:text-white group-hover:scale-110 group-hover:rotate-[-5deg] group-hover:shadow-[0_6px_20px_rgba(42,122,68,.5)]'}`}>
                      <i className={`ti ${sec.icon}`}></i>
                    </div>
                    
                    <div className="flex-1 min-w-0">
-                     <div className="text-[16px] font-extrabold text-white font-[var(--font)]">{sec.ttl}</div>
-                     <div className="text-[12px] text-[var(--text4)] mt-0.5">{totalSubs} قسم فرعي{secTotalEvs ? ` · ${secTotalEvs} دليل` : ''}</div>
+                     <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{sec.ttl}</div>
+                     <div className="text-[11px] sm:text-[12px] text-[var(--text4)] mt-0.5">{totalSubs} قسم فرعي{secTotalEvs ? ` · ${secTotalEvs} دليل` : ''}</div>
                      {monthlyProgress && (
-                       <div className="flex items-center gap-3 mt-1.5">
-                         <span className="text-[10.5px] text-[var(--text4)] flex items-center gap-1">
-                           <i className="ti ti-calendar text-[10px]" />
+                       <div className="flex items-center gap-1.5 sm:gap-3 mt-1 sm:mt-1.5 flex-wrap">
+                         <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
+                           <i className="ti ti-calendar text-[9px] sm:text-[10px]" />
                            {monthlyProgress.currentMonthName}:{' '}
                            <span className={monthlyProgress.getSectionMonthCount(sec.id) > 0 ? 'text-[var(--em8)] font-bold' : ''}>
                              {monthlyProgress.getSectionMonthCount(sec.id)}
                            </span>
-                           {' '}/ 3 شواهد
+                           {' '}/ 3
                          </span>
-                         <span className="text-[var(--text4)] opacity-40">·</span>
-                         <span className="text-[10.5px] text-[var(--text4)] flex items-center gap-1">
-                           <i className="ti ti-trending-up text-[10px]" />
-                           {monthlyProgress.getSectionYearTotal(sec.id)} شاهد هذا العام
+                         <span className="text-[var(--text4)] opacity-40 text-[9px]">·</span>
+                         <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
+                           <i className="ti ti-trending-up text-[9px] sm:text-[10px]" />
+                           {monthlyProgress.getSectionYearTotal(sec.id)} هذا العام
                          </span>
                        </div>
                      )}
@@ -523,7 +552,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                    </div>
                    
                    {secTotalEvs > 0 && (
-                     <div className="flex flex-col items-center gap-0.5 shrink-0">
+                     <div className="hidden sm:flex flex-col items-center gap-0.5 shrink-0">
                        <div className="flex items-center gap-1 text-[12px] font-bold py-1.5 px-3.5 rounded-full bg-[var(--em7)]/10 text-[var(--em8)] border border-[var(--em7)]/15">
                          <i className="ti ti-files text-[13px]"></i> {secTotalEvs}
                        </div>
@@ -573,12 +602,21 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                                        <span className="text-[14px] font-bold text-white">{stratName}</span>
                                        {evs.length > 0 && <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{evs.length} شواهد</span>}
                                      </div>
-                                     <button 
-                                       className="py-1.5 px-3 rounded-lg bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[12px] font-bold text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all flex items-center gap-1.5"
-                                       onClick={() => onAddEvClick(sec.id, k)}
-                                     >
-                                       <i className="ti ti-paperclip"></i> إرفاق شواهد
-                                     </button>
+                                     <div className="flex items-center gap-2">
+                                       <button
+                                         className="py-1.5 px-3 rounded-lg bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[12px] font-bold text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all flex items-center gap-1.5"
+                                         onClick={() => onAddEvClick(sec.id, k)}
+                                       >
+                                         <i className="ti ti-paperclip"></i> إرفاق شواهد
+                                       </button>
+                                       <button
+                                         className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text4)] hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
+                                         onClick={() => onToggleStrat(stratName)}
+                                         title="حذف الاستراتيجية"
+                                       >
+                                         <i className="ti ti-x text-[11px]"></i>
+                                       </button>
+                                     </div>
                                    </div>
                                    
                                    {evs.length > 0 && (
@@ -741,6 +779,26 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           })}
         </div>
       </main>
+
+      {/* FAB — Mobile only */}
+      <button
+        className="md:hidden fixed z-[250] flex items-center justify-center rounded-full active:scale-95 transition-transform duration-150"
+        style={{
+          bottom: '80px',
+          left: '16px',
+          width: '56px',
+          height: '56px',
+          background: 'linear-gradient(135deg, var(--em4), var(--em7))',
+          boxShadow: '0 4px 20px rgba(42,122,68,.6), 0 0 0 3px rgba(82,196,120,.15)',
+        }}
+        onClick={() => {
+          const firstSec = sortedFilteredSections[0];
+          if (firstSec) onAddEvClick(firstSec.id, firstSec.subs[0] ?? 'عام');
+        }}
+        title="إضافة شاهد"
+      >
+        <i className="ti ti-plus text-white" style={{ fontSize: '28px' }} />
+      </button>
 
       {/* Announcement Detail Modal */}
       {activeAnn && (

@@ -46,19 +46,21 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  /** تسجيل شاهد جديد للبند والشهر الحالي */
-  const recordEvidence = useCallback(async (sectionId: number) => {
+  /** حذف شاهد — تنقص evidence_count بمقدار 1 للشهر الحالي */
+  const removeEvidence = useCallback(async (sectionId: number) => {
+    const now2 = new Date();
+    const evYear  = now2.getFullYear();
+    const evMonth = now2.getMonth() + 1;
+
     // تحديث فوري (optimistic)
     setRows(prev => {
       const idx = prev.findIndex(
-        r => r.section_id === sectionId && r.year === currentYear && r.month === currentMonth
+        r => Number(r.section_id) === sectionId && r.year === evYear && r.month === evMonth
       );
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = { ...next[idx], evidence_count: next[idx].evidence_count + 1 };
-        return next;
-      }
-      return [...prev, { section_id: sectionId, year: currentYear, month: currentMonth, evidence_count: 1 }];
+      if (idx < 0) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], evidence_count: Math.max(0, next[idx].evidence_count - 1) };
+      return next;
     });
 
     if (!userId || !supabase) return;
@@ -69,8 +71,58 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
         .select('evidence_count')
         .eq('portfolio_id', userId)
         .eq('section_id', sectionId)
-        .eq('year', currentYear)
-        .eq('month', currentMonth)
+        .eq('year', evYear)
+        .eq('month', evMonth)
+        .maybeSingle();
+
+      if (!existing) return;
+
+      const newCount = Math.max(0, (existing.evidence_count ?? 0) - 1);
+      await supabase.from('monthly_progress').upsert(
+        {
+          portfolio_id:   userId,
+          section_id:     sectionId,
+          year:           evYear,
+          month:          evMonth,
+          evidence_count: newCount,
+        },
+        { onConflict: 'portfolio_id,section_id,year,month' }
+      );
+    } catch (e) {
+      console.warn('[MonthlyProgress] remove error:', e);
+    }
+  }, [userId]);
+
+  /** تسجيل شاهد جديد للبند والشهر الحالي */
+  const recordEvidence = useCallback(async (sectionId: number) => {
+    // احسب التاريخ لحظة الاستدعاء لتفادي closure مجمّدة عند فتح الصفحة شهراً ثم إضافة شاهد في شهر آخر
+    const now2 = new Date();
+    const evYear  = now2.getFullYear();
+    const evMonth = now2.getMonth() + 1;
+
+    // تحديث فوري (optimistic)
+    setRows(prev => {
+      const idx = prev.findIndex(
+        r => Number(r.section_id) === sectionId && r.year === evYear && r.month === evMonth
+      );
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], evidence_count: next[idx].evidence_count + 1 };
+        return next;
+      }
+      return [...prev, { section_id: sectionId, year: evYear, month: evMonth, evidence_count: 1 }];
+    });
+
+    if (!userId || !supabase) return;
+
+    try {
+      const { data: existing } = await supabase
+        .from('monthly_progress')
+        .select('evidence_count')
+        .eq('portfolio_id', userId)
+        .eq('section_id', sectionId)
+        .eq('year', evYear)
+        .eq('month', evMonth)
         .maybeSingle();
 
       const newCount = (existing?.evidence_count ?? 0) + 1;
@@ -78,8 +130,8 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
         {
           portfolio_id:   userId,
           section_id:     sectionId,
-          year:           currentYear,
-          month:          currentMonth,
+          year:           evYear,
+          month:          evMonth,
           evidence_count: newCount,
         },
         { onConflict: 'portfolio_id,section_id,year,month' }
@@ -87,7 +139,7 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
     } catch (e) {
       console.warn('[MonthlyProgress] record error:', e);
     }
-  }, [userId, currentYear, currentMonth]);
+  }, [userId]);
 
   /** هل الصف ضمن السنة الدراسية الحالية؟ */
   function isInAcademicYear(r: MonthlyProgressRow): boolean {
@@ -117,20 +169,21 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
   /** عدد شواهد بند معين في الشهر الحالي */
   function getSectionMonthCount(sectionId: number): number {
     return rows.find(
-      r => r.section_id === sectionId && r.year === currentYear && r.month === currentMonth
+      r => Number(r.section_id) === sectionId && r.year === currentYear && r.month === currentMonth
     )?.evidence_count ?? 0;
   }
 
   /** إجمالي شواهد بند معين منذ بداية السنة الدراسية */
   function getSectionYearTotal(sectionId: number): number {
     return rows
-      .filter(r => r.section_id === sectionId && isInAcademicYear(r))
+      .filter(r => Number(r.section_id) === sectionId && isInAcademicYear(r))
       .reduce((sum, r) => sum + r.evidence_count, 0);
   }
 
   return {
     rows,
     recordEvidence,
+    removeEvidence,
     getSectionMonthCount,
     getSectionYearTotal,
     currentMonthTotal,

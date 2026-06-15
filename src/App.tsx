@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type { PageType, SectionData, UserProfile } from './types';
 import { useAppStore } from './hooks/useAppStore';
 import { useAdminStore } from './hooks/useAdminStore';
@@ -63,12 +63,12 @@ export default function App() {
     deleteAnnouncement,
   } = useAdminStore(isAdmin);
 
-  const supabaseEv = useSupabaseEvidence(user?.id ?? null);
-
   const monthlyProgress = useMonthlyProgress({
     userId: user?.id ?? null,
     yearStartMonth: state.yearStartMonth ?? 9,
   });
+
+  const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence);
 
   // wrapper: يسجّل في monthly_progress عند كل إضافة شاهد
   const handleAddEv = (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => {
@@ -107,6 +107,36 @@ export default function App() {
       }
     }
   }, [user, loading, currentPage, shareUserId, passwordRecovery]);
+
+  // ── visibilitychange: تحديث خلفي عند العودة بعد 5 دقائق + حفظ موقع التمرير ──
+  const lastRefreshRef = useRef<number>(Date.now());
+  const refetchRef = useRef({ ev: supabaseEv.refetch, monthly: monthlyProgress.refetch });
+  // تحديث الـ ref في كل render بدون إعادة تسجيل المستمع
+  refetchRef.current = { ev: supabaseEv.refetch, monthly: monthlyProgress.refetch };
+
+  useEffect(() => {
+    const FIVE_MIN = 5 * 60 * 1000;
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        sessionStorage.setItem('wathq_scrollY', String(window.scrollY));
+        return;
+      }
+      // عودة للتبويب — استعد موقع التمرير
+      const savedY = sessionStorage.getItem('wathq_scrollY');
+      if (savedY) {
+        requestAnimationFrame(() => window.scrollTo({ top: parseInt(savedY, 10), behavior: 'instant' }));
+      }
+      // تحديث خلفي فقط إذا مضى أكثر من 5 دقائق
+      const now = Date.now();
+      if (now - lastRefreshRef.current > FIVE_MIN) {
+        lastRefreshRef.current = now;
+        refetchRef.current.ev();
+        refetchRef.current.monthly();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []); // يُسجَّل مرة واحدة — الـ refs تضمن أحدث قيم
 
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
@@ -509,6 +539,19 @@ export default function App() {
         </div>
       ),
       onConfirm: () => {
+        // حذف من جدول evidence في Supabase إذا وُجد سجل مطابق
+        const k = `${sid}|${sub}`;
+        const evEntry = state.ev[k]?.[idx];
+        if (supabaseEv && evEntry) {
+          const match = supabaseEv.evidence.find(
+            e => e.section_id === sid && e.title === evEntry.name
+          );
+          if (match) {
+            supabaseEv.deleteEvidence(match.id).catch(err =>
+              console.error('[handleDeleteEv] Supabase evidence delete failed:', err)
+            );
+          }
+        }
         delEv(sid, sub, idx);
         showToast('تم حذف الدليل 🗑️', '🗑️');
         closeModal();

@@ -1,5 +1,4 @@
 import type { AppState } from '../types';
-import type { SectionEvidenceStat } from '../hooks/useEvidenceStore';
 import { getCompletionColor } from '../utils';
 
 function getBorderColor(pct: number): string {
@@ -15,22 +14,22 @@ interface StatusBadge {
 }
 
 function getStatusBadge(pct: number): StatusBadge {
-  if (pct === 0)   return { label: 'لم يبدأ',        bg: 'rgba(255,255,255,.06)', text: '#6b7280' };
-  if (pct <= 34)   return { label: 'يحتاج اهتماماً', bg: 'rgba(216,90,48,.15)',  text: '#f87171' };
-  if (pct <= 70)   return { label: 'قيد التقدم',     bg: 'rgba(186,117,23,.15)', text: '#fbbf24' };
-  if (pct <= 99)   return { label: 'شبه مكتمل',      bg: 'rgba(29,158,117,.15)', text: '#6ee7b7' };
-  return             { label: '✓ مكتمل',             bg: 'rgba(29,158,117,.22)', text: '#34d399' };
+  if (pct === 0) return { label: 'لم يبدأ', bg: 'rgba(255,255,255,.06)', text: '#6b7280' };
+  if (pct <= 34) return { label: 'يحتاج اهتماماً', bg: 'rgba(216,90,48,.15)', text: '#f87171' };
+  if (pct <= 70) return { label: 'قيد التقدم', bg: 'rgba(186,117,23,.15)', text: '#fbbf24' };
+  if (pct <= 99) return { label: 'شبه مكتمل', bg: 'rgba(29,158,117,.15)', text: '#6ee7b7' };
+  return { label: '✓ مكتمل', bg: 'rgba(29,158,117,.22)', text: '#34d399' };
 }
 
 interface SidebarProps {
   state: AppState;
   sections: any[];
-  sectionStats: SectionEvidenceStat[];
   filledCount: number;
   overallPct: number;
+  monthlyProgress?: { getSectionMonthCount: (sectionId: number) => number };
 }
 
-export default function Sidebar({ state, sections, sectionStats, filledCount, overallPct }: SidebarProps) {
+export default function Sidebar({ state, sections, filledCount, overallPct, monthlyProgress }: SidebarProps) {
   const scrollToSection = (id: number) => {
     document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -67,13 +66,12 @@ export default function Sidebar({ state, sections, sectionStats, filledCount, ov
 
       {[...sections]
         .sort((a, b) => {
-          const pctA = sectionStats.find(st => st.sectionId === a.id)?.completionPct ?? 0;
-          const pctB = sectionStats.find(st => st.sectionId === b.id)?.completionPct ?? 0;
+          const pctA = Math.min(100, Math.round(((monthlyProgress?.getSectionMonthCount(a.id) ?? 0) / 3) * 100));
+          const pctB = Math.min(100, Math.round(((monthlyProgress?.getSectionMonthCount(b.id) ?? 0) / 3) * 100));
           return pctA - pctB;
         })
         .map(s => {
-          const stat = sectionStats.find(st => st.sectionId === s.id);
-          const subPct = stat?.completionPct ?? 0;
+          const subPct = Math.min(100, Math.round(((monthlyProgress?.getSectionMonthCount(s.id) ?? 0) / 3) * 100));
           const color = getCompletionColor(subPct);
           const badge = getStatusBadge(subPct);
 

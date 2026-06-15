@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { PageType, UserProfile } from '../types';
 
 interface NavProps {
@@ -115,36 +115,73 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
       </nav>
 
       {/* Mobile Bottom Navigation */}
-      <div className={`md:hidden fixed bottom-0 left-0 right-0 h-[64px] bg-[#060f0a]/90 backdrop-blur-[28px] border-t border-[var(--line)] flex items-center justify-around z-[300] px-2 pb-safe shadow-[0_-4px_24px_rgba(0,0,0,0.4)] transition-transform duration-300 ${!mobileNavVisible ? 'translate-y-full' : 'translate-y-0'}`}>
-        {[
-          ...(!isLoggedIn ? [{ id: 'auth', icon: 'ti-login', label: 'الدخول' }] : []),
-          { id: 'dashboard', icon: 'ti-layout-dashboard', label: 'لوحة التحكم' },
-          { id: 'public', icon: 'ti-eye', label: 'الرئيسية' },
-          ...(isAdmin ? [{ id: 'admin', icon: 'ti-shield-check', label: 'الأدمن' }] : [])
-        ].map((item) => {
-          const isActive = currentPage === item.id;
-          return (
-            <button 
-              key={item.id}
-              onClick={() => setPage(item.id as PageType)}
-              className={`flex flex-col items-center justify-center w-full h-full relative transition-all duration-300 ${
-                isActive
-                  ? item.id === 'admin' ? 'text-[#a78bfa]' : 'text-[var(--em8)]'
-                  : item.id === 'admin' ? 'text-[#a78bfa]/60 hover:text-[#a78bfa]' : 'text-[var(--text4)] hover:text-white'
-              }`}
+      <div className={`md:hidden fixed bottom-0 left-0 right-0 h-[64px] bg-[#060f0a]/90 backdrop-blur-[28px] border-t border-[var(--line)] flex items-center justify-around z-[300] px-2 shadow-[0_-4px_24px_rgba(0,0,0,0.4)] transition-transform duration-300 ${!mobileNavVisible ? 'translate-y-full' : 'translate-y-0'}`}>
+        {isLoggedIn ? (
+          <>
+            {/* الرئيسية */}
+            <button
+              onClick={() => setPage('dashboard')}
+              className={`flex flex-col items-center justify-center w-full h-full relative transition-all duration-300 ${currentPage === 'dashboard' ? 'text-[var(--em8)]' : 'text-[var(--text4)]'}`}
             >
-              {isActive && (
-                <div className={`absolute top-0 w-8 h-[3px] rounded-b-full shadow-[0_2px_8px_rgba(82,196,120,0.5)] ${
-                  item.id === 'admin'
-                    ? 'bg-gradient-to-r from-[#7c3aed] to-[#4f46e5]'
-                    : 'bg-gradient-to-r from-[var(--em4)] to-[var(--em7)]'
-                }`}></div>
-              )}
-              <i className={`ti ${item.icon} text-[24px] mb-1 transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}></i>
-              <span className={`text-[10.5px] font-bold ${isActive ? 'text-white' : ''}`}>{item.label}</span>
+              {currentPage === 'dashboard' && <div className="absolute top-0 w-8 h-[3px] rounded-b-full bg-gradient-to-r from-[var(--em4)] to-[var(--em7)] shadow-[0_2px_8px_rgba(82,196,120,0.5)]" />}
+              <i className={`ti ti-home text-[24px] mb-1 transition-transform duration-300 ${currentPage === 'dashboard' ? 'scale-110' : ''}`} />
+              <span className={`text-[10.5px] font-bold ${currentPage === 'dashboard' ? 'text-white' : ''}`}>الرئيسية</span>
             </button>
-          )
-        })}
+
+            {/* البنود */}
+            <button
+              onClick={() => {
+                setPage('dashboard');
+                setTimeout(() => {
+                  document.getElementById('sc-1')?.scrollIntoView({ behavior: 'smooth' });
+                }, 200);
+              }}
+              className="flex flex-col items-center justify-center w-full h-full relative transition-all duration-300 text-[var(--text4)]"
+            >
+              <i className="ti ti-list-details text-[24px] mb-1" />
+              <span className="text-[10.5px] font-bold">البنود</span>
+            </button>
+
+            {/* الإعدادات */}
+            <button
+              onClick={onOpenProfileSettings}
+              className="flex flex-col items-center justify-center w-full h-full relative transition-all duration-300 text-[var(--text4)]"
+            >
+              <i className="ti ti-settings-2 text-[24px] mb-1" />
+              <span className="text-[10.5px] font-bold">الإعدادات</span>
+            </button>
+
+            {/* ملفي */}
+            <button
+              onClick={() => setPage('public')}
+              className={`flex flex-col items-center justify-center w-full h-full relative transition-all duration-300 ${currentPage === 'public' ? 'text-[var(--em8)]' : 'text-[var(--text4)]'}`}
+            >
+              {currentPage === 'public' && <div className="absolute top-0 w-8 h-[3px] rounded-b-full bg-gradient-to-r from-[var(--em4)] to-[var(--em7)] shadow-[0_2px_8px_rgba(82,196,120,0.5)]" />}
+              <i className={`ti ti-user-circle text-[24px] mb-1 transition-transform duration-300 ${currentPage === 'public' ? 'scale-110' : ''}`} />
+              <span className={`text-[10.5px] font-bold ${currentPage === 'public' ? 'text-white' : ''}`}>ملفي</span>
+            </button>
+
+            {/* الأدمن (إذا كان مشرفاً) */}
+            {isAdmin && (
+              <button
+                onClick={() => setPage('admin')}
+                className={`flex flex-col items-center justify-center w-full h-full relative transition-all duration-300 ${currentPage === 'admin' ? 'text-[#a78bfa]' : 'text-[#a78bfa]/60'}`}
+              >
+                {currentPage === 'admin' && <div className="absolute top-0 w-8 h-[3px] rounded-b-full bg-gradient-to-r from-[#7c3aed] to-[#4f46e5]" />}
+                <i className={`ti ti-shield-check text-[24px] mb-1 transition-transform duration-300 ${currentPage === 'admin' ? 'scale-110' : ''}`} />
+                <span className={`text-[10.5px] font-bold ${currentPage === 'admin' ? 'text-[#a78bfa]' : ''}`}>الأدمن</span>
+              </button>
+            )}
+          </>
+        ) : (
+          <button
+            onClick={() => setPage('auth')}
+            className="flex flex-col items-center justify-center w-full h-full text-[var(--text4)]"
+          >
+            <i className="ti ti-login text-[24px] mb-1" />
+            <span className="text-[10.5px] font-bold">الدخول</span>
+          </button>
+        )}
       </div>
     </>
   );

@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import type { AppState, SectionData, Announcement } from '../types';
-import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import Sidebar from './Sidebar';
 import EvidenceList from './EvidenceList';
+import BottomSheet from './BottomSheet';
+import EvidenceForm from './EvidenceForm';
 import { calculateEvaluation } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
+
+type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
 export interface MonthlyProgressData {
   currentMonthTotal: number;
@@ -17,16 +20,10 @@ export interface MonthlyProgressData {
   getSectionYearTotal: (sectionId: number) => number;
 }
 
-interface SupabaseEvHook {
-  getBySection: (sectionId: number) => SupabaseEvidence[];
-  deleteEvidence: (id: string) => Promise<void>;
-  loading: boolean;
-}
-
 interface DashboardProps {
   state: AppState;
   sections: SectionData[];
-  supabaseEv?: SupabaseEvHook;
+  supabaseEv?: SupabaseEvidenceHook;
   onAddEvClick: (sid: number, sub: string) => void;
   onAddSubClick: (sid: number) => void;
   onToggleStrat: (s: string) => void;
@@ -38,6 +35,10 @@ interface DashboardProps {
   announcements?: Announcement[];
   onMarkAsRead?: (id: string) => void;
   monthlyProgress?: MonthlyProgressData;
+  /** الحقول التالية تُستخدم فقط لعرض BottomSheet إضافة الشاهد على الجوال */
+  userId?: string;
+  onAddEv?: (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => void;
+  onToast?: (msg: string, icon?: string) => void;
 }
 
 const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
@@ -47,10 +48,19 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, monthlyProgress }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, monthlyProgress, userId, onAddEv, onToast }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
+  const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
+  const [mobileSheet, setMobileSheet] = useState<{ open: boolean; sectionId: number; sub: string }>({
+    open: false, sectionId: 0, sub: '',
+  });
+  const closeMobileSheet = () => setMobileSheet(prev => ({ ...prev, open: false }));
+  const handlePickSection = (sec: SectionData) => {
+    setSectionPickerOpen(false);
+    setMobileSheet({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' });
+  };
 
   // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية
   const { stats: evStats, getSectionStat } = useEvidenceStore({
@@ -791,14 +801,62 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           background: 'linear-gradient(135deg, var(--em4), var(--em7))',
           boxShadow: '0 4px 20px rgba(42,122,68,.6), 0 0 0 3px rgba(82,196,120,.15)',
         }}
-        onClick={() => {
-          const firstSec = sortedFilteredSections[0];
-          if (firstSec) onAddEvClick(firstSec.id, firstSec.subs[0] ?? 'عام');
-        }}
+        onClick={() => setSectionPickerOpen(true)}
         title="إضافة شاهد"
       >
         <i className="ti ti-plus text-white" style={{ fontSize: '28px' }} />
       </button>
+
+      {/* Bottom Sheet — اختيار البند (الخطوة الأولى) — جوال فقط */}
+      <BottomSheet isOpen={sectionPickerOpen} onClose={() => setSectionPickerOpen(false)}>
+        <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
+              <i className="ti ti-list-check" />
+            </div>
+            <div className="text-[16px] font-black text-white">اختر البند</div>
+          </div>
+          <button
+            onClick={() => setSectionPickerOpen(false)}
+            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
+          >
+            <i className="ti ti-x" />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-5">
+          <div className="grid grid-cols-2 gap-3">
+            {sections.map(sec => (
+              <button
+                key={sec.id}
+                type="button"
+                onClick={() => handlePickSection(sec)}
+                className="flex flex-col items-center gap-2.5 py-5 px-3 rounded-2xl border-[1.5px] border-[var(--line)] bg-white/5 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/30 transition-all duration-200 text-center cursor-pointer active:scale-95"
+              >
+                <div className="w-[44px] h-[44px] rounded-xl shrink-0 flex items-center justify-center text-[20px] bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
+                  <i className={`ti ${sec.icon}`} />
+                </div>
+                <span className="text-[12.5px] font-bold text-[var(--text2)] leading-snug">{sec.ttl}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* Bottom Sheet — إضافة شاهد (الخطوة الثانية) — جوال فقط */}
+      {supabaseEv && (
+        <BottomSheet isOpen={mobileSheet.open} onClose={closeMobileSheet}>
+          <EvidenceForm
+            isOpen={mobileSheet.open}
+            onClose={closeMobileSheet}
+            sectionId={mobileSheet.sectionId}
+            sub={mobileSheet.sub}
+            userId={userId}
+            supabaseEv={supabaseEv}
+            onAddEv={onAddEv ?? (() => {})}
+            onToast={onToast ?? (() => {})}
+          />
+        </BottomSheet>
+      )}
 
       {/* Announcement Detail Modal */}
       {activeAnn && (

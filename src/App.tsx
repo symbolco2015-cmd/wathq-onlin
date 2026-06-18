@@ -681,6 +681,9 @@ export default function App() {
             onMarkAsRead={markAnnouncementAsRead}
             supabaseEv={supabaseEv}
             monthlyProgress={monthlyProgress}
+            userId={user?.id}
+            onAddEv={handleAddEv}
+            onToast={showToast}
           />
         )}
         

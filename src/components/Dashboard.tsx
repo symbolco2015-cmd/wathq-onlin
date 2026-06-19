@@ -493,7 +493,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         )}
 
         {/* SECTIONS */}
-        <div className="flex flex-col gap-2 sm:gap-3.5">
+        <div className="flex flex-col gap-2 sm:gap-3.5 pb-[100px] md:pb-0">
           {sortedFilteredSections.map((sec, i) => {
             const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
             const secTotalEvs = allSubs.reduce((acc, sub) => acc + (state.ev[`${sec.id}|${sub}`] || []).length, 0);

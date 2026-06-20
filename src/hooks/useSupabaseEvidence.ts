@@ -21,6 +21,12 @@ export interface SupabaseEvidence {
   created_at: string;
 }
 
+const getRelativePathFromUrl = (publicUrl: string): string | null => {
+  if (!publicUrl) return null;
+  const parts = publicUrl.split('/public/evidence/');
+  return parts.length > 1 ? parts[1] : null;
+};
+
 export interface SectionCompletion {
   section_id: number;
   name_ar: string;
@@ -103,6 +109,20 @@ export function useSupabaseEvidence(
     // إذا لم يُحذف أي صف (RLS تمنع الحذف بصمت) — أبلغ بالخطأ ولا تحدّث الواجهة
     if (!data || data.length === 0) {
       throw new Error('لم يُحذف الشاهد من قاعدة البيانات');
+    }
+
+    if (evItem?.file_url) {
+      const relativePath = getRelativePathFromUrl(evItem.file_url);
+      if (relativePath) {
+        try {
+          const { error: storageError } = await supabase.storage.from('evidence').remove([relativePath]);
+          if (storageError) {
+            console.error('[Supabase Evidence] فشل حذف الملف من Storage:', storageError.message, storageError);
+          }
+        } catch (storageErr) {
+          console.error('[Supabase Evidence] فشل حذف الملف من Storage:', storageErr);
+        }
+      }
     }
 
     if (evItem && onEvRemoved) {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
 import type { EvidenceType } from '../hooks/useSupabaseEvidence';
 
@@ -106,6 +107,19 @@ export default function EvidenceForm({
     setUploadSuccess(false);
     setFileUrl('');
     try {
+      let fileToUpload: File = file;
+
+      if (file.type.startsWith('image/')) {
+        onToast('جاري تجهيز الصورة...', '🗜️');
+        try {
+          const options = { maxSizeMB: 1, maxWidthOrHeight: 1600, useWebWorker: true };
+          fileToUpload = await imageCompression(file, options);
+        } catch (compressErr) {
+          console.warn('[EvidenceForm] فشل ضغط الصورة، تم استخدام الملف الأصلي:', compressErr);
+          fileToUpload = file;
+        }
+      }
+
       const ext      = file.name.split('.').pop();
       const rand     = Math.random().toString(36).substring(2, 9);
       const filePath = `${userId ?? 'guest'}/${Date.now()}_${rand}.${ext}`;
@@ -113,13 +127,13 @@ export default function EvidenceForm({
       if (userId && supabase) {
         const { error } = await supabase.storage
           .from('evidence')
-          .upload(filePath, file, { cacheControl: '3600', upsert: false });
+          .upload(filePath, fileToUpload, { cacheControl: '3600', upsert: false });
         if (error) throw error;
         const { data: urlData } = supabase.storage.from('evidence').getPublicUrl(filePath);
         setFileUrl(urlData.publicUrl);
       } else {
         await new Promise(r => setTimeout(r, 1200));
-        setFileUrl(URL.createObjectURL(file));
+        setFileUrl(URL.createObjectURL(fileToUpload));
       }
       setUploadSuccess(true);
       onToast('تم رفع الملف بنجاح ☁️', '🚀');

@@ -112,7 +112,7 @@ export default function EvidenceForm({
       if (file.type.startsWith('image/')) {
         onToast('جاري تجهيز الصورة...', '🗜️');
         try {
-          const options = { maxSizeMB: 1, maxWidthOrHeight: 1600, useWebWorker: true };
+          const options = { maxSizeMB: 1, maxWidthOrHeight: 1600, useWebWorker: false };
           fileToUpload = await imageCompression(file, options);
         } catch (compressErr) {
           console.warn('[EvidenceForm] فشل ضغط الصورة، تم استخدام الملف الأصلي:', compressErr);

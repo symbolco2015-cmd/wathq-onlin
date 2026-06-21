@@ -311,7 +311,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-300 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15),inset_0_1px_0_rgba(255,255,255,.05)] peer" 
-                  placeholder="أحمد محمد العمري" 
+                  placeholder="الاسم الثلاثي"
                   required
                   disabled={loading}
                 />

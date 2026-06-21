@@ -21,10 +21,19 @@ export interface SupabaseEvidence {
   created_at: string;
 }
 
-const getRelativePathFromUrl = (publicUrl: string): string | null => {
+// روابط Supabase العلنية تتبع الصيغة: .../storage/v1/object/public/<bucket>/<path>
+// نستخرج اسم الـ bucket ديناميكياً بدل افتراضه ثابتاً ('evidence')، لأن أنواع
+// شواهد مختلفة (مثل 'video') تُخزَّن في bucket مستقل (evidence-video).
+const PUBLIC_URL_MARKER = '/storage/v1/object/public/';
+
+const getBucketAndPathFromUrl = (publicUrl: string): { bucket: string; path: string } | null => {
   if (!publicUrl) return null;
-  const parts = publicUrl.split('/public/evidence/');
-  return parts.length > 1 ? parts[1] : null;
+  const markerIdx = publicUrl.indexOf(PUBLIC_URL_MARKER);
+  if (markerIdx === -1) return null;
+  const rest = publicUrl.slice(markerIdx + PUBLIC_URL_MARKER.length); // "<bucket>/<path>"
+  const slashIdx = rest.indexOf('/');
+  if (slashIdx === -1) return null;
+  return { bucket: rest.slice(0, slashIdx), path: rest.slice(slashIdx + 1) };
 };
 
 export interface SectionCompletion {
@@ -112,10 +121,10 @@ export function useSupabaseEvidence(
     }
 
     if (evItem?.file_url) {
-      const relativePath = getRelativePathFromUrl(evItem.file_url);
-      if (relativePath) {
+      const parsed = getBucketAndPathFromUrl(evItem.file_url);
+      if (parsed) {
         try {
-          const { error: storageError } = await supabase.storage.from('evidence').remove([relativePath]);
+          const { error: storageError } = await supabase.storage.from(parsed.bucket).remove([parsed.path]);
           if (storageError) {
             console.error('[Supabase Evidence] فشل حذف الملف من Storage:', storageError.message, storageError);
           }

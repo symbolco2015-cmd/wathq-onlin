@@ -10,10 +10,11 @@ import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import Public from './components/Public';
 import AdminDashboard from './components/Admin/AdminDashboard';
+import Onboarding from './components/Onboarding';
 import { Modal, Toast } from './components/UI';
 import EvidenceModal from './components/EvidenceModal';
 import { SECS } from './data';
-import { calculateEvaluation } from './utils';
+import { calculateEvaluation, isProfileIncomplete } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
 import { useMonthlyProgress } from './hooks/useMonthlyProgress';
 
@@ -683,6 +684,24 @@ export default function App() {
         <main>
           <Public state={sharedState} sections={SECS} isSharedView />
         </main>
+      </>
+    );
+  }
+
+  // ملف شخصي ناقص (مستخدم جديد أو حساب قديم لم يُكمل بياناته) — يحجب الواجهة
+  // كاملة حتى الحفظ، ولا يُغلق بزر X أو بالضغط خارجه.
+  if (user && !passwordRecovery && currentPage !== 'auth' && isProfileIncomplete(state.profile)) {
+    return (
+      <>
+        <Background />
+        <Onboarding
+          profile={state.profile}
+          onComplete={(update) => {
+            updateProfile(update);
+            showToast('تم حفظ بياناتك بنجاح ✓', '✓');
+          }}
+        />
+        <Toast {...toastData} />
       </>
     );
   }

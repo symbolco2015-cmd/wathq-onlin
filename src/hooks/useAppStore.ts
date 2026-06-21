@@ -11,7 +11,7 @@ const ADMIN_EMAILS = [
 // ═══════════════════════════════════════════════════════════
 
 const defaultProfile: UserProfile = {
-  name: 'أحمد محمد العمري',
+  name: 'الاسم الثلاثي',
   role: 'معلم رياضيات',
   school: 'متوسطة الفيصل، جدة',
   phone: '',

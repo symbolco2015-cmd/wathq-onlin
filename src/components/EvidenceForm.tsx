@@ -22,22 +22,41 @@ export interface EvidenceFormProps {
   onToast: (msg: string, icon?: string) => void;
 }
 
+// accept لنوع 'file' يضم امتدادات + MIME types صريحة معاً: بعض متصفحات أندرويد
+// (خصوصاً Chrome مع واجهات OEM مخصصة) تفتح معرض الصور افتراضياً حين يكون accept
+// امتدادات نصية بحتة بدون MIME، لأن نظام أندرويد لا يستطيع حل intent الفلترة
+// بثقة فيسقط على المعالج الوحيد المسجل (الصور). وجود MIME صريحة يحل المشكلة.
+const FILE_ACCEPT = [
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+].join(',');
+
 const TYPE_CONFIG: {
   id: EvidenceType;
   icon: string;
   label: string;
   color: string;
   accept?: string;
+  hint: string;
   hasFile: boolean;
   hasLink: boolean;
+  maxSizeMB: number;
+  /** bucket تخزين مستقل لكل نوع — الفيديو له bucket وحد حجم خاصين به
+   *  (evidence-video، 50MB) دون التأثير على حد bucket evidence الأصلي (10MB). */
+  bucket: string;
 }[] = [
-  { id: 'file',  icon: 'ti-file-type-pdf', label: 'ملف',    color: '#f87171', accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx', hasFile: true,  hasLink: false },
-  { id: 'image', icon: 'ti-photo',          label: 'صورة',   color: '#93c5fd', accept: 'image/*',                                 hasFile: true,  hasLink: false },
-  { id: 'link',  icon: 'ti-link',           label: 'رابط',   color: '#4ade80', accept: undefined,                                 hasFile: false, hasLink: true  },
-  { id: 'note',  icon: 'ti-notes',          label: 'ملاحظة', color: '#c4b5fd', accept: undefined,                                 hasFile: false, hasLink: false },
+  { id: 'file',  icon: 'ti-file-type-pdf', label: 'ملف',    color: '#f87171', accept: FILE_ACCEPT,                  hint: 'PDF · DOC · XLS · PPT', hasFile: true,  hasLink: false, maxSizeMB: 10, bucket: 'evidence' },
+  { id: 'image', icon: 'ti-photo',          label: 'صورة',   color: '#93c5fd', accept: 'image/*',                    hint: 'JPG · PNG · WEBP',       hasFile: true,  hasLink: false, maxSizeMB: 10, bucket: 'evidence' },
+  { id: 'video', icon: 'ti-video',          label: 'فيديو',  color: '#fb923c', accept: 'video/mp4,video/quicktime',  hint: 'MP4 · MOV',              hasFile: true,  hasLink: false, maxSizeMB: 50, bucket: 'evidence-video' },
+  { id: 'link',  icon: 'ti-link',           label: 'رابط',   color: '#4ade80', accept: undefined,                    hint: '',                       hasFile: false, hasLink: true  , maxSizeMB: 0,  bucket: '' },
+  { id: 'note',  icon: 'ti-notes',          label: 'ملاحظة', color: '#c4b5fd', accept: undefined,                    hint: '',                       hasFile: false, hasLink: false, maxSizeMB: 0,  bucket: '' },
 ];
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — يطابق حد file_size_limit على bucket evidence
 
 const toLocalType = (t: EvidenceType): 'pdf' | 'img' | 'doc' | 'vid' => {
   if (t === 'image') return 'img';
@@ -105,8 +124,9 @@ export default function EvidenceForm({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      onToast('حجم الملف يتجاوز الحد المسموح (10 MB).', '❌');
+    const maxSizeMB = currentTypeConfig.maxSizeMB;
+    if (file.size > maxSizeMB * 1024 * 1024) {
+      onToast(`حجم الملف يتجاوز الحد المسموح (${maxSizeMB} MB).`, '❌');
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -134,11 +154,12 @@ export default function EvidenceForm({
       const filePath = `${userId ?? 'guest'}/${Date.now()}_${rand}.${ext}`;
 
       if (userId && supabase) {
+        const bucket = currentTypeConfig.bucket;
         const { error } = await supabase.storage
-          .from('evidence')
+          .from(bucket)
           .upload(filePath, fileToUpload, { cacheControl: '3600', upsert: false });
         if (error) throw error;
-        const { data: urlData } = supabase.storage.from('evidence').getPublicUrl(filePath);
+        const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
         setFileUrl(urlData.publicUrl);
       } else {
         await new Promise(r => setTimeout(r, 1200));
@@ -148,7 +169,7 @@ export default function EvidenceForm({
       onToast('تم رفع الملف بنجاح ☁️', '🚀');
     } catch (err: any) {
       const msg = /size/i.test(err?.message ?? '')
-        ? 'حجم الملف يتجاوز الحد المسموح (10 MB).'
+        ? `حجم الملف يتجاوز الحد المسموح (${maxSizeMB} MB).`
         : 'تعذّر رفع الملف، يرجى المحاولة مجدداً.';
       onToast(msg, '❌');
       setFileName('');
@@ -254,7 +275,7 @@ export default function EvidenceForm({
         {/* نوع الشاهد */}
         <div>
           <div className={labelCls}><i className="ti ti-category text-[var(--em7)]" /> نوع الشاهد <span className="text-red-400">*</span></div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-5 gap-2">
             {TYPE_CONFIG.map(t => (
               <button
                 key={t.id}
@@ -309,7 +330,7 @@ export default function EvidenceForm({
                 <div className="py-1">
                   <i className="ti ti-cloud-upload text-[32px] text-[var(--em6)] mb-2 block transition-transform duration-300 group-hover:-translate-y-1" />
                   <p className="text-[13px] text-[var(--text3)] font-semibold">انقر لاختيار الملف</p>
-                  <span className="text-[11px] text-[var(--text4)] mt-0.5 block">PDF · DOC · JPG · PNG · MP4</span>
+                  <span className="text-[11px] text-[var(--text4)] mt-0.5 block">{currentTypeConfig.hint}</span>
                 </div>
               )}
             </div>

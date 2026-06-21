@@ -1,4 +1,16 @@
-import type { AppState, SectionData } from './types';
+import type { AppState, SectionData, UserProfile } from './types';
+
+// القيمة الافتراضية التي يضعها trigger قاعدة البيانات (handle_new_user) للحسابات
+// الجديدة التي لم تُكمّل بياناتها بعد — تُستخدم لتمييز الملف "الناقص" عن "المكتمل".
+const UNSET_PLACEHOLDER = 'غير محدد';
+
+export const isProfileIncomplete = (profile: UserProfile): boolean => {
+  return (
+    !profile.name?.trim() ||
+    !profile.role?.trim() || profile.role.trim() === UNSET_PLACEHOLDER ||
+    !profile.school?.trim() || profile.school.trim() === UNSET_PLACEHOLDER
+  );
+};
 
 export const getCompletionColor = (pct: number): string => {
   if (pct >= 70) return '#1D9E75';

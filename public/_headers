@@ -1,0 +1,11 @@
+# Wathq Online — security headers for the Netlify-hosted static frontend.
+# Mirrors the headers already set in server.js for the /api proxy, so the
+# statically-served SPA gets the same protections that a <meta> tag cannot
+# provide (X-Frame-Options, HSTS, frame-ancestors).
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';

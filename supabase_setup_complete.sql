@@ -121,6 +121,13 @@ DROP POLICY IF EXISTS "announcements_public_read" ON public.announcements;
 CREATE POLICY "announcements_public_read" ON public.announcements
   FOR SELECT USING (true);
 
+-- تنظيف أسماء سياسات قديمة كانت تفحص admin_users مباشرة بدل is_admin()
+-- (من full_reset.sql / announcements_setup.sql) — تكرار غير ضروري لنفس
+-- الأثر، راجع supabase_announcements_rls_dedup.sql
+DROP POLICY IF EXISTS "announcements_insert" ON public.announcements;
+DROP POLICY IF EXISTS "announcements_delete" ON public.announcements;
+DROP POLICY IF EXISTS "announcements_select" ON public.announcements;
+
 -- إدخال/تعديل/حذف: الأدمن فقط
 DROP POLICY IF EXISTS "announcements_admin_insert" ON public.announcements;
 CREATE POLICY "announcements_admin_insert" ON public.announcements

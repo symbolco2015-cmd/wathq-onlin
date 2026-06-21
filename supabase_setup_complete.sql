@@ -29,6 +29,13 @@ DROP POLICY IF EXISTS "admin_users_select_own" ON public.admin_users;
 CREATE POLICY "admin_users_select_own" ON public.admin_users
   FOR SELECT USING (auth.uid() = user_id);
 
+-- تنظيف أسماء سياسات قديمة فضفاضة من ملفات سابقة (full_reset / admin_fix /
+-- admin_setup) كانت تسمح لأي مستخدم مسجّل دخول بقراءة الجدول كاملاً وتكشف
+-- هوية كل حسابات الأدمن — راجع supabase_admin_users_select_fix.sql
+DROP POLICY IF EXISTS "admins_select" ON public.admin_users;
+DROP POLICY IF EXISTS "Allow authenticated users to read admin_users" ON public.admin_users;
+DROP POLICY IF EXISTS "Admin can read own record" ON public.admin_users;
+
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS boolean
 LANGUAGE sql

@@ -37,6 +37,8 @@ const TYPE_CONFIG: {
   { id: 'note',  icon: 'ti-notes',          label: 'ملاحظة', color: '#c4b5fd', accept: undefined,                                 hasFile: false, hasLink: false },
 ];
 
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — يطابق حد file_size_limit على bucket evidence
+
 const toLocalType = (t: EvidenceType): 'pdf' | 'img' | 'doc' | 'vid' => {
   if (t === 'image') return 'img';
   if (t === 'video') return 'vid';
@@ -102,6 +104,13 @@ export default function EvidenceForm({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      onToast('حجم الملف يتجاوز الحد المسموح (10 MB).', '❌');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setFileName(file.name);
     setUploading(true);
     setUploadSuccess(false);

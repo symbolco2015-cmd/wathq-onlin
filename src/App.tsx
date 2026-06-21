@@ -46,6 +46,8 @@ export default function App() {
     announcements,
     markAnnouncementAsRead,
     updateYearStartMonth,
+    shareEnabled,
+    updateShareEnabled,
   } = useAppStore();
 
   const {
@@ -267,6 +269,22 @@ export default function App() {
       const [isProcessing, setIsProcessing] = useState(false);
       const [originalAvatar, setOriginalAvatar] = useState<string | null>(null);
       const [localYearStart, setLocalYearStart] = useState(yearStart);
+      const [localShareEnabled, setLocalShareEnabled] = useState(shareEnabled);
+      const [shareToggleBusy, setShareToggleBusy] = useState(false);
+
+      const handleShareToggle = async () => {
+        const next = !localShareEnabled;
+        setShareToggleBusy(true);
+        setLocalShareEnabled(next); // تحديث تفاؤلي
+        const ok = await updateShareEnabled(next);
+        setShareToggleBusy(false);
+        if (!ok) {
+          setLocalShareEnabled(!next); // تراجع عند الفشل
+          showToast('فشل تحديث إعداد المشاركة، حاول مجدداً', '⚠️');
+          return;
+        }
+        showToast(next ? 'تم تفعيل المشاركة العامة لملفك ✓' : 'تم إيقاف المشاركة العامة لملفك', next ? '✓' : '🔒');
+      };
 
       const handleUpdate = (field: string, value: any) => {
         const next = { ...localP, [field]: value };
@@ -402,6 +420,32 @@ export default function App() {
           <div>
             <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">قناة YouTube</div>
             <input type="text" value={localP.youtube} onChange={e => handleUpdate('youtube', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="https://youtube.com/@..." />
+          </div>
+
+          <div className="border-t border-[var(--line2)] pt-5 mt-2">
+            <div className="text-[12.5px] font-bold text-[var(--em8)] mb-3 flex items-center gap-2">
+              <i className="ti ti-share text-[15px]" /> مشاركة الملف العام
+            </div>
+            <div className="flex items-center justify-between gap-4 bg-white/5 border border-[var(--line2)] rounded-xl py-3.5 px-4">
+              <div className="min-w-0">
+                <div className="text-[13.5px] font-bold text-white">مشاركة ملفي علناً</div>
+                <div className="text-[11.5px] text-[var(--text4)] mt-1 leading-relaxed">
+                  عند التفعيل، يستطيع أي شخص يملك رابط المشاركة عرض ملف إنجازك دون تسجيل دخول. الوضع الافتراضي معطّل.
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={localShareEnabled}
+                disabled={shareToggleBusy}
+                onClick={handleShareToggle}
+                className={`relative shrink-0 w-[46px] h-[26px] rounded-full border transition-colors duration-200 cursor-pointer ${shareToggleBusy ? 'opacity-60 cursor-wait' : ''} ${localShareEnabled ? 'bg-[var(--em6)] border-[var(--em7)]/60' : 'bg-white/10 border-[var(--line2)]'}`}
+              >
+                <span
+                  className={`absolute top-[3px] w-[20px] h-[20px] rounded-full bg-white shadow-md transition-[left] duration-200 ${localShareEnabled ? 'left-[23px]' : 'left-[3px]'}`}
+                />
+              </button>
+            </div>
           </div>
 
           <div className="border-t border-[var(--line2)] pt-5 mt-2">

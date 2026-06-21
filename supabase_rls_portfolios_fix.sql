@@ -1,3 +1,11 @@
+-- ⚠️ SUPERSEDED — DO NOT RUN — replaced by supabase_share_enabled_setup.sql
+-- (unsafe: returns full state without checking share_enabled flag)
+--
+-- تحقّقنا مباشرة على قاعدة الإنتاج بتاريخ 2026-06-21 أن هذا الملف لم يُطبَّق فعلياً
+-- (لا عمود share_enabled موجود، ولا دالة get_shared_portfolio في schema cache).
+-- لو طُبّق كما هو فسيُرجع كامل state (شاملاً notes) لأي زائر يعرف الـ UUID، بدون أي
+-- تحقق من رغبة المعلم بالمشاركة. استخدم supabase_share_enabled_setup.sql بدلاً منه.
+--
 -- ═══════════════════════════════════════════════════════════════════════
 -- إصلاح RLS — تقييد قراءة portfolios + دالة آمنة لميزة المشاركة
 -- شغّل هذا الملف في: Supabase ➜ SQL Editor ➜ New query

@@ -50,3 +50,6 @@ export interface AppState {
   yearStartMonth?: number; // 1–12، الافتراضي 9 (سبتمبر)
 }
 
+/** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */
+export type PublicPortfolioState = Pick<AppState, 'ev' | 'strats' | 'csubs' | 'profile'>;
+

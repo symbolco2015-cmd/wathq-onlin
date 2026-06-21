@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import type { AppState, SectionData } from '../types';
+import type { PublicPortfolioState, SectionData } from '../types';
 import { calculateEvaluation } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import { RadialBarChart, RadialBar, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface PublicProps {
-  state: AppState;
+  state: PublicPortfolioState;
   sections: SectionData[];
   /** When true, this view is accessed via a public share link (no auth required) */
   isSharedView?: boolean;

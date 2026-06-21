@@ -41,6 +41,9 @@ export function useAppStore() {
   const [loading, setLoading] = useState(true);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  // share_enabled يعيش في عمود مستقل بجدول portfolios (وليس داخل state JSONB) —
+  // الافتراضي معطّل دائماً؛ المعلم وحده من يفعّله من إعدادات حسابه.
+  const [shareEnabled, setShareEnabled] = useState(false);
 
   // 1. Listen to Auth State
   useEffect(() => {
@@ -64,6 +67,7 @@ export function useAppStore() {
       if (!session?.user) {
         // Reset state on logout
         setState(defaultState);
+        setShareEnabled(false);
       }
     });
 
@@ -123,7 +127,7 @@ export function useAppStore() {
         try {
           const { data, error } = await supabase
             .from('portfolios')
-            .select('state')
+            .select('state, share_enabled')
             .eq('id', user.id)
             .single();
 
@@ -140,6 +144,7 @@ export function useAppStore() {
                 ...(data.state.profile || {})
               }
             });
+            setShareEnabled(!!data.share_enabled);
             setLoading(false);
             return;
           } else {
@@ -154,7 +159,8 @@ export function useAppStore() {
               profile: initialProfile
             };
             setState(initialStateWithProfile);
-            
+            setShareEnabled(false); // ملف جديد دائماً غير مفعّل للمشاركة العامة افتراضياً
+
             // Save newly seeded state to DB
             const { error: insertError } = await supabase
               .from('portfolios')
@@ -229,6 +235,23 @@ export function useAppStore() {
     saveState({ ...state, profile: { ...state.profile, ...profileUpdate } });
   };
 
+  // share_enabled عمود مستقل خارج state JSONB — يُحدَّث مباشرة وليس عبر saveState
+  const updateShareEnabled = async (enabled: boolean): Promise<boolean> => {
+    if (!user || !supabase) return false;
+    setShareEnabled(enabled); // تحديث تفاؤلي للواجهة
+    const { error } = await supabase
+      .from('portfolios')
+      .update({ share_enabled: enabled })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('Error updating share_enabled:', error);
+      setShareEnabled(!enabled); // تراجع عند الفشل
+      return false;
+    }
+    return true;
+  };
+
   const addEv = (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => {
     const k = `${sid}|${sub}`;
     const newEv = { ...state.ev };
@@ -296,6 +319,7 @@ export function useAppStore() {
     }
     localStorage.removeItem('w4');
     setState(defaultState);
+    setShareEnabled(false);
   };
 
   // Called once the user has finished setting a new password via the recovery flow
@@ -335,7 +359,9 @@ export function useAppStore() {
     announcements,
     markAnnouncementAsRead,
     fetchAnnouncements,
-    updateYearStartMonth
+    updateYearStartMonth,
+    shareEnabled,
+    updateShareEnabled
   };
 }
 

@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import type { AppState } from '../types';
+import type { PublicPortfolioState } from '../types';
 
 interface PublicProfileResult {
-  state: AppState | null;
+  state: PublicPortfolioState | null;
   loading: boolean;
   error: string | null;
 }
 
 export function usePublicProfile(userId: string | null): PublicProfileResult {
-  const [state, setState] = useState<AppState | null>(null);
+  const [state, setState] = useState<PublicPortfolioState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,24 +31,22 @@ export function usePublicProfile(userId: string | null): PublicProfileResult {
     setLoading(true);
     setError(null);
 
+    // get_shared_portfolio هي SECURITY DEFINER RPC تتحقق من تفعيل المشاركة
+    // (share_enabled = true) قبل إرجاع أي بيانات — لا قراءة مباشرة على جدول portfolios.
     supabase
-      .from('portfolios')
-      .select('state')
-      .eq('id', userId)
-      .single()
+      .rpc('get_shared_portfolio', { target_id: userId })
       .then(({ data, error: sbError }) => {
         if (cancelled) return;
 
-        // PGRST116 = "no rows found" — ملف غير موجود
-        if (sbError && sbError.code !== 'PGRST116') {
+        if (sbError) {
           console.error('[usePublicProfile]', sbError);
         }
 
-        if (!data?.state) {
+        if (!data) {
           setError('لم يتم العثور على ملف الإنجاز لهذا المستخدم.');
           setState(null);
         } else {
-          setState(data.state as AppState);
+          setState(data as PublicPortfolioState);
         }
         setLoading(false);
       });

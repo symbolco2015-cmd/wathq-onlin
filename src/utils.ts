@@ -12,7 +12,7 @@ export const getCompletionLabel = (pct: number): string => {
   return 'يحتاج عمل';
 };
 
-export function calculateEvaluation(state: AppState, sections: SectionData[]) {
+export function calculateEvaluation(state: Pick<AppState, 'ev' | 'strats' | 'csubs'>, sections: SectionData[]) {
   let totalEvs = 0;
   let filledSecs = 0;
   sections.forEach(s => {

@@ -6,6 +6,7 @@ import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import { calculateEvaluation } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
+import { useQuickCapture } from '../hooks/useQuickCapture';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -53,6 +54,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
+  const [fabExpanded, setFabExpanded] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<{ open: boolean; sectionId: number; sub: string }>({
     open: false, sectionId: 0, sub: '',
   });
@@ -61,6 +63,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     setSectionPickerOpen(false);
     setMobileSheet({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' });
   };
+
+  const quickCapture = useQuickCapture({
+    userId,
+    supabaseEv,
+    onAddEv: onAddEv ?? (() => {}),
+    onToast: onToast ?? (() => {}),
+  });
 
   // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية
   const { stats: evStats, getSectionStat } = useEvidenceStore({
@@ -790,22 +799,75 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
       </main>
 
-      {/* FAB — Mobile only */}
-      <button
-        className="md:hidden fixed z-[250] flex items-center justify-center rounded-full active:scale-95 transition-transform duration-150"
-        style={{
-          bottom: '80px',
-          left: '16px',
-          width: '56px',
-          height: '56px',
-          background: 'linear-gradient(135deg, var(--em4), var(--em7))',
-          boxShadow: '0 4px 20px rgba(42,122,68,.6), 0 0 0 3px rgba(82,196,120,.15)',
-        }}
-        onClick={() => setSectionPickerOpen(true)}
-        title="إضافة شاهد"
-      >
-        <i className="ti ti-plus text-white" style={{ fontSize: '28px' }} />
-      </button>
+      {/* FAB Speed Dial — Mobile only */}
+      {fabExpanded && (
+        <div
+          className="md:hidden fixed inset-0 z-[240] bg-black/40"
+          onClick={() => setFabExpanded(false)}
+        />
+      )}
+
+      <input
+        type="file"
+        accept="image/*"
+        hidden
+        ref={quickCapture.fileInputRef}
+        onChange={quickCapture.onFileSelected}
+      />
+
+      <div className="md:hidden fixed z-[250] flex flex-col items-end gap-3" style={{ bottom: '80px', left: '16px' }}>
+        {fabExpanded && (
+          <>
+            <button
+              className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
+              style={{
+                background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)',
+                boxShadow: '0 4px 16px rgba(29,78,216,.5)',
+                animation: 'fadeUp .2s var(--sp) both',
+              }}
+              onClick={() => { setFabExpanded(false); setSectionPickerOpen(true); }}
+              title="إضافة شاهد"
+            >
+              إضافة شاهد
+              <span className="w-[32px] h-[32px] rounded-full bg-white/15 flex items-center justify-center text-[16px]">
+                <i className="ti ti-list-check" />
+              </span>
+            </button>
+            <button
+              className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
+              style={{
+                background: 'linear-gradient(135deg, var(--em4), var(--em7))',
+                boxShadow: '0 4px 16px rgba(42,122,68,.5)',
+                animation: 'fadeUp .2s var(--sp) both .04s',
+              }}
+              onClick={() => { setFabExpanded(false); quickCapture.openPicker(); }}
+              title="التقاط سريع"
+            >
+              التقاط سريع
+              <span className="w-[32px] h-[32px] rounded-full bg-white/15 flex items-center justify-center text-[16px]">
+                <i className="ti ti-camera" />
+              </span>
+            </button>
+          </>
+        )}
+
+        <button
+          className="flex items-center justify-center rounded-full active:scale-95 transition-transform duration-150"
+          style={{
+            width: '56px',
+            height: '56px',
+            background: 'linear-gradient(135deg, var(--em4), var(--em7))',
+            boxShadow: '0 4px 20px rgba(42,122,68,.6), 0 0 0 3px rgba(82,196,120,.15)',
+          }}
+          onClick={() => setFabExpanded(prev => !prev)}
+          title="إضافة شاهد"
+        >
+          <i
+            className="ti ti-plus text-white transition-transform duration-200"
+            style={{ fontSize: '28px', transform: fabExpanded ? 'rotate(45deg)' : 'none' }}
+          />
+        </button>
+      </div>
 
       {/* Bottom Sheet — اختيار البند (الخطوة الأولى) — جوال فقط */}
       <BottomSheet isOpen={sectionPickerOpen} onClose={() => setSectionPickerOpen(false)}>
@@ -836,6 +898,48 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                   <i className={`ti ${sec.icon}`} />
                 </div>
                 <span className="text-[12.5px] font-bold text-[var(--text2)] leading-snug">{sec.ttl}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* Bottom Sheet — التقاط سريع: اختيار البند بعد الصورة — جوال فقط */}
+      <BottomSheet isOpen={quickCapture.pickerSheetOpen} onClose={quickCapture.cancelPending}>
+        <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
+              <i className="ti ti-camera" />
+            </div>
+            <div className="text-[16px] font-black text-white">اختر البند</div>
+          </div>
+          <button
+            onClick={quickCapture.cancelPending}
+            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
+          >
+            <i className="ti ti-x" />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-5">
+          {quickCapture.pendingPreviewUrl && (
+            <img
+              src={quickCapture.pendingPreviewUrl}
+              alt="الصورة المختارة"
+              className="w-full max-h-[160px] object-cover rounded-2xl border border-[var(--line)] mb-4"
+            />
+          )}
+          <div className="flex flex-col gap-1.5">
+            {sections.map(sec => (
+              <button
+                key={sec.id}
+                type="button"
+                disabled={quickCapture.saving}
+                onClick={() => quickCapture.saveToSection(sec)}
+                className="flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-[var(--em7)]/10 transition-all duration-200 text-right cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+              >
+                <i className={`ti ${sec.icon} text-[16px] text-[var(--em7)] shrink-0`} />
+                <span className="flex-1 text-[13.5px] font-bold text-[var(--text2)]">{sec.ttl}</span>
+                {quickCapture.saving && <i className="ti ti-loader animate-spin text-[14px] text-[var(--em8)]" />}
               </button>
             ))}
           </div>

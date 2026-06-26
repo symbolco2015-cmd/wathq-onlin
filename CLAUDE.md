@@ -8,36 +8,57 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## Repository Layout
+
+This is a monorepo with two **independent** npm projects (separate `package.json`, separate `node_modules`, no workspaces):
+
+```
+frontend/            # React + Vite SPA — see src/ paths below (rooted at frontend/src/)
+backend/
+  api-server/        # Express proxy for Gemini calls (server.js)
+  supabase/          # SQL run manually in the Supabase SQL editor (migrations/, admin/)
+```
+
+All `src/...` paths referenced elsewhere in this file are relative to `frontend/`, e.g. `src/hooks/useAppStore.ts` means `frontend/src/hooks/useAppStore.ts`.
+
+---
+
 ## Commands
 
 ```bash
+# Frontend (run from frontend/)
 npm run dev       # Start Vite dev server on port 3000
-npm run server    # Start Express Gemini proxy on port 3001 (required for AI features)
-npm run build     # Production build (outputs to dist/)
+npm run build     # Production build (outputs to frontend/dist/)
 npm run lint      # Type-check with tsc --noEmit (no test suite exists)
 npm run preview   # Preview the production build locally
 npm run clean     # Remove dist/
+
+# Backend (run from backend/api-server/)
+npm run server    # Start Express Gemini proxy on port 3001 (required for AI features)
 ```
 
-For development with AI features, run `npm run dev` and `npm run server` in two separate terminals. The Vite dev server proxies `/api/*` to `localhost:3001`.
+For development with AI features, run `npm run dev` (in `frontend/`) and `npm run server` (in `backend/api-server/`) in two separate terminals. The Vite dev server proxies `/api/*` to `localhost:3001`.
 
-There is no test framework configured. `npm run lint` is the only automated code verification step.
+There is no test framework configured. `npm run lint` (in `frontend/`) is the only automated code verification step.
 
 ---
 
 ## Environment Variables
 
-Copy `.env.example` and populate:
+Each project has its own `.env.example` to copy and populate:
 
 ```
+# frontend/.env.example
 VITE_SUPABASE_URL=       # Supabase project URL
 VITE_SUPABASE_ANON_KEY=  # Supabase anon public key
+
+# backend/api-server/.env.example
 GEMINI_API_KEY=          # Google Gemini API key — server-side only (server.js)
 APP_URL=                 # App host (used for CORS in server.js and OAuth callbacks)
 SERVER_PORT=3001         # Port for the Express proxy server
 ```
 
-`GEMINI_API_KEY` must **never** be prefixed with `VITE_` and must **not** appear in `vite.config.ts` define. It is read exclusively by `server.js`. The Vite dev server proxies `/api/*` to `http://localhost:3001`. In production, route `/api/*` through a reverse proxy to the Node.js server.
+`GEMINI_API_KEY` must **never** be prefixed with `VITE_` and must **not** appear in `vite.config.ts` define. It is read exclusively by `backend/api-server/server.js`. The Vite dev server proxies `/api/*` to `http://localhost:3001`. In production, route `/api/*` through a reverse proxy to the Node.js server.
 
 ---
 
@@ -84,7 +105,7 @@ The `state` JSONB shape (defined in `src/types.ts`):
 }
 ```
 
-The full SQL schema is in `supabase_setup_complete.sql`.
+The full SQL schema is in `backend/supabase/migrations/supabase_setup_complete.sql`.
 
 ### Dual Persistence Strategy
 

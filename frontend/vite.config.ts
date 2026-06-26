@@ -7,8 +7,8 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     // GEMINI_API_KEY is intentionally NOT injected here.
-    // All Gemini calls must go through server.js (/api/gemini) so the key
-    // stays server-side and never appears in the browser bundle.
+    // All Gemini calls must go through backend/api-server/server.js (/api/gemini)
+    // so the key stays server-side and never appears in the browser bundle.
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

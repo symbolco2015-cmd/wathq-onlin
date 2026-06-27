@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { AdminUser, PlatformStats } from '../../hooks/useAdminStore';
-import type { Announcement } from '../../types';
+import type { Announcement, AcademicDate } from '../../types';
 
 /* ─────────────────────────────────────────────
    Stat Card
@@ -348,17 +348,21 @@ interface AdminDashboardProps {
   onUpdateAnnouncement?: (id: string, title: string, content: string, category: 'tech' | 'admin' | 'urgent', attachmentUrl?: string) => Promise<boolean>;
   onDeleteAnnouncement?: (id: string) => Promise<boolean>;
   announcements?: Announcement[];
+  onPublishAcademicDate?: (title: string, date: string, hijriLabel?: string) => Promise<boolean>;
+  onUpdateAcademicDate?: (id: string, title: string, date: string, hijriLabel?: string) => Promise<boolean>;
+  onDeleteAcademicDate?: (id: string) => Promise<boolean>;
+  academicDates?: AcademicDate[];
 }
 
 export default function AdminDashboard({
-  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onUpdateAnnouncement, onDeleteAnnouncement, announcements
+  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onUpdateAnnouncement, onDeleteAnnouncement, announcements, onPublishAcademicDate, onUpdateAcademicDate, onDeleteAcademicDate, academicDates
 }: AdminDashboardProps) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'evidenceCount' | 'updated_at' | 'created_at'>('updated_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'announcements'>('users');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'announcements' | 'academic-dates'>('users');
 
   const [annTitle, setAnnTitle] = useState('');
   const [annContent, setAnnContent] = useState('');
@@ -451,6 +455,96 @@ export default function AdminDashboard({
       onToast('حدث خطأ غير متوقع ❌', '❌');
     } finally {
       setPublishingAnn(false);
+    }
+  };
+
+  const [adTitle, setAdTitle] = useState('');
+  const [adDate, setAdDate] = useState('');
+  const [adHijriLabel, setAdHijriLabel] = useState('');
+  const [publishingAd, setPublishingAd] = useState(false);
+  const [editingAdId, setEditingAdId] = useState<string | null>(null);
+
+  const sortedAcademicDates = useMemo(
+    () => [...(academicDates || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    [academicDates]
+  );
+
+  const resetAdForm = () => {
+    setAdTitle('');
+    setAdDate('');
+    setAdHijriLabel('');
+    setEditingAdId(null);
+  };
+
+  const startEditAcademicDate = (ad: AcademicDate) => {
+    setEditingAdId(ad.id);
+    setAdTitle(ad.title);
+    setAdDate(ad.date);
+    setAdHijriLabel(ad.hijri_label || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteAcademicDate = async (id: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا الموعد الدراسي؟ سيتم إزالته من تذكيرات جميع المعلمين فوراً.')) {
+      return;
+    }
+
+    try {
+      if (onDeleteAcademicDate) {
+        const ok = await onDeleteAcademicDate(id);
+        if (ok) {
+          onToast('تم حذف الموعد بنجاح 🗑️', '🗑️');
+        } else {
+          onToast('فشل حذف الموعد. تأكد من صلاحيات الأدمن ❌', '❌');
+        }
+      } else {
+        onToast('ميزة الحذف غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+      }
+    } catch (err) {
+      console.error(err);
+      onToast('حدث خطأ أثناء محاولة الحذف ❌', '❌');
+    }
+  };
+
+  const handlePublishAcademicDate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adTitle.trim() || !adDate.trim()) {
+      onToast('يرجى ملء عنوان الموعد وتاريخه الميلادي ⚠️', '⚠️');
+      return;
+    }
+
+    setPublishingAd(true);
+    try {
+      if (editingAdId) {
+        if (onUpdateAcademicDate) {
+          const ok = await onUpdateAcademicDate(editingAdId, adTitle.trim(), adDate, adHijriLabel.trim());
+          if (ok) {
+            onToast('تم تحديث الموعد بنجاح ✏️', '✏️');
+            resetAdForm();
+          } else {
+            onToast('فشل تحديث الموعد. تأكد من صلاحيات الأدمن ❌', '❌');
+          }
+        } else {
+          onToast('ميزة التعديل غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+        }
+      } else {
+        if (onPublishAcademicDate) {
+          const ok = await onPublishAcademicDate(adTitle.trim(), adDate, adHijriLabel.trim());
+          if (ok) {
+            onToast('تمت إضافة الموعد الدراسي بنجاح 🚀', '🚀');
+            resetAdForm();
+          } else {
+            onToast('فشلت إضافة الموعد. تأكد من اتصالك وصلاحيات الأدمن ❌', '❌');
+          }
+        } else {
+          onToast('ميزة الإضافة غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      onToast('حدث خطأ غير متوقع ❌', '❌');
+    } finally {
+      setPublishingAd(false);
     }
   };
 
@@ -576,6 +670,13 @@ export default function AdminDashboard({
           onClick={() => setActiveTab('announcements')}
         >
           <i className="ti ti-speakerphone" /> نشر تعميم
+        </button>
+        <button
+          className={`admin-tab ${activeTab === 'academic-dates' ? 'active' : ''}`}
+          onClick={() => setActiveTab('academic-dates')}
+        >
+          <i className="ti ti-calendar-event" /> المواعيد الدراسية
+          <span className="tab-count">{sortedAcademicDates.length}</span>
         </button>
       </div>
 
@@ -891,6 +992,172 @@ export default function AdminDashboard({
                     انشر تعميماً حقيقياً من الأعلى وسيحل محلها تلقائياً.
                   </p>
                 )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── ACADEMIC DATES TAB ── */}
+      {activeTab === 'academic-dates' && (
+        <div className="admin-announcements-tab" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
+          <div className="announcement-form-card">
+            <div className="form-header">
+              <i className={`ti ${editingAdId ? 'ti-edit' : 'ti-calendar-event'}`} />
+              <span>{editingAdId ? 'تعديل موعد دراسي' : 'إضافة موعد دراسي جديد'}</span>
+            </div>
+
+            <form onSubmit={handlePublishAcademicDate} className="ann-form">
+              <div className="form-group">
+                <label>عنوان الموعد</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: عودة المعلمين والمعلمات الممارسين للتدريس"
+                  value={adTitle}
+                  onChange={e => setAdTitle(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group flex-1">
+                  <label>التاريخ الميلادي</label>
+                  <input
+                    type="date"
+                    required
+                    value={adDate}
+                    onChange={e => setAdDate(e.target.value)}
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group flex-1">
+                  <label>التاريخ الهجري (للعرض فقط، اختياري)</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: ١٠ صفر ١٤٤٨ هـ"
+                    value={adHijriLabel}
+                    onChange={e => setAdHijriLabel(e.target.value)}
+                    className="form-input"
+                  />
+                </div>
+              </div>
+
+              <div className="ann-form-actions">
+                <button
+                  type="submit"
+                  disabled={publishingAd}
+                  className="publish-submit-btn"
+                >
+                  {publishingAd ? (
+                    <>
+                      <i className="ti ti-loader animate-spin" />
+                      <span>{editingAdId ? 'جاري حفظ التعديلات...' : 'جاري الإضافة...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className={`ti ${editingAdId ? 'ti-device-floppy' : 'ti-plus'}`} />
+                      <span>{editingAdId ? 'حفظ التعديلات' : 'إضافة الموعد'}</span>
+                    </>
+                  )}
+                </button>
+                {editingAdId && (
+                  <button
+                    type="button"
+                    onClick={resetAdForm}
+                    disabled={publishingAd}
+                    className="ann-cancel-btn"
+                  >
+                    <i className="ti ti-x" />
+                    <span>إلغاء التعديل</span>
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* List of existing academic dates */}
+          <div className="announcements-manage-section" style={{ marginTop: '32px' }}>
+            <div className="form-header" style={{ marginBottom: '16px' }}>
+              <i className="ti ti-list" />
+              <span>المواعيد الدراسية المضافة حالياً ({sortedAcademicDates.length})</span>
+            </div>
+
+            {sortedAcademicDates.length > 0 ? (
+              <div className="ann-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {sortedAcademicDates.map((ad) => (
+                  <div
+                    key={ad.id}
+                    className="ann-manage-item"
+                    style={{
+                      background: editingAdId === ad.id ? 'rgba(82,196,120,.08)' : 'rgba(255, 255, 255, 0.03)',
+                      border: editingAdId === ad.id ? '1px solid rgba(82,196,120,.4)' : '1px solid var(--line2)',
+                      borderRadius: '16px',
+                      padding: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '16px',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <span className="inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20">
+                          {new Date(ad.date).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        </span>
+                        {ad.hijri_label && (
+                          <span style={{ fontSize: '11px', color: 'var(--text4)' }}>{ad.hijri_label}</span>
+                        )}
+                      </div>
+                      <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ad.title}</h4>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <button
+                        style={{
+                          padding: '8px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(82,196,120,.25)',
+                          color: 'var(--em8)',
+                          background: 'rgba(82,196,120,.06)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s'
+                        }}
+                        title="تعديل الموعد"
+                        onClick={() => startEditAcademicDate(ad)}
+                      >
+                        <i className="ti ti-edit" style={{ fontSize: '16px' }}></i>
+                      </button>
+                      <button
+                        style={{
+                          padding: '8px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(248,113,113,.2)',
+                          color: '#f87171',
+                          background: 'rgba(248,113,113,.05)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s'
+                        }}
+                        title="حذف الموعد"
+                        onClick={() => handleDeleteAcademicDate(ad.id)}
+                      >
+                        <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '32px 16px', textAlign: 'center', color: 'var(--text4)' }}>
+                <i className="ti ti-calendar-event" style={{ fontSize: '24px', marginBottom: '8px', display: 'block', opacity: 0.4 }}></i>
+                <span>لا توجد مواعيد دراسية مضافة حالياً</span>
               </div>
             )}
           </div>

@@ -40,6 +40,15 @@ export interface Announcement {
   created_by?: string;
 }
 
+export interface AcademicDate {
+  id: string;
+  title: string;
+  date: string;
+  hijri_label?: string;
+  created_at: string;
+  created_by?: string;
+}
+
 export interface AppState {
   ev: Record<string, Evidence[]>;
   strats: string[];

@@ -1,4 +1,4 @@
-import type { AppState, SectionData, UserProfile } from './types';
+import type { AcademicDate, AppState, SectionData, UserProfile } from './types';
 
 // القيمة الافتراضية التي يضعها trigger قاعدة البيانات (handle_new_user) للحسابات
 // الجديدة التي لم تُكمّل بياناتها بعد — تُستخدم لتمييز الملف "الناقص" عن "المكتمل".
@@ -22,6 +22,30 @@ export const getCompletionLabel = (pct: number): string => {
   if (pct >= 70) return 'متقدم';
   if (pct >= 35) return 'في التقدم';
   return 'يحتاج عمل';
+};
+
+/** true إذا كان تاريخ اليوم ضمن آخر 5 أيام من الشهر الميلادي الحالي */
+export const isLastDaysOfMonth = (): boolean => {
+  const today = new Date();
+  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  return lastDayOfMonth - today.getDate() < 5;
+};
+
+/** أقرب موعد دراسي قادم ضمن daysAhead يوماً من اليوم، أو null إن لم يوجد */
+export const upcomingAcademicDate = (dates: AcademicDate[], daysAhead = 7): AcademicDate | null => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const horizon = new Date(today);
+  horizon.setDate(horizon.getDate() + daysAhead);
+
+  const upcoming = dates
+    .filter(d => {
+      const dDate = new Date(d.date);
+      return dDate >= today && dDate <= horizon;
+    })
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  return upcoming[0] ?? null;
 };
 
 export function calculateEvaluation(state: Pick<AppState, 'ev' | 'strats' | 'csubs'>, sections: SectionData[]) {

@@ -321,6 +321,72 @@ export function useAdminStore(isAdmin: boolean) {
     }
   };
 
+  // Create a new academic date (admin only)
+  const createAcademicDate = async (
+    title: string,
+    date: string,
+    hijriLabel?: string
+  ): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { error: insertError } = await supabase
+        .from('academic_dates')
+        .insert({
+          title,
+          date,
+          hijri_label: hijriLabel || null,
+          created_by: currentUser?.id || null
+        });
+      if (insertError) throw insertError;
+      return true;
+    } catch (e) {
+      console.error('Create academic date error:', e);
+      return false;
+    }
+  };
+
+  // Update an existing academic date (admin only)
+  const updateAcademicDate = async (
+    id: string,
+    title: string,
+    date: string,
+    hijriLabel?: string
+  ): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('academic_dates')
+        .update({
+          title,
+          date,
+          hijri_label: hijriLabel || null
+        })
+        .eq('id', id);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.error('Update academic date error:', e);
+      return false;
+    }
+  };
+
+  // Delete an academic date (admin only)
+  const deleteAcademicDate = async (id: string): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('academic_dates')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.error('Delete academic date error:', e);
+      return false;
+    }
+  };
+
   return {
     users,
     stats,
@@ -334,5 +400,8 @@ export function useAdminStore(isAdmin: boolean) {
     createAnnouncement,
     updateAnnouncement,
     deleteAnnouncement,
+    createAcademicDate,
+    updateAcademicDate,
+    deleteAcademicDate,
   };
 }

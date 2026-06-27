@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import type { AppState, UserProfile, Announcement } from '../types';
+import type { AppState, UserProfile, Announcement, AcademicDate } from '../types';
 
 // ═══════════════════════════════════════════════════════════
 // قائمة المشرفين — أضف إيميلك هنا لمنح صلاحيات الأدمن
@@ -41,6 +41,7 @@ export function useAppStore() {
   const [loading, setLoading] = useState(true);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [academicDates, setAcademicDates] = useState<AcademicDate[]>([]);
   // share_enabled يعيش في عمود مستقل بجدول portfolios (وليس داخل state JSONB) —
   // الافتراضي معطّل دائماً؛ المعلم وحده من يفعّله من إعدادات حسابه.
   const [shareEnabled, setShareEnabled] = useState(false);
@@ -111,6 +112,41 @@ export function useAppStore() {
         .channel('public:announcements')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
           fetchAnnouncements();
+        })
+        .subscribe();
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user]);
+
+  // Fetch academic_dates من Supabase
+  const fetchAcademicDates = async () => {
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('academic_dates')
+          .select('*')
+          .order('date', { ascending: true });
+        if (!error && data) {
+          setAcademicDates(data);
+          return;
+        }
+        console.warn('[AcademicDates] Error or missing table. Error:', error?.message);
+      } catch (err) {
+        console.warn('[AcademicDates] Exception:', err);
+      }
+    }
+    setAcademicDates([]);
+  };
+
+  useEffect(() => {
+    fetchAcademicDates();
+    if (supabase) {
+      const channel = supabase
+        .channel('public:academic_dates')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'academic_dates' }, () => {
+          fetchAcademicDates();
         })
         .subscribe();
       return () => {
@@ -359,6 +395,7 @@ export function useAppStore() {
     announcements,
     markAnnouncementAsRead,
     fetchAnnouncements,
+    academicDates,
     updateYearStartMonth,
     shareEnabled,
     updateShareEnabled

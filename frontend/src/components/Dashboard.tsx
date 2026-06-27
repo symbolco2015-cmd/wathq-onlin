@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import type { AppState, SectionData, Announcement } from '../types';
+import { useMemo, useState } from 'react';
+import type { AppState, SectionData, Announcement, AcademicDate } from '../types';
 import Sidebar from './Sidebar';
 import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
-import { calculateEvaluation } from '../utils';
+import { calculateEvaluation, isLastDaysOfMonth, upcomingAcademicDate } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
 import { useQuickCapture } from '../hooks/useQuickCapture';
 
@@ -35,6 +35,7 @@ interface DashboardProps {
   onDelSub: (sid: number, subName: string) => void;
   announcements?: Announcement[];
   onMarkAsRead?: (id: string) => void;
+  academicDates?: AcademicDate[];
   monthlyProgress?: MonthlyProgressData;
   /** الحقول التالية تُستخدم فقط لعرض BottomSheet إضافة الشاهد على الجوال */
   userId?: string;
@@ -49,10 +50,35 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, monthlyProgress, userId, onAddEv, onToast }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
+  const [reminderDismissed, setReminderDismissed] = useState(false);
+
+  // تذكير موسمي — موعد دراسي قادم له الأولوية على التذكير الشهري العام
+  const reminderBanner = useMemo(() => {
+    const upcoming = upcomingAcademicDate(academicDates || [], 7);
+    if (upcoming) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const daysLeft = Math.round((new Date(upcoming.date).getTime() - today.getTime()) / 86400000);
+      const dateStr = new Date(upcoming.date).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
+      return {
+        icon: 'ti-calendar-event',
+        title: upcoming.title,
+        subtitle: `${daysLeft <= 0 ? 'اليوم' : `بعد ${daysLeft} ${daysLeft === 1 ? 'يوم' : 'أيام'}`} — ${dateStr}${upcoming.hijri_label ? ` (${upcoming.hijri_label})` : ''}`,
+      };
+    }
+    if (isLastDaysOfMonth()) {
+      return {
+        icon: 'ti-hourglass-low',
+        title: 'الشهر على وشك الانتهاء',
+        subtitle: 'لا تنسَ تسجيل شواهدك قبل بداية الشهر القادم لضمان توثيق إنجازك.',
+      };
+    }
+    return null;
+  }, [academicDates]);
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [fabExpanded, setFabExpanded] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<{ open: boolean; sectionId: number; sub: string }>({
@@ -220,6 +246,35 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             </div>
           </div>
         </div>
+
+        {/* SEASONAL REMINDER BANNER */}
+        {reminderBanner && !reminderDismissed && (
+          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold)]/10 via-[var(--gold)]/5 to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .55s var(--sp) both 0.02s' }}>
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_100%_at_0%_50%,rgba(201,162,39,.08),transparent_70%)]" />
+            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
+            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[22px] text-[var(--gold)]">
+                  <i className={`ti ${reminderBanner.icon}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-[var(--gold)]/80 tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
+                    <i className="ti ti-bell text-[12px]" /> تذكير
+                  </div>
+                  <div className="text-[15px] font-extrabold text-white truncate leading-snug">{reminderBanner.title}</div>
+                  <div className="text-[12.5px] text-[var(--text3)] mt-1">{reminderBanner.subtitle}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setReminderDismissed(true)}
+                className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text4)] hover:text-white hover:bg-white/10 transition-colors duration-200 cursor-pointer"
+                title="إغلاق"
+              >
+                <i className="ti ti-x text-[16px]" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* NEXT STEP CARD */}
         {nextSectionData && (

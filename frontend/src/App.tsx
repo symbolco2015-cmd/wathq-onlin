@@ -46,6 +46,7 @@ export default function App() {
     signOut,
     announcements,
     markAnnouncementAsRead,
+    academicDates,
     updateYearStartMonth,
     shareEnabled,
     updateShareEnabled,
@@ -64,6 +65,9 @@ export default function App() {
     createAnnouncement,
     updateAnnouncement,
     deleteAnnouncement,
+    createAcademicDate,
+    updateAcademicDate,
+    deleteAcademicDate,
   } = useAdminStore(isAdmin);
 
   const monthlyProgress = useMonthlyProgress({
@@ -742,6 +746,7 @@ export default function App() {
             onDelSub={delSub}
             announcements={announcements}
             onMarkAsRead={markAnnouncementAsRead}
+            academicDates={academicDates}
             supabaseEv={supabaseEv}
             monthlyProgress={monthlyProgress}
             userId={user?.id}
@@ -768,6 +773,10 @@ export default function App() {
             onUpdateAnnouncement={updateAnnouncement}
             onDeleteAnnouncement={deleteAnnouncement}
             announcements={announcements}
+            onPublishAcademicDate={createAcademicDate}
+            onUpdateAcademicDate={updateAcademicDate}
+            onDeleteAcademicDate={deleteAcademicDate}
+            academicDates={academicDates}
           />
         )}
       </main>

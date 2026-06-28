@@ -518,7 +518,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               </div>
               <div className="text-[26px] sm:text-[36px] font-black leading-none text-white transition-all duration-300 font-[var(--font)] group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-[linear-gradient(135deg,var(--em7),var(--gold))] relative z-10">{st.val}</div>
               <div className="text-[11px] sm:text-[13px] text-[var(--text3)] mt-1 sm:mt-1.5 font-medium relative z-10">{st.lbl}</div>
-              {st.sub && <div className="hidden sm:block text-[11px] text-[var(--text4)] mt-1 font-medium relative z-10 opacity-70">{st.sub}</div>}
+              {st.sub && <div className="hidden sm:block text-[11px] text-[var(--text4)] mt-1 font-medium relative z-10">{st.sub}</div>}
             </div>
           ))}
         </div>
@@ -720,7 +720,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                                    )}
                                    
                                    {evs.length === 0 && (
-                                     <div className="text-[12px] text-[var(--text4)] italic opacity-60">لا توجد شواهد مرفقة لهذه الاستراتيجية حالياً.</div>
+                                     <div className="text-[12px] text-[var(--text4)] italic">لا توجد شواهد مرفقة لهذه الاستراتيجية حالياً.</div>
                                    )}
                                  </div>
                                );

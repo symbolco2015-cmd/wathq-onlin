@@ -10,9 +10,10 @@ const ACTIVE_STATUS_COLOR = getCompletionColor(100);
 // "غير نشط" ليس "أداءً ضعيفاً" (فلا يصح اللون الأحمر هنا) بل حالة محايدة — رمادي
 // واضح بلا أي صبغة خضراء، ليتمايز بصرياً عن "نشط".
 const INACTIVE_STATUS_COLOR = '#94a3b8';
-// عتبة "عدد أدلة مرتفع" لتمييزه بلون التمييز البرتقالي/الكهرماني الخاص بالمنصة
-// (نفس لون زر "أضف شاهداً الآن")، بدل تركه بنفس لون باقي الصف.
-const HIGH_EVIDENCE_THRESHOLD = 10;
+// عتبة "فيه نشاط فعلي" لتمييزه بلون التمييز البرتقالي/الكهرماني الخاص بالمنصة
+// (نفس لون زر "أضف شاهداً الآن")، بدل تركه بنفس لون باقي الصف. أي دليل واحد
+// فأكثر يستحق التمييز — العتبة ليست "مرتفع جداً" بل "ليس صفراً".
+const HIGH_EVIDENCE_THRESHOLD = 1;
 const ACCENT_AMBER = '#f59e0b';
 
 /* ─────────────────────────────────────────────
@@ -1300,7 +1301,9 @@ const adminStyles = `
 /* ── Tabs ── */
 .admin-tabs {
   display: flex; gap: 4px;
-  background: rgba(255,255,255,.06);
+  /* نفس عائلة تدرج surf المستخدمة لبطاقات Dashboard/Sidebar، بدرجة surf3→surf4
+     (خطوة أعلى من بطاقات باقي الصفحات) لضمان فرق سطوع محسوس عن خلفية الصفحة (surf0). */
+  background: linear-gradient(135deg, var(--surf3), var(--surf4));
   border: 1px solid var(--line2);
   border-radius: 14px; padding: 4px;
   margin-bottom: 28px; width: fit-content;
@@ -1336,7 +1339,7 @@ const adminStyles = `
 .stat-card {
   display: flex; align-items: center; gap: 16px;
   padding: 20px; border-radius: 18px;
-  background: rgba(255,255,255,.07);
+  background: linear-gradient(135deg, var(--surf3), var(--surf4));
   border: 1px solid var(--line2);
   animation: scaleIn .4s var(--sp) both;
   transition: transform .2s, box-shadow .2s;
@@ -1368,7 +1371,7 @@ const adminStyles = `
 
 /* ── Chart Card ── */
 .chart-card {
-  background: rgba(255,255,255,.07);
+  background: linear-gradient(135deg, var(--surf3), var(--surf4));
   border: 1px solid var(--line2);
   border-radius: 18px; padding: 20px;
 }
@@ -1400,7 +1403,7 @@ const adminStyles = `
 
 /* ── Distribution Card ── */
 .dist-card {
-  background: rgba(255,255,255,.07);
+  background: linear-gradient(135deg, var(--surf3), var(--surf4));
   border: 1px solid var(--line2);
   border-radius: 18px; padding: 20px;
 }
@@ -1468,7 +1471,7 @@ const adminStyles = `
 
 /* ── Table ── */
 .table-wrap {
-  background: rgba(255,255,255,.06);
+  background: linear-gradient(135deg, var(--surf3), var(--surf4));
   border: 1px solid var(--line2); border-radius: 18px;
   overflow: hidden; overflow-x: auto;
 }
@@ -1823,7 +1826,9 @@ const adminStyles = `
    ترك التحكم بالعرض (display) بالكامل لكلاسات Tailwind على العنصر نفسه
    (flex flex-col gap-2.5 md:hidden) بدل تكراره هنا. */
 .user-card {
-  background: rgba(255,255,255,.06);
+  /* نفس تدرج surf3→surf4 المستخدم لبطاقة الجدول والإحصائيات أعلاه —
+     يطابق سطوع بطاقة الجدول على نفس المستوى بدل التراكب الأبيض شبه المعدوم. */
+  background: linear-gradient(135deg, var(--surf3), var(--surf4));
   border: 1px solid var(--line2);
   border-radius: 16px;
   overflow: hidden;

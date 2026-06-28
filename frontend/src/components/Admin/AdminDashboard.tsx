@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { AdminUser, PlatformStats } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
 import { getCompletionColor } from '../../utils';
+import UserCard from './UserCard';
 
 // نفس نظام الألوان الدلالي الموحد المستخدم في باقي المنصة (Sidebar/getCompletionColor):
 // أخضر ≥70% — نُعيد استخدام قيمته الثابتة لحالة "نشط" بدل اختراع أخضر مختلف.
@@ -773,8 +774,8 @@ export default function AdminDashboard({
             </button>
           </div>
 
-          {/* Table */}
-          <div className="table-wrap">
+          {/* Table — desktop only، الجدول الكامل بدون أي تعديل */}
+          <div className="table-wrap hidden md:block">
             <table className="users-table">
               <thead>
                 <tr>
@@ -801,6 +802,19 @@ export default function AdminDashboard({
                 ))}
               </tbody>
             </table>
+            {filteredUsers.length === 0 && (
+              <div className="empty-state">
+                <i className="ti ti-search-off" />
+                <span>لا توجد نتائج مطابقة</span>
+              </div>
+            )}
+          </div>
+
+          {/* Cards — mobile only، نفس filteredUsers المستخدمة في الجدول أعلاه */}
+          <div className="users-cards md:hidden">
+            {filteredUsers.map(u => (
+              <UserCard key={u.id} user={u} onView={setSelectedUser} />
+            ))}
             {filteredUsers.length === 0 && (
               <div className="empty-state">
                 <i className="ti ti-search-off" />
@@ -1796,5 +1810,43 @@ const adminStyles = `
     max-width: 100%;
     -webkit-overflow-scrolling: touch;
   }
+}
+
+/* ── Mobile User Cards (md:hidden — see UserCard.tsx) ──
+   عرض بديل للجدول على الجوال: بطاقة مصغّرة (أفاتار + اسم) تتوسّع بالضغط
+   لعرض نفس بيانات أعمدة الجدول. لا تُستخدم على الديسكتوب (الجدول يبقى كما هو). */
+.users-cards { display: flex; flex-direction: column; gap: 10px; }
+.user-card {
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--line2);
+  border-radius: 16px;
+  overflow: hidden;
+  animation: fadeIn .3s var(--sp) both;
+}
+.user-card-head {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 14px; background: none; border: none; cursor: pointer;
+  text-align: right; font-family: var(--font); color: inherit;
+}
+.user-card-name {
+  flex: 1; font-size: 14px; font-weight: 700; color: white;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.user-card-chevron { color: var(--text3); font-size: 16px; transition: transform .25s var(--sp); flex-shrink: 0; }
+.user-card-chevron.open { transform: rotate(180deg); }
+.user-card-body {
+  padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px;
+  border-top: 1px solid var(--line2);
+  animation: fadeIn .2s ease both;
+}
+.ucard-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ucard-label { font-size: 12px; color: var(--text3); font-weight: 600; flex-shrink: 0; }
+.ucard-value {
+  font-size: 13px; color: var(--text2); text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ucard-manage {
+  width: 100%; margin-top: 4px; gap: 6px; font-size: 13px; font-weight: 700;
+  height: 38px; border-radius: 10px;
 }
 `;

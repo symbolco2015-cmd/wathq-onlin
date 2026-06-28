@@ -811,7 +811,7 @@ export default function AdminDashboard({
           </div>
 
           {/* Cards — mobile only، نفس filteredUsers المستخدمة في الجدول أعلاه */}
-          <div className="users-cards md:hidden">
+          <div className="users-cards flex flex-col gap-2.5 md:hidden">
             {filteredUsers.map(u => (
               <UserCard key={u.id} user={u} onView={setSelectedUser} />
             ))}
@@ -1814,8 +1814,14 @@ const adminStyles = `
 
 /* ── Mobile User Cards (md:hidden — see UserCard.tsx) ──
    عرض بديل للجدول على الجوال: بطاقة مصغّرة (أفاتار + اسم) تتوسّع بالضغط
-   لعرض نفس بيانات أعمدة الجدول. لا تُستخدم على الديسكتوب (الجدول يبقى كما هو). */
-.users-cards { display: flex; flex-direction: column; gap: 10px; }
+   لعرض نفس بيانات أعمدة الجدول. لا تُستخدم على الديسكتوب (الجدول يبقى كما هو).
+   ملاحظة: لا تُعرَّف display/flex-direction/gap هنا عمداً — كانت قاعدة
+   ".users-cards{display:flex}" غير المشروطة بـ media query سابقاً تتجاوز
+   (override) كلاس Tailwind "md:hidden" على الديسكتوب، لأن هذا <style> المُحقن
+   من React يأتي بعد ورقة أنماط Tailwind في ترتيب المستند، وعند تساوي
+   specificity يفوز الأحدث في ترتيب المصدر بصرف النظر عن media query. الحل:
+   ترك التحكم بالعرض (display) بالكامل لكلاسات Tailwind على العنصر نفسه
+   (flex flex-col gap-2.5 md:hidden) بدل تكراره هنا. */
 .user-card {
   background: rgba(255,255,255,.06);
   border: 1px solid var(--line2);

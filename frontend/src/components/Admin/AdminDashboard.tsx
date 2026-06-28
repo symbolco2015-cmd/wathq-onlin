@@ -1,6 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import type { AdminUser, PlatformStats } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
+import { getCompletionColor } from '../../utils';
+
+// نفس نظام الألوان الدلالي الموحد المستخدم في باقي المنصة (Sidebar/getCompletionColor):
+// أخضر ≥70% — نُعيد استخدام قيمته الثابتة لحالة "نشط" بدل اختراع أخضر مختلف.
+const ACTIVE_STATUS_COLOR = getCompletionColor(100);
+// "غير نشط" ليس "أداءً ضعيفاً" (فلا يصح اللون الأحمر هنا) بل حالة محايدة — رمادي
+// واضح بلا أي صبغة خضراء، ليتمايز بصرياً عن "نشط".
+const INACTIVE_STATUS_COLOR = '#94a3b8';
+// عتبة "عدد أدلة مرتفع" لتمييزه بلون التمييز البرتقالي/الكهرماني الخاص بالمنصة
+// (نفس لون زر "أضف شاهداً الآن")، بدل تركه بنفس لون باقي الصف.
+const HIGH_EVIDENCE_THRESHOLD = 10;
+const ACCENT_AMBER = '#f59e0b';
 
 /* ─────────────────────────────────────────────
    Stat Card
@@ -113,7 +125,7 @@ function UserRow({ user, onView, idx }: {
         <span className="school-text" title={user.school}>{user.school}</span>
       </td>
       <td className="td-ev">
-        <div className="ev-count">
+        <div className={`ev-count${user.evidenceCount >= HIGH_EVIDENCE_THRESHOLD ? ' ev-count-high' : ''}`}>
           <i className="ti ti-files" />
           {user.evidenceCount}
         </div>
@@ -1274,7 +1286,7 @@ const adminStyles = `
 /* ── Tabs ── */
 .admin-tabs {
   display: flex; gap: 4px;
-  background: rgba(255,255,255,.03);
+  background: rgba(255,255,255,.06);
   border: 1px solid var(--line2);
   border-radius: 14px; padding: 4px;
   margin-bottom: 28px; width: fit-content;
@@ -1310,7 +1322,7 @@ const adminStyles = `
 .stat-card {
   display: flex; align-items: center; gap: 16px;
   padding: 20px; border-radius: 18px;
-  background: rgba(255,255,255,.04);
+  background: rgba(255,255,255,.07);
   border: 1px solid var(--line2);
   animation: scaleIn .4s var(--sp) both;
   transition: transform .2s, box-shadow .2s;
@@ -1330,7 +1342,7 @@ const adminStyles = `
 .stat-body { flex: 1; min-width: 0; }
 .stat-value { font-size: 28px; font-weight: 900; color: white; line-height: 1; }
 .stat-label { font-size: 12px; font-weight: 600; color: var(--text3); margin-top: 4px; }
-.stat-sub { font-size: 11px; color: var(--text4); margin-top: 2px; }
+.stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
 
 /* ── Overview Bottom ── */
 .overview-bottom {
@@ -1342,7 +1354,7 @@ const adminStyles = `
 
 /* ── Chart Card ── */
 .chart-card {
-  background: rgba(255,255,255,.04);
+  background: rgba(255,255,255,.07);
   border: 1px solid var(--line2);
   border-radius: 18px; padding: 20px;
 }
@@ -1368,13 +1380,13 @@ const adminStyles = `
   box-shadow: 0 4px 12px rgba(82,196,120,.2);
 }
 .mini-bar-label {
-  font-size: 10px; color: var(--text4);
+  font-size: 10px; color: var(--text3);
   margin-top: 4px; white-space: nowrap; font-family: var(--font2);
 }
 
 /* ── Distribution Card ── */
 .dist-card {
-  background: rgba(255,255,255,.04);
+  background: rgba(255,255,255,.07);
   border: 1px solid var(--line2);
   border-radius: 18px; padding: 20px;
 }
@@ -1396,8 +1408,8 @@ const adminStyles = `
   font-size: 12px; color: var(--text2); font-weight: 600;
   max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.dist-count { font-size: 12px; color: var(--text4); }
-.dist-count small { color: var(--text4); font-size: 10px; }
+.dist-count { font-size: 12px; color: var(--text3); }
+.dist-count small { color: var(--text3); font-size: 10px; }
 .dist-empty { font-size: 13px; color: var(--text4); text-align: center; padding: 16px; }
 
 /* ── Users Tab ── */
@@ -1442,7 +1454,7 @@ const adminStyles = `
 
 /* ── Table ── */
 .table-wrap {
-  background: rgba(255,255,255,.03);
+  background: rgba(255,255,255,.06);
   border: 1px solid var(--line2); border-radius: 18px;
   overflow: hidden; overflow-x: auto;
 }
@@ -1483,7 +1495,7 @@ const adminStyles = `
   flex-shrink: 0;
 }
 .user-name { font-size: 14px; font-weight: 700; color: white; }
-.user-email { font-size: 11px; color: var(--text4); margin-top: 2px; direction: ltr; }
+.user-email { font-size: 11px; color: var(--text3); margin-top: 2px; direction: ltr; }
 .role-badge {
   font-size: 12px; font-weight: 600; color: var(--text2);
   background: rgba(255,255,255,.06); padding: 3px 10px; border-radius: 20px;
@@ -1499,14 +1511,23 @@ const adminStyles = `
   font-size: 13px; font-weight: 700; color: var(--text2);
 }
 .ev-count i { color: #a78bfa; }
+.ev-count-high, .ev-count-high i { color: ${ACCENT_AMBER}; }
 .strat-count i { color: #fbbf24; }
 .status-dot {
   font-size: 12px; font-weight: 700; padding: 3px 10px;
   border-radius: 20px; white-space: nowrap;
 }
-.status-dot.active { background: rgba(52,211,153,.12); color: #34d399; border: 1px solid rgba(52,211,153,.25); }
-.status-dot.inactive { background: rgba(255,255,255,.05); color: var(--text4); border: 1px solid var(--line2); }
-.td-date { font-size: 12px; color: var(--text4); white-space: nowrap; }
+.status-dot.active {
+  background: color-mix(in srgb, ${ACTIVE_STATUS_COLOR} 16%, transparent);
+  color: ${ACTIVE_STATUS_COLOR};
+  border: 1px solid color-mix(in srgb, ${ACTIVE_STATUS_COLOR} 32%, transparent);
+}
+.status-dot.inactive {
+  background: color-mix(in srgb, ${INACTIVE_STATUS_COLOR} 12%, transparent);
+  color: ${INACTIVE_STATUS_COLOR};
+  border: 1px solid color-mix(in srgb, ${INACTIVE_STATUS_COLOR} 28%, transparent);
+}
+.td-date { font-size: 12px; color: var(--text3); white-space: nowrap; }
 .action-btn {
   width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line2);
   display: flex; align-items: center; justify-content: center;

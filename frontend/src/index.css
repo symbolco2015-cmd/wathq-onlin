@@ -28,6 +28,12 @@ body{
   background:var(--surf0);color:var(--text);
   font-size:15px;overflow-x:hidden;min-height:100vh;
 }
+/* Backstop for mobile-only horizontal overflow (e.g. wide tables/tab bars) —
+   some mobile browsers still allow page-level horizontal scroll/pan from an
+   overflowing descendant even when body alone has overflow-x:hidden. */
+@media (max-width:767px){
+  html{overflow-x:hidden;}
+}
 ::selection{background:rgba(82,196,120,.25);color:var(--em8)}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:transparent}

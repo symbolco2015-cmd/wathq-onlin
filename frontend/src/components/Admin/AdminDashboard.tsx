@@ -1754,4 +1754,26 @@ const adminStyles = `
   opacity: .6;
   cursor: not-allowed;
 }
+
+/* ── Mobile-only overflow containment (≤767px) ──
+   The users table (min-width:700px) and the tab bar (width:fit-content,
+   no-wrap) can be wider than a phone screen. Without this, their overflow
+   leaks past .table-wrap/.admin-tabs into a page-level horizontal scroll,
+   which on some mobile browsers drags the fixed BottomNav along with it.
+   Desktop is untouched — these rules only apply under the breakpoint. */
+@media (max-width: 767px) {
+  .admin-tabs {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .admin-tab {
+    flex-shrink: 0;
+  }
+  .table-wrap {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+}
 `;

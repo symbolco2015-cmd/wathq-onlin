@@ -114,9 +114,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     Math.min(100, Math.round(((monthlyProgress?.getSectionMonthCount(sectionId) ?? 0) / 3) * 100));
 
   // التقدم العام = مجموع شواهد الشهر لكل المجالات الأساسية (بلا الاستراتيجيات) / (عددها × 3) × 100
+  // كل بند يساهم بحد أقصى 3 في المجموع (نفس سقف getMonthlyPct)، حتى لا يطغى بند واحد مكدّس على الإجمالي
   const overallPct = nonStratSections.length > 0
     ? Math.min(100, Math.round(
-        nonStratSections.reduce((sum, s) => sum + (monthlyProgress?.getSectionMonthCount(s.id) ?? 0), 0)
+        nonStratSections.reduce((sum, s) => sum + Math.min(3, monthlyProgress?.getSectionMonthCount(s.id) ?? 0), 0)
         / (nonStratSections.length * 3) * 100
       ))
     : 0;
@@ -339,13 +340,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             {/* البطاقة 1 — عداد الشهر الحالي */}
             {(() => {
               const total = monthlyProgress.currentMonthTotal;
-              const goal  = 33; // 11 بند × 3
+              const goal  = 30; // 10 بند × 3 (بلا قسم الاستراتيجيات)
               const pct   = Math.min(100, Math.round((total / goal) * 100));
               const msg   =
                 total === 0  ? 'لم تبدأ بعد هذا الشهر' :
-                total <= 10  ? 'بداية جيدة، واصل' :
-                total <= 22  ? 'أنت في المنتصف' :
-                total <= 32  ? 'اقتربت من الهدف' :
+                total <= 9   ? 'بداية جيدة، واصل' :
+                total <= 20  ? 'أنت في المنتصف' :
+                total <= 29  ? 'اقتربت من الهدف' :
                                '✓ أكملت هدف الشهر';
               const barColor =
                 pct >= 80 ? 'linear-gradient(90deg,var(--em5),var(--em8))' :

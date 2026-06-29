@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
+import { SECS } from '../data';
 
 export interface MonthlyProgressRow {
   section_id: number;
@@ -12,6 +13,9 @@ interface UseMonthlyProgressOptions {
   userId: string | null;
   yearStartMonth: number; // 1–12, default 9
 }
+
+// قسم الاستراتيجيات مُستبعد كلياً من عداد الشهر الإجمالي (نفس استثناء overallPct في Dashboard.tsx)
+const STRAT_SECTION_ID = SECS.find(s => s.isStrat)?.id;
 
 const ARABIC_MONTHS = [
   'يناير','فبراير','مارس','أبريل','مايو','يونيو',
@@ -149,10 +153,10 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
     return rFlat >= startFlat && rFlat <= endFlat;
   }
 
-  /** إجمالي الشواهد للشهر الحالي عبر كل البنود */
+  /** إجمالي الشواهد للشهر الحالي عبر البنود الأساسية فقط (بلا الاستراتيجيات) — كل بند يساهم بحد أقصى 3 (نفس سقف getMonthlyPct لكل بند) */
   const currentMonthTotal = rows
-    .filter(r => r.year === currentYear && r.month === currentMonth)
-    .reduce((sum, r) => sum + r.evidence_count, 0);
+    .filter(r => r.year === currentYear && r.month === currentMonth && r.section_id !== STRAT_SECTION_ID)
+    .reduce((sum, r) => sum + Math.min(3, r.evidence_count), 0);
 
   /** إجمالي الشواهد منذ بداية السنة الدراسية */
   const yearTotal = rows.filter(isInAcademicYear).reduce((sum, r) => sum + r.evidence_count, 0);

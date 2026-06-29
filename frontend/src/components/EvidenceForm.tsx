@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
 import type { EvidenceType } from '../hooks/useSupabaseEvidence';
+import type { Evidence } from '../types';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -18,7 +19,14 @@ export interface EvidenceFormProps {
   userId: string | undefined;
   supabaseEv: SupabaseEvidenceHook;
   /** يحفظ في state.ev المحلي أيضاً للتوافق مع النظام القديم */
-  onAddEv: (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => void;
+  onAddEv: (
+    sid: number,
+    sub: string,
+    type: 'pdf' | 'img' | 'doc' | 'vid',
+    name: string,
+    url?: string,
+    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>
+  ) => void;
   onToast: (msg: string, icon?: string) => void;
 }
 
@@ -84,6 +92,14 @@ export default function EvidenceForm({
   const [selfReflection, setSelfReflection] = useState('');
   const [linkUrl,        setLinkUrl]        = useState('');
 
+  // ── حقول سياقية خاصة بأدلة الاستراتيجيات فقط (sub يبدأ بـ "strat:") ─────
+  const [stratDate,    setStratDate]    = useState('');
+  const [stratStage,   setStratStage]   = useState('');
+  const [stratGrade,   setStratGrade]   = useState('');
+  const [stratPeriod,  setStratPeriod]  = useState('');
+  const [stratSubject, setStratSubject] = useState('');
+  const isStratEvidence = sub.startsWith('strat:');
+
   // ── Upload state ─────────────────────────────────────────────
   const [fileUrl,        setFileUrl]        = useState('');
   const [fileName,       setFileName]       = useState('');
@@ -104,6 +120,7 @@ export default function EvidenceForm({
     setDescription(''); setImpact(''); setContextGrade('');
     setAcademicTerm(''); setSelfReflection(''); setLinkUrl('');
     setFileUrl(''); setFileName(''); setUploadSuccess(false);
+    setStratDate(''); setStratStage(''); setStratGrade(''); setStratPeriod(''); setStratSubject('');
   }, [isOpen]);
 
   // Fetch indicators for this section
@@ -203,7 +220,14 @@ export default function EvidenceForm({
       if (result) {
         // أيضاً احفظ في state.ev المحلي
         const url = fileUrl || linkUrl.trim() || undefined;
-        onAddEv(sectionId, sub, toLocalType(evidenceType), title.trim(), url);
+        const stratFields = isStratEvidence ? {
+          stratDate:    stratDate || undefined,
+          stratStage:   stratStage ? (stratStage as 'ابتدائي' | 'متوسط' | 'ثانوي') : undefined,
+          stratGrade:   stratGrade.trim() || undefined,
+          stratPeriod:  stratPeriod ? Number(stratPeriod) : undefined,
+          stratSubject: stratSubject.trim() || undefined,
+        } : undefined;
+        onAddEv(sectionId, sub, toLocalType(evidenceType), title.trim(), url, stratFields);
         onToast('تم إضافة الشاهد بنجاح ✅', '✅');
         onClose();
       } else {
@@ -269,6 +293,44 @@ export default function EvidenceForm({
                 <option key={ind.id} value={ind.id}>{ind.name_ar}</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {/* بيانات تطبيق الاستراتيجية — تظهر فقط عند إضافة دليل لاستراتيجية */}
+        {isStratEvidence && (
+          <div className="bg-[var(--gold)]/5 border border-[var(--gold)]/15 rounded-2xl p-4 space-y-3.5">
+            <div className="text-[11.5px] font-extrabold text-[var(--gold)] tracking-wide flex items-center gap-1.5">
+              <i className="ti ti-bulb" /> بيانات تطبيق الاستراتيجية
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className={labelCls}><i className="ti ti-calendar text-[var(--em7)]" /> تاريخ التطبيق</div>
+                <input type="date" className={inputCls} value={stratDate} onChange={e => setStratDate(e.target.value)} />
+              </div>
+              <div>
+                <div className={labelCls}><i className="ti ti-school text-[var(--em7)]" /> المرحلة الدراسية</div>
+                <select className={inputCls + ' cursor-pointer'} value={stratStage} onChange={e => setStratStage(e.target.value)}>
+                  <option value="">— اختر —</option>
+                  <option value="ابتدائي">ابتدائي</option>
+                  <option value="متوسط">متوسط</option>
+                  <option value="ثانوي">ثانوي</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className={labelCls}><i className="ti ti-users text-[var(--em7)]" /> الصف</div>
+                <input type="text" className={inputCls} placeholder="مثال: الثالث متوسط" value={stratGrade} onChange={e => setStratGrade(e.target.value)} />
+              </div>
+              <div>
+                <div className={labelCls}><i className="ti ti-clock text-[var(--em7)]" /> الحصة</div>
+                <input type="number" min={1} step={1} className={inputCls} placeholder="مثال: 3" value={stratPeriod} onChange={e => setStratPeriod(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <div className={labelCls}><i className="ti ti-book text-[var(--em7)]" /> اسم المادة</div>
+              <input type="text" className={inputCls} placeholder="مثال: الرياضيات" value={stratSubject} onChange={e => setStratSubject(e.target.value)} />
+            </div>
           </div>
         )}
 

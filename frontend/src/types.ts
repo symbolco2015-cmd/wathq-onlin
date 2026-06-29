@@ -6,6 +6,13 @@ export interface Evidence {
   date: string;
   sub?: string;
   url?: string;
+  // ── حقول سياقية إضافية، تُحفظ فقط للأدلة المرتبطة باستراتيجية تدريس
+  // (sub يبدأ بـ "strat:") — اختيارية بالكامل، الأدلة القديمة لا تملكها ───
+  stratDate?: string;
+  stratStage?: 'ابتدائي' | 'متوسط' | 'ثانوي';
+  stratGrade?: string;
+  stratPeriod?: number;
+  stratSubject?: string;
 }
 
 export interface SectionData {
@@ -57,6 +64,10 @@ export interface AppState {
   profile: UserProfile;
   readAnnouncements?: string[];
   yearStartMonth?: number; // 1–12، الافتراضي 9 (سبتمبر)
+  /** تاريخ إضافة كل استراتيجية (ISO) — يُستخدم لحساب "استراتيجيات مستخدمة هذا
+   * الشهر" في لوحة التحكم. اختياري بالكامل؛ الاستراتيجيات القديمة بلا تاريخ
+   * مسجَّل تُستثنى من عدّ الشهر الحالي دون أي كسر. */
+  stratDates?: Record<string, string>;
 }
 
 /** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */

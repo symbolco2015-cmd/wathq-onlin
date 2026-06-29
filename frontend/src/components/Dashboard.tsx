@@ -104,23 +104,42 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     csubs: state.csubs,
   });
 
+  // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب/الترتيب/
+  // التلوين — له بطاقة مخصّصة مثبّتة دائماً في آخر قائمة الأقسام (انظر أسفل).
+  const stratSection = sections.find(s => s.isStrat) ?? null;
+  const nonStratSections = sections.filter(s => !s.isStrat);
+
   // نسبة اكتمال البند بناءً على monthly_progress (عداد الشهر الحالي ÷ 3)
   const getMonthlyPct = (sectionId: number): number =>
     Math.min(100, Math.round(((monthlyProgress?.getSectionMonthCount(sectionId) ?? 0) / 3) * 100));
 
-  // التقدم العام = مجموع شواهد الشهر لكل البنود / (عدد البنود × 3) × 100
-  const overallPct = sections.length > 0
+  // التقدم العام = مجموع شواهد الشهر لكل المجالات الأساسية (بلا الاستراتيجيات) / (عددها × 3) × 100
+  const overallPct = nonStratSections.length > 0
     ? Math.min(100, Math.round(
-        sections.reduce((sum, s) => sum + (monthlyProgress?.getSectionMonthCount(s.id) ?? 0), 0)
-        / (sections.length * 3) * 100
+        nonStratSections.reduce((sum, s) => sum + (monthlyProgress?.getSectionMonthCount(s.id) ?? 0), 0)
+        / (nonStratSections.length * 3) * 100
       ))
     : 0;
 
   // البند الأقل اكتمالاً — الخطوة التالية (بناءً على monthly_progress)
-  const incompleteSections = sections.filter(s => getMonthlyPct(s.id) < 100);
+  const incompleteSections = nonStratSections.filter(s => getMonthlyPct(s.id) < 100);
   const nextSectionData = incompleteSections.length > 0
     ? incompleteSections.reduce((min, s) => getMonthlyPct(s.id) < getMonthlyPct(min.id) ? s : min)
     : null;
+
+  // عدد الاستراتيجيات المضافة خلال الشهر التقويمي الحالي (نفس منطق التصفية الزمنية لـ useMonthlyProgress)
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  const stratsUsedThisMonth = state.strats.filter(name => {
+    const iso = state.stratDates?.[name];
+    if (!iso) return false;
+    const d = new Date(iso);
+    return d.getFullYear() === curYear && (d.getMonth() + 1) === curMonth;
+  }).length;
+  const stratEvCount = stratSection
+    ? state.strats.reduce((acc, name) => acc + (state.ev[`${stratSection.id}|strat:${name}`] || []).length, 0)
+    : 0;
 
   // رسالة تشجيعية حسب نسبة الجاهزية
   const readinessMsg =
@@ -144,15 +163,15 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     setOpenSecs(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Filter sections by search query
+  // Filter sections by search query (قسم الاستراتيجيات مستبعد — له بطاقته المثبّتة دائماً)
   const filteredSections = searchQuery.trim()
-    ? sections.filter(sec => {
+    ? nonStratSections.filter(sec => {
         const q = searchQuery.toLowerCase();
         if (sec.ttl.includes(q)) return true;
         const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
         return allSubs.some(s => s.includes(q));
       })
-    : sections;
+    : nonStratSections;
 
   // الأقسام مرتبة: الأقل اكتمالاً أولاً (بدون إعادة ترتيب عند البحث)
   const sortedFilteredSections = searchQuery.trim()
@@ -165,8 +184,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? sections.reduce((sum, s) => sum + supabaseEv.getBySection(s.id).length, 0)
     : evStats.total;
   // أقسام موثّقة: عدد البنود التي فيها evidence_count > 0 في monthly_progress للشهر الحالي
+  // (يُحسب فقط عبر المجالات الأساسية العشرة — الاستراتيجيات خارج نظام النسب هذا)
   const filledSecs = monthlyProgress
-    ? sections.filter(s => monthlyProgress.getSectionMonthCount(s.id) > 0).length
+    ? nonStratSections.filter(s => monthlyProgress.getSectionMonthCount(s.id) > 0).length
     : evStats.filledSectionCount;
 
   return (
@@ -417,7 +437,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               <div className="sm:text-center">
                 <div className="text-[11px] font-bold text-[var(--text4)] mb-0.5">أقسام مكتملة</div>
                 <div className="text-[24px] font-black text-[var(--em8)] font-[var(--font)] leading-none">
-                  {filledSecs}<span className="text-[14px] text-[var(--text4)] font-semibold"> / {sections.length}</span>
+                  {filledSecs}<span className="text-[14px] text-[var(--text4)] font-semibold"> / {nonStratSections.length}</span>
                 </div>
               </div>
               <div className="sm:text-center">
@@ -501,9 +521,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4 mb-5 sm:mb-8">
           {[
             { id: 1, val: totalEvs, lbl: 'إجمالي الأدلة', ico: 'ti-files', bIco: 'ti-trending-up', bLbl: 'حي', theme: { bg: 'bg-gradient-to-br from-[var(--em2)]/30 to-[var(--em7)]/15', color: 'text-[var(--em7)]', badgeBg: 'bg-[var(--em7)]/10', badgeColor: 'text-[var(--em8)]' }, dly: '0.05s', sub: `${evStats.byType.pdf} PDF · ${evStats.byType.img} صور` },
-            { id: 2, val: sections.length, lbl: 'أقسام التوثيق', ico: 'ti-layout-grid', bIco: 'ti-check', bLbl: `${filledSecs} موثّق`, theme: { bg: 'bg-gradient-to-br from-[#1d4ed8]/30 to-[#93c5fd]/15', color: 'text-[#93c5fd]', badgeBg: 'bg-[#93c5fd]/10', badgeColor: 'text-[#93c5fd]' }, dly: '0.1s', sub: `${evStats.byType.doc} مستندات · ${evStats.byType.vid} فيديو` },
+            { id: 2, val: nonStratSections.length, lbl: 'مجالات أساسية', ico: 'ti-layout-grid', bIco: 'ti-check', bLbl: `${filledSecs} موثّق`, theme: { bg: 'bg-gradient-to-br from-[#1d4ed8]/30 to-[#93c5fd]/15', color: 'text-[#93c5fd]', badgeBg: 'bg-[#93c5fd]/10', badgeColor: 'text-[#93c5fd]' }, dly: '0.1s', sub: `${evStats.byType.doc} مستندات · ${evStats.byType.vid} فيديو` },
             { id: 3, val: state.strats.length, lbl: 'استراتيجيات مفعّلة', ico: 'ti-bulb', bIco: 'ti-star', bLbl: 'نشطة', theme: { bg: 'bg-gradient-to-br from-[#b45309]/30 to-[#fcd34d]/15', color: 'text-[#fcd34d]', badgeBg: 'bg-[#fcd34d]/10', badgeColor: 'text-[#fcd34d]' }, dly: '0.15s', sub: null },
-            { id: 4, val: filledSecs, lbl: 'أقسام موثّقة', ico: 'ti-trophy', bIco: 'ti-chart-bar', bLbl: `من ${sections.length}`, theme: { bg: 'bg-gradient-to-br from-[#c0399a]/30 to-[#f472b6]/15', color: 'text-[#f472b6]', badgeBg: 'bg-[#f472b6]/10', badgeColor: 'text-[#f472b6]' }, dly: '0.2s', sub: `${Math.round((filledSecs / sections.length) * 100)}% اكتمال` },
+            { id: 4, val: filledSecs, lbl: 'أقسام موثّقة', ico: 'ti-trophy', bIco: 'ti-chart-bar', bLbl: `من ${nonStratSections.length}`, theme: { bg: 'bg-gradient-to-br from-[#c0399a]/30 to-[#f472b6]/15', color: 'text-[#f472b6]', badgeBg: 'bg-[#f472b6]/10', badgeColor: 'text-[#f472b6]' }, dly: '0.2s', sub: `${Math.round((filledSecs / nonStratSections.length) * 100)}% اكتمال` },
           ].map(st => (
             <div key={st.id} className="group bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] p-3 sm:p-6 border border-[var(--line)] relative overflow-hidden transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--line2)] hover:shadow-[0_20px_50px_rgba(0,0,0,.5)] cursor-default" style={{ animation: `fadeUp .5s var(--sp) both ${st.dly}` }}>
               <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(255,255,255,.03),transparent_60%)]"></div>
@@ -562,11 +582,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
             const secTotalEvs = allSubs.reduce((acc, sub) => acc + (state.ev[`${sec.id}|${sub}`] || []).length, 0);
             const isOpen = !!openSecs[sec.id];
-            // نسبة الاكتمال الحقيقية من useEvidenceStore
+            // completionPct: نشاط الشهر الحالي (يتحكم بالترتيب وتلوين الحدود — لا تغيير)
             const secStat = getSectionStat(sec.id);
             const completionPct = getMonthlyPct(sec.id);
             const filledSubs = secStat?.filledSubs ?? 0;
             const totalSubs = secStat?.totalSubs ?? allSubs.length;
+            // cumulativePct: نسبة الاكتمال التراكمية الحقيقية عبر كل الأدلة منذ البداية (secStat) — تُعرض كمعلومة إضافية فقط
+            const cumulativePct = secStat?.completionPct ?? 0;
 
             const borderColor =
               completionPct > 70  ? '#22c55e' :
@@ -602,7 +624,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                          </span>
                        </div>
                      )}
-                     {/* شريط التقدم الحقيقي */}
+                     {/* شريط التقدم — نشاط الشهر الحالي (الترتيب والتلوين يعتمدان عليه، بلا أي تغيير) */}
                      <div className="mt-2.5 flex items-center gap-2">
                        <div className="flex-1 h-[5px] rounded-full bg-white/8 overflow-hidden">
                          <div
@@ -623,6 +645,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                          completionPct >= 35 ? 'text-[#fcd34d]' : 'text-[#f87171]'
                        }`}>{completionPct}%</span>
                      </div>
+                     {/* تسمية الشهر الحالي + الرقم التراكمي الحقيقي — معلومة إضافية فقط، لا تؤثر على الترتيب/التلوين أعلاه */}
+                     <div className="flex items-center justify-between mt-1">
+                       <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold">نشاط هذا الشهر</span>
+                       <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold flex items-center gap-1">
+                         <i className="ti ti-chart-pie-2 text-[9px] sm:text-[10px]" />
+                         الإجمالي التراكمي: <span className="font-black text-[var(--em8)]">{cumulativePct}%</span>
+                       </span>
+                     </div>
                    </div>
                    
                    {secTotalEvs > 0 && (
@@ -638,101 +668,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 </div>
                 
                 <div className={`overflow-hidden transition-all duration-500 ease-[var(--ease)] ${isOpen ? 'max-h-[9999px] opacity-100 border-t border-[var(--line)]' : 'max-h-0 opacity-0 border-t-0'}`}>
-                  
-                   {sec.isStrat && (
-                      <div className="py-5 px-6 border-b border-white/5 bg-[var(--gold)]/5">
-                         <div className="flex items-center gap-2 text-[13px] font-extrabold text-[var(--text2)] mb-4 tracking-wide">
-                           <i className="ti ti-bulb text-[20px] text-[var(--gold)]"></i> استراتيجيات التدريس المتاحة
-                         </div>
-                         <div className="flex flex-wrap gap-2 mb-5">
-                           {sec.strats?.map(s => {
-                              const isOn = state.strats.includes(s);
-                              return (
-                                <div 
-                                  key={s} 
-                                  className={`group relative flex items-center gap-1.5 py-2 px-4 rounded-full text-[13px] font-semibold cursor-pointer border-[1.5px] transition-all duration-250 overflow-hidden hover:-translate-y-0.5 ${isOn ? 'text-white border-transparent shadow-[0_6px_18px_rgba(42,122,68,.5)]' : 'border-white/10 text-[var(--text3)] bg-white/5 hover:border-[var(--em7)]/30'}`}
-                                  onClick={() => onToggleStrat(s)}
-                                >
-                                  <div className={`absolute inset-0 bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] transition-opacity duration-250 ${isOn ? 'opacity-100' : 'opacity-0'}`}></div>
-                                  <i className={`ti ${isOn ? 'ti-check' : 'ti-plus'} text-[15px] relative z-10`}></i>
-                                  <span className="relative z-10">{s}</span>
-                                </div>
-                              );
-                           })}
-                         </div>
-
-                         {/* Active Strategies Details with Evidence Attachment */}
-                         {state.strats.length > 0 && (
-                           <div className="flex flex-col gap-4 mt-2">
-                             <div className="text-[12px] font-bold text-[var(--em8)] border-b border-[var(--em7)]/10 pb-2 mb-1">توثيق الاستراتيجيات المفعّلة:</div>
-                             {state.strats.map(stratName => {
-                               const k = `strat:${stratName}`;
-                               const evs = state.ev[`${sec.id}|${k}`] || [];
-                               return (
-                                 <div key={stratName} className="bg-white/5 rounded-2xl p-4 border border-[var(--em7)]/10">
-                                   <div className="flex items-center justify-between mb-3">
-                                     <div className="flex items-center gap-2">
-                                       <div className="w-2 h-2 rounded-full bg-[var(--gold)] shadow-[0_0_8px_rgba(201,162,39,.5)]"></div>
-                                       <span className="text-[14px] font-bold text-white">{stratName}</span>
-                                       {evs.length > 0 && <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{evs.length} شواهد</span>}
-                                     </div>
-                                     <div className="flex items-center gap-2">
-                                       <button
-                                         className="py-1.5 px-3 rounded-lg bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[12px] font-bold text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all flex items-center gap-1.5"
-                                         onClick={() => onAddEvClick(sec.id, k)}
-                                       >
-                                         <i className="ti ti-paperclip"></i> إرفاق شواهد
-                                       </button>
-                                       <button
-                                         className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text4)] hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
-                                         onClick={() => onToggleStrat(stratName)}
-                                         title="حذف الاستراتيجية"
-                                       >
-                                         <i className="ti ti-x text-[11px]"></i>
-                                       </button>
-                                     </div>
-                                   </div>
-                                   
-                                   {evs.length > 0 && (
-                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                                       {evs.map((ev, ei) => {
-                                         const t = EVT_CONFIG[ev.type] || EVT_CONFIG.doc;
-                                         return (
-                                           <div key={ei} className="flex items-center gap-2.5 py-2 px-3 bg-black/20 rounded-xl border border-white/5 relative group">
-                                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[16px] shrink-0 ${t.cls}`}>
-                                               <i className={`ti ${t.icon}`}></i>
-                                             </div>
-                                             <div 
-                                                className={`flex-1 min-w-0 ${ev.url ? 'cursor-pointer hover:opacity-80 transition-all' : ''}`}
-                                                onClick={() => ev.url && window.open(ev.url, '_blank')}
-                                                title={ev.url ? 'اضغط لعرض الملف' : ''}
-                                              >
-                                                <div className="text-[12px] font-bold text-white truncate group-hover:text-[var(--em8)] transition-colors" dir="ltr" style={{unicodeBidi:'isolate'}}>{ev.name}</div>
-                                                {ev.url && <div className="text-[10px] text-[var(--em8)] mt-0.5 flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</div>}
-                                              </div>
-                                             <button className="text-[var(--text4)] hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => onDeleteEv(sec.id, k, ei)}>
-                                               <i className="ti ti-trash"></i>
-                                             </button>
-                                           </div>
-                                         );
-                                       })}
-                                     </div>
-                                   )}
-                                   
-                                   {evs.length === 0 && (
-                                     <div className="text-[12px] text-[var(--text4)] italic">لا توجد شواهد مرفقة لهذه الاستراتيجية حالياً.</div>
-                                   )}
-                                 </div>
-                               );
-                             })}
-                           </div>
-                         )}
-
-                         <button className="mt-4 inline-flex items-center gap-1.5 py-2 px-4 rounded-xl text-[12.5px] font-bold cursor-pointer border-[1.5px] border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/5 hover:bg-gradient-to-br hover:from-[var(--em4)] hover:to-[var(--em6)] hover:text-white hover:border-transparent hover:shadow-[0_6px_18px_rgba(42,122,68,.5)] hover:-translate-y-0.5 group transition-all duration-250" onClick={onAddStratClick}>
-                            <i className="ti ti-plus text-[15px] transition-transform duration-300 group-hover:scale-125 group-hover:rotate-[-5deg]"></i> إضافة استراتيجية جديدة
-                         </button>
-                      </div>
-                   )}
 
                   {allSubs.map((sub, idx) => {
                      const isCustom = idx >= sec.subs.length;
@@ -851,6 +786,133 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               </div>
             );
           })}
+
+          {/* بطاقة الاستراتيجيات — مثبّتة دائماً في آخر القائمة، خارج نظام
+              النسب/الترتيب/التلوين بالكامل (لا borderColor دلالي، لا شريط
+              تقدم، لا "نشاط الشهر/تراكمي") — فقط عداد استخدام هذا الشهر. */}
+          {stratSection && (
+            <div key={stratSection.id} id={`sc-${stratSection.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', borderRight: '4px solid var(--gold)' }}>
+              <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => toggleSec(stratSection.id)}>
+                 <div className="absolute bottom-0 right-6 left-6 h-px bg-gradient-to-r from-transparent via-[var(--gold)]/15 to-transparent opacity-0 transition-opacity duration-250 group-hover:opacity-100"></div>
+
+                 <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border shadow-[0_4px_14px_rgba(201,162,39,.25)] transition-all duration-350 ${openSecs[stratSection.id] ? 'bg-gradient-to-br from-[var(--gold)] to-[var(--gold3)] text-white border-transparent scale-110 !rotate-[-5deg]' : 'bg-[var(--gold)]/10 text-[var(--gold)] border-[var(--gold)]/20 group-hover:bg-gradient-to-br group-hover:from-[var(--gold)] group-hover:to-[var(--gold3)] group-hover:text-white group-hover:scale-110 group-hover:rotate-[-5deg]'}`}>
+                   <i className={`ti ${stratSection.icon}`}></i>
+                 </div>
+
+                 <div className="flex-1 min-w-0">
+                   <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{stratSection.ttl}</div>
+                   <div className="flex items-center gap-1.5 mt-1.5 text-[11.5px] sm:text-[12.5px] font-bold text-[var(--gold)]">
+                     <i className="ti ti-bulb text-[12px]"></i>
+                     {stratsUsedThisMonth} استراتيجية مستخدمة هذا الشهر
+                   </div>
+                 </div>
+
+                 {stratEvCount > 0 && (
+                   <div className="hidden sm:flex items-center gap-1 text-[12px] font-bold py-1.5 px-3.5 rounded-full bg-[var(--gold)]/10 text-[var(--gold)] border border-[var(--gold)]/15 shrink-0">
+                     <i className="ti ti-files text-[13px]"></i>
+                     {stratEvCount}
+                   </div>
+                 )}
+
+                 <i className={`ti ti-chevron-down text-[22px] shrink-0 transition-all duration-400 ${openSecs[stratSection.id] ? 'rotate-180 text-[var(--gold)]' : 'text-[var(--text4)]'}`}></i>
+              </div>
+
+              <div className={`overflow-hidden transition-all duration-500 ease-[var(--ease)] ${openSecs[stratSection.id] ? 'max-h-[9999px] opacity-100 border-t border-[var(--line)]' : 'max-h-0 opacity-0 border-t-0'}`}>
+                <div className="py-5 px-6 bg-[var(--gold)]/5">
+                   <div className="flex items-center gap-2 text-[13px] font-extrabold text-[var(--text2)] mb-4 tracking-wide">
+                     <i className="ti ti-bulb text-[20px] text-[var(--gold)]"></i> استراتيجيات التدريس المتاحة
+                   </div>
+                   <div className="flex flex-wrap gap-2 mb-5">
+                     {stratSection.strats?.map(s => {
+                        const isOn = state.strats.includes(s);
+                        return (
+                          <div
+                            key={s}
+                            className={`group relative flex items-center gap-1.5 py-2 px-4 rounded-full text-[13px] font-semibold cursor-pointer border-[1.5px] transition-all duration-250 overflow-hidden hover:-translate-y-0.5 ${isOn ? 'text-white border-transparent shadow-[0_6px_18px_rgba(42,122,68,.5)]' : 'border-white/10 text-[var(--text3)] bg-white/5 hover:border-[var(--em7)]/30'}`}
+                            onClick={() => onToggleStrat(s)}
+                          >
+                            <div className={`absolute inset-0 bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] transition-opacity duration-250 ${isOn ? 'opacity-100' : 'opacity-0'}`}></div>
+                            <i className={`ti ${isOn ? 'ti-check' : 'ti-plus'} text-[15px] relative z-10`}></i>
+                            <span className="relative z-10">{s}</span>
+                          </div>
+                        );
+                     })}
+                   </div>
+
+                   {/* Active Strategies Details with Evidence Attachment */}
+                   {state.strats.length > 0 && (
+                     <div className="flex flex-col gap-4 mt-2">
+                       <div className="text-[12px] font-bold text-[var(--em8)] border-b border-[var(--em7)]/10 pb-2 mb-1">توثيق الاستراتيجيات المفعّلة:</div>
+                       {state.strats.map(stratName => {
+                         const k = `strat:${stratName}`;
+                         const evs = state.ev[`${stratSection.id}|${k}`] || [];
+                         return (
+                           <div key={stratName} className="bg-white/5 rounded-2xl p-4 border border-[var(--em7)]/10">
+                             <div className="flex items-center justify-between mb-3">
+                               <div className="flex items-center gap-2">
+                                 <div className="w-2 h-2 rounded-full bg-[var(--gold)] shadow-[0_0_8px_rgba(201,162,39,.5)]"></div>
+                                 <span className="text-[14px] font-bold text-white">{stratName}</span>
+                                 {evs.length > 0 && <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{evs.length} شواهد</span>}
+                               </div>
+                               <div className="flex items-center gap-2">
+                                 <button
+                                   className="py-1.5 px-3 rounded-lg bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[12px] font-bold text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all flex items-center gap-1.5"
+                                   onClick={() => onAddEvClick(stratSection.id, k)}
+                                 >
+                                   <i className="ti ti-paperclip"></i> إرفاق شواهد
+                                 </button>
+                                 <button
+                                   className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text4)] hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
+                                   onClick={() => onToggleStrat(stratName)}
+                                   title="حذف الاستراتيجية"
+                                 >
+                                   <i className="ti ti-x text-[11px]"></i>
+                                 </button>
+                               </div>
+                             </div>
+
+                             {evs.length > 0 && (
+                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                                 {evs.map((ev, ei) => {
+                                   const t = EVT_CONFIG[ev.type] || EVT_CONFIG.doc;
+                                   return (
+                                     <div key={ei} className="flex items-center gap-2.5 py-2 px-3 bg-black/20 rounded-xl border border-white/5 relative group">
+                                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[16px] shrink-0 ${t.cls}`}>
+                                         <i className={`ti ${t.icon}`}></i>
+                                       </div>
+                                       <div
+                                          className={`flex-1 min-w-0 ${ev.url ? 'cursor-pointer hover:opacity-80 transition-all' : ''}`}
+                                          onClick={() => ev.url && window.open(ev.url, '_blank')}
+                                          title={ev.url ? 'اضغط لعرض الملف' : ''}
+                                        >
+                                          <div className="text-[12px] font-bold text-white truncate group-hover:text-[var(--em8)] transition-colors" dir="ltr" style={{unicodeBidi:'isolate'}}>{ev.name}</div>
+                                          {ev.url && <div className="text-[10px] text-[var(--em8)] mt-0.5 flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</div>}
+                                        </div>
+                                       <button className="text-[var(--text4)] hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => onDeleteEv(stratSection.id, k, ei)}>
+                                         <i className="ti ti-trash"></i>
+                                       </button>
+                                     </div>
+                                   );
+                                 })}
+                               </div>
+                             )}
+
+                             {evs.length === 0 && (
+                               <div className="text-[12px] text-[var(--text4)] italic">لا توجد شواهد مرفقة لهذه الاستراتيجية حالياً.</div>
+                             )}
+                           </div>
+                         );
+                       })}
+                     </div>
+                   )}
+
+                   <button className="mt-4 inline-flex items-center gap-1.5 py-2 px-4 rounded-xl text-[12.5px] font-bold cursor-pointer border-[1.5px] border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/5 hover:bg-gradient-to-br hover:from-[var(--em4)] hover:to-[var(--em6)] hover:text-white hover:border-transparent hover:shadow-[0_6px_18px_rgba(42,122,68,.5)] hover:-translate-y-0.5 group transition-all duration-250" onClick={onAddStratClick}>
+                      <i className="ti ti-plus text-[15px] transition-transform duration-300 group-hover:scale-125 group-hover:rotate-[-5deg]"></i> إضافة استراتيجية جديدة
+                   </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
 

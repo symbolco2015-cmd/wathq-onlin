@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import type { AppState, UserProfile, Announcement, AcademicDate } from '../types';
+import type { AppState, UserProfile, Announcement, AcademicDate, Evidence } from '../types';
 
 // ═══════════════════════════════════════════════════════════
 // قائمة المشرفين — أضف إيميلك هنا لمنح صلاحيات الأدمن
@@ -31,6 +31,7 @@ const defaultState: AppState = {
   profile: defaultProfile,
   readAnnouncements: [],
   yearStartMonth: 9,
+  stratDates: {},
 };
 
 
@@ -288,7 +289,14 @@ export function useAppStore() {
     return true;
   };
 
-  const addEv = (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => {
+  const addEv = (
+    sid: number,
+    sub: string,
+    type: 'pdf' | 'img' | 'doc' | 'vid',
+    name: string,
+    url?: string,
+    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>
+  ) => {
     const k = `${sid}|${sub}`;
     const newEv = { ...state.ev };
     if (!newEv[k]) newEv[k] = [];
@@ -296,7 +304,8 @@ export function useAppStore() {
       type,
       name,
       url,
-      date: new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })
+      date: new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' }),
+      ...stratFields,
     });
     saveState({ ...state, ev: newEv });
   };
@@ -313,14 +322,24 @@ export function useAppStore() {
   const toggleStrat = (s: string) => {
     const newStrats = [...state.strats];
     const i = newStrats.indexOf(s);
-    if (i >= 0) newStrats.splice(i, 1);
-    else newStrats.push(s);
-    saveState({ ...state, strats: newStrats });
+    const newStratDates = { ...state.stratDates };
+    if (i >= 0) {
+      newStrats.splice(i, 1);
+      delete newStratDates[s];
+    } else {
+      newStrats.push(s);
+      newStratDates[s] = new Date().toISOString();
+    }
+    saveState({ ...state, strats: newStrats, stratDates: newStratDates });
   };
 
   const addStrat = (s: string) => {
      if (s) {
-       saveState({ ...state, strats: [...state.strats, s] });
+       saveState({
+         ...state,
+         strats: [...state.strats, s],
+         stratDates: { ...state.stratDates, [s]: new Date().toISOString() },
+       });
      }
   };
 

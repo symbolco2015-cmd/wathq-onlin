@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import type { PageType, SectionData, UserProfile } from './types';
+import type { Evidence, PageType, SectionData, UserProfile } from './types';
 import { useAppStore } from './hooks/useAppStore';
 import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
@@ -78,8 +78,15 @@ export default function App() {
   const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence);
 
   // wrapper: يسجّل في monthly_progress عند كل إضافة شاهد
-  const handleAddEv = (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => {
-    addEv(sid, sub, type, name, url);
+  const handleAddEv = (
+    sid: number,
+    sub: string,
+    type: 'pdf' | 'img' | 'doc' | 'vid',
+    name: string,
+    url?: string,
+    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>
+  ) => {
+    addEv(sid, sub, type, name, url, stratFields);
     monthlyProgress.recordEvidence(sid);
   };
 

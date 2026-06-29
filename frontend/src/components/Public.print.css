@@ -1,0 +1,156 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   أنماط طباعة خاصة بصفحة المشاركة العامة (Public.tsx) فقط.
+   كل القواعد هنا مُحصورة بداخل #public-portfolio-content (descendant)، أو
+   بحارس body:has(#public-portfolio-content) للعناصر الشقيقة (شريط التنقل/
+   الخلفية الزخرفية العامة) — لا تُطبَّق هذه القواعد إلا عندما تكون صفحة
+   المشاركة العامة هي ما يُطبَع فعلياً، فلا تؤثر على أي صفحة أخرى في التطبيق.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* الترويسة الخاصة بالطباعة: مخفية دائماً على الشاشة، تظهر فقط أثناء الطباعة */
+.print-header-block {
+  display: none;
+}
+
+@media print {
+  /* لا تُعرَّف @page هنا عمداً — قاعدة @page غير قابلة للحصر بمحدِّد عنصر
+     (لا يوجد "فقط إذا وُجد #public-portfolio-content")، فأي تعريف هنا سيطبَّق
+     على طباعة كل صفحات التطبيق ويتجاوز هامش @page الموجود مسبقاً في index.css.
+     هامش الطباعة الافتراضي (margin:0) المُعرَّف هناك يبقى كما هو لكل الصفحات. */
+
+  /* إخفاء شريط التنقل العلوي (الكامل أو نسخة العرض العام المصغّرة) وشريط
+     الجوال السفلي، وكذلك الخلفية الزخرفية لمستوى التطبيق (شبكة + توهّجات) —
+     فقط إذا كانت صفحة المشاركة العامة هي المعروضة حالياً. */
+  body:has(#public-portfolio-content) nav,
+  body:has(#public-portfolio-content) nav + div,
+  body:has(#public-portfolio-content) #bg-canvas,
+  body:has(#public-portfolio-content) .orb {
+    display: none !important;
+  }
+
+  /* أزرار "تصدير PDF" و"مشاركة" مخفية أصلاً عبر كلاس print:hidden الموجود
+     مسبقاً في index.css — لا حاجة لتكراره هنا. */
+
+  /* الخلفية: أبيض بالكامل، بلا أي ظلال/توهج/تحريك يستهلك الحبر. لا يوجد أي
+     container بارتفاع غير محكوم (min-height:0) لمنع صفحة فاضية في النهاية. */
+  #public-portfolio-content {
+    background: #ffffff !important;
+    min-height: 0 !important;
+  }
+  #public-portfolio-content *,
+  #public-portfolio-content {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    animation: none !important;
+    backdrop-filter: none !important;
+    filter: none !important;
+  }
+  #public-portfolio-content,
+  #public-portfolio-content * {
+    color: #1a1a1a !important;
+  }
+  #public-portfolio-content [class*="border"] {
+    border-color: #d0d0d0 !important;
+  }
+
+  /* رأس الصفحة (الهيرو) والبطاقات والأفاتار: نفس الخلفية البيضاء بدل التدرجات */
+  #public-portfolio-content .print-hero,
+  #public-portfolio-content .print-card {
+    background: #ffffff !important;
+  }
+  #public-portfolio-content .print-avatar {
+    background: #e8e8e8 !important;
+  }
+
+  /* كل بطاقة قسم منفردة (مؤشر الجاهزية العام + بطاقات الأقسام النشطة/الفارغة)
+     تبقى سليمة على الصفحة ولا تنقسم بين صفحتين أثناء الطباعة. */
+  #public-portfolio-content .print-card {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* إخفاء العناصر الزخرفية البحتة (شبكة الخلفية، التوهّج الدائري، الحلقات
+     الدوّارة حول الأفاتار، نقطة النشاط النابضة، صف أيقونات التواصل، شارة
+     "أبرز إنجاز") — لا فائدة من أي منها على الورق. */
+  #public-portfolio-content .print-decor {
+    display: none !important;
+  }
+
+  /* إخفاء الأيقونات (Tabler) المرافقة للعناوين والبطاقات بالكامل */
+  #public-portfolio-content i[class*="ti-"] {
+    display: none !important;
+  }
+  /* وأي صندوق غلاف (div) لا يحتوي على شيء سوى أيقونة — حتى لا يتبقّى
+     صندوق ملوّن فارغ مكان الأيقونة المخفية؛ إخفاؤه بالكامل يُسقط فجوته من
+     تخطيط flex تلقائياً فيُعاد توزيع المساحة على بقية العناصر. */
+  #public-portfolio-content div:has(> i[class*="ti-"]):not(:has(> *:not(i))) {
+    display: none !important;
+  }
+
+  /* مؤشر الجاهزية العام (المستوى 1) وبطاقات الأقسام (المستوى 2 و3): تدرج
+     رمادي واحد فقط بدل الألوان الدلالية الخاصة بالشاشة — تتحكم النسبة
+     بدرجته. يُحسب --print-gray لكل عنصر في JSX (Public.tsx) من نفس قيمة pct
+     المحتسبة أصلاً، بلا أي تغيير في منطق الحساب نفسه. */
+  #public-portfolio-content .print-progress-track {
+    background: #e5e5e5 !important;
+  }
+  #public-portfolio-content .print-progress-fill {
+    background: var(--print-gray, #888888) !important;
+  }
+
+  /* أيقونة/مربع القسم الملوّن داخل كل بطاقة (نسبة الاكتمال الدلالية) يأخذ
+     نفس الرمادي بدل اللون الدلالي، حتى لا يطغى لون ملوّن منعزل وسط صفحة
+     بالأبيض والأسود. */
+  #public-portfolio-content .print-card [style*="border-color"] {
+    border-color: #cccccc !important;
+  }
+
+  /* أكورديون "+N مجالات أخرى قيد التطوير": مُلغى تماماً في الطباعة — مخفي
+     عبر print:hidden في JSX (Public.tsx)، بينما تظهر بدلاً منه كل الأقسام
+     الفارغة كبطاقات عادية مباشرة عبر print:grid على عنصر مستقل، فلا تحتاج
+     الطباعة لأي تفاعل نقر لإظهار المحتوى كاملاً. */
+
+  /* الترويسة الخاصة بالطباعة فقط */
+  #public-portfolio-content .print-header-block {
+    display: block !important;
+    margin-bottom: 18px;
+  }
+  /* ملاحظة: مُؤهَّلة بـ #public-portfolio-content لرفع التخصيص (specificity)
+     فوق قاعدة "#public-portfolio-content *" العامة أعلاه (ID+universal تتفوق
+     على class مفردة)، وإلا لطغى اللون الأسود الموحّد على تدرّج الرمادي
+     المقصود هنا بين الاسم/البيانات الثانوية/التاريخ. */
+  #public-portfolio-content .print-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  #public-portfolio-content .print-header-name {
+    font-size: 19px;
+    font-weight: 800;
+    color: #111111 !important;
+  }
+  #public-portfolio-content .print-header-meta {
+    font-size: 12px;
+    margin-top: 2px;
+    color: #444444 !important;
+  }
+  #public-portfolio-content .print-header-brand {
+    text-align: left;
+  }
+  #public-portfolio-content .print-header-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #111111 !important;
+  }
+  #public-portfolio-content .print-header-date,
+  #public-portfolio-content .print-header-url {
+    font-size: 11px;
+    margin-top: 2px;
+    color: #555555 !important;
+  }
+  #public-portfolio-content .print-header-rule {
+    height: 1px;
+    background: #999999;
+    margin-top: 12px;
+  }
+}

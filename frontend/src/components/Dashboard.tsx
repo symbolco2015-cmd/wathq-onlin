@@ -1,12 +1,19 @@
-import { useMemo, useState } from 'react';
-import type { AppState, SectionData, Announcement, AcademicDate } from '../types';
+import { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import type { AppState, SectionData, Announcement, AcademicDate, Evidence } from '../types';
 import Sidebar from './Sidebar';
 import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
+import EvidenceModal from './EvidenceModal';
 import { calculateEvaluation, isLastDaysOfMonth, upcomingAcademicDate } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
 import { useQuickCapture } from '../hooks/useQuickCapture';
+
+const ARCHIVE_MONTHS_AR = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -14,6 +21,7 @@ export interface MonthlyProgressData {
   currentMonthTotal: number;
   currentMonthName: string;
   currentYear: number;
+  currentMonth: number;
   monthlyAvg: number;
   yearTotal: number;
   monthsElapsed: number;
@@ -39,7 +47,15 @@ interface DashboardProps {
   monthlyProgress?: MonthlyProgressData;
   /** الحقول التالية تُستخدم فقط لعرض BottomSheet إضافة الشاهد على الجوال */
   userId?: string;
-  onAddEv?: (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => void;
+  onAddEv?: (
+    sid: number,
+    sub: string,
+    type: 'pdf' | 'img' | 'doc' | 'vid',
+    name: string,
+    url?: string,
+    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
+    createdAt?: string
+  ) => void;
   onToast?: (msg: string, icon?: string) => void;
 }
 
@@ -79,6 +95,83 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     }
     return null;
   }, [academicDates]);
+  // ── أرشيف الأشهر السابقة ─────────────────────────────────────────────
+  const archiveBtnRef = useRef<HTMLButtonElement>(null);
+  const [archiveDropdownPos, setArchiveDropdownPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [archiveDropdownOpen, setArchiveDropdownOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!archiveDropdownOpen || !archiveBtnRef.current) return;
+    const update = () => {
+      if (!archiveBtnRef.current) return;
+      const rect = archiveBtnRef.current.getBoundingClientRect();
+      setArchiveDropdownPos({ top: rect.bottom + 8, left: rect.left });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [archiveDropdownOpen]);
+  const [archiveMonth, setArchiveMonth] = useState<{ year: number; month: number; label: string } | null>(null);
+  const [archiveAddTarget, setArchiveAddTarget] = useState<{ open: boolean; sectionId: number; sub: string }>({
+    open: false, sectionId: 0, sub: '',
+  });
+
+  // كل الأشهر التي بها شواهد فعلية في جدول evidence، عدا الشهر الحالي (معروض
+  // طبيعياً بدون حاجة للأرشيف) — المصدر هو created_at الحقيقي لكل شاهد، لا
+  // الحقل النصي المحلي state.ev[].date غير القابل للفرز بثقة.
+  const archiveMonths = useMemo(() => {
+    if (!supabaseEv || !monthlyProgress) return [];
+    const seen = new Map<string, { year: number; month: number; label: string }>();
+    for (const e of supabaseEv.evidence) {
+      const d = new Date(e.created_at);
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      if (year === monthlyProgress.currentYear && month === monthlyProgress.currentMonth) continue;
+      const key = `${year}-${month}`;
+      if (!seen.has(key)) seen.set(key, { year, month, label: ARCHIVE_MONTHS_AR[month - 1] });
+    }
+    return Array.from(seen.values()).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
+  }, [supabaseEv, monthlyProgress]);
+
+  // قاعدة نافذة 10 أيام: التعديل مسموح فقط للشهر السابق مباشرة، وفقط خلال
+  // أول 10 أيام من الشهر الحالي — أي شهر آخر يُعرض read-only بالكامل
+  const isImmediatePrevMonth = !!(archiveMonth && monthlyProgress &&
+    (archiveMonth.year * 12 + archiveMonth.month) === (monthlyProgress.currentYear * 12 + monthlyProgress.currentMonth) - 1
+  );
+  const todayDayOfMonth = new Date().getDate();
+  const isArchiveEditable = isImmediatePrevMonth && todayDayOfMonth <= 10;
+  const archiveDaysLeft = Math.max(0, 10 - todayDayOfMonth);
+  const archiveLockLabel = archiveDaysLeft === 0
+    ? 'اليوم'
+    : `خلال ${archiveDaysLeft} ${archiveDaysLeft === 1 ? 'يوم' : 'أيام'}`;
+
+  // الشواهد الفعلية للشهر المؤرشَف المختار، مُجمَّعة حسب القسم
+  const archiveEvidenceBySection = useMemo(() => {
+    const map: Record<number, NonNullable<typeof supabaseEv>['evidence']> = {};
+    if (!supabaseEv || !archiveMonth) return map;
+    for (const e of supabaseEv.evidence) {
+      const d = new Date(e.created_at);
+      if (d.getFullYear() !== archiveMonth.year || (d.getMonth() + 1) !== archiveMonth.month) continue;
+      if (!map[e.section_id]) map[e.section_id] = [];
+      map[e.section_id].push(e);
+    }
+    return map;
+  }, [supabaseEv, archiveMonth]);
+
+  // الشهر القابل للتعديل: تُعرض كل الأقسام (لإتاحة إضافة شاهد لأي قسم حتى لو
+  // كان بلا شواهد بعد). الشهر المقفل (read-only): تُعرض فقط الأقسام التي بها
+  // شواهد فعلية — لا فائدة من عرض بطاقات قسم فارغة لا يمكن التفاعل معها.
+  const archiveSectionsToShow = isArchiveEditable
+    ? sections
+    : sections.filter(sec => (archiveEvidenceBySection[sec.id]?.length ?? 0) > 0);
+
+  // تاريخ ISO ثابت (اليوم الأول من الشهر المؤرشَف، الساعة 12 ظهراً لتفادي
+  // انزلاق التاريخ بفعل المنطقة الزمنية) — يُستخدم لربط أي شاهد جديد يُضاف
+  // من الأرشيف بشهره الصحيح في جدول evidence وفي monthly_progress معاً
+  const archiveCreatedAt = archiveMonth
+    ? new Date(archiveMonth.year, archiveMonth.month - 1, 1, 12, 0, 0).toISOString()
+    : undefined;
+
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [fabExpanded, setFabExpanded] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<{ open: boolean; sectionId: number; sub: string }>({
@@ -190,6 +283,84 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? nonStratSections.filter(s => monthlyProgress.getSectionMonthCount(s.id) > 0).length
     : evStats.filledSectionCount;
 
+  // ── عرض أرشيف الشهر المختار — صفحة فرعية مستقلة، لا تستبدل لوحة الشهر
+  // الحالي بشكل دائم، بل تُستبدل مؤقتاً عند التصفح وتُستعاد بزر "العودة" ──
+  const archiveView = archiveMonth && supabaseEv && (
+    <div style={{ animation: 'fadeUp .4s var(--sp) both' }}>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <button
+          onClick={() => setArchiveMonth(null)}
+          className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl border border-[var(--line2)] bg-white/5 text-[13px] font-bold text-[var(--text3)] hover:text-white hover:bg-white/10 transition-all duration-200 cursor-pointer font-[var(--font)]"
+        >
+          <i className="ti ti-arrow-right" /> العودة للوحة الرئيسية
+        </button>
+        <div className="flex items-center gap-2 text-[15px] sm:text-[17px] font-black text-white">
+          <i className="ti ti-archive text-[18px] text-[var(--em7)]" />
+          أرشيف {archiveMonth.label} {archiveMonth.year}
+        </div>
+      </div>
+
+      {isArchiveEditable ? (
+        <div className="mb-5 rounded-[18px] p-4 sm:p-5 border border-[var(--gold)]/25 bg-[var(--gold)]/8 flex items-center gap-3">
+          <i className="ti ti-clock-hour-4 text-[22px] text-[var(--gold)] shrink-0" />
+          <span className="text-[13px] font-bold text-[var(--gold)]">
+            هذا الشهر سيُقفَل للتعديل {archiveLockLabel} — يمكنك الآن إضافة/تعديل/حذف الشواهد المسجَّلة فيه.
+          </span>
+        </div>
+      ) : (
+        <div className="mb-5 rounded-[18px] p-4 sm:p-5 border border-[var(--line2)] bg-white/5 flex items-center gap-3">
+          <i className="ti ti-lock text-[22px] text-[var(--text4)] shrink-0" />
+          <span className="text-[13px] font-bold text-[var(--text3)]">عرض فقط — انتهت نافذة التعديل المسموحة لهذا الشهر.</span>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3.5 pb-[100px] md:pb-0">
+        {archiveSectionsToShow.map(sec => {
+          const secEv = archiveEvidenceBySection[sec.id] || [];
+          return (
+            <div key={sec.id} className="bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden">
+              <div className="flex items-center gap-3 py-3 sm:py-4 px-4 sm:px-5 border-b border-[var(--line)]">
+                <div className="w-[36px] h-[36px] sm:w-[38px] sm:h-[38px] rounded-xl shrink-0 flex items-center justify-center text-[16px] sm:text-[18px] bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border border-[var(--em7)]/20">
+                  <i className={`ti ${sec.icon}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] sm:text-[14.5px] font-extrabold text-white">{sec.ttl}</div>
+                  <div className="text-[11px] text-[var(--text4)] mt-0.5">{secEv.length} دليل هذا الشهر</div>
+                </div>
+                {isArchiveEditable && (
+                  <button
+                    onClick={() => setArchiveAddTarget({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' })}
+                    className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[12px] font-bold bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all cursor-pointer font-[var(--font)]"
+                  >
+                    <i className="ti ti-plus" /> إضافة شاهد
+                  </button>
+                )}
+              </div>
+              <div className="p-4 sm:p-5">
+                <EvidenceList
+                  sectionId={sec.id}
+                  evidence={secEv}
+                  loading={false}
+                  onDelete={supabaseEv.deleteEvidence}
+                  onAddClick={() => setArchiveAddTarget({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' })}
+                  readOnly={!isArchiveEditable}
+                />
+              </div>
+            </div>
+          );
+        })}
+        {archiveSectionsToShow.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-[28px] text-[var(--text4)] mb-3">
+              <i className="ti ti-archive-off"></i>
+            </div>
+            <p className="text-[var(--text3)] text-[15px] font-bold">لا توجد شواهد مسجّلة لهذا الشهر</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex min-h-[calc(100vh-72px)]">
       <Sidebar
@@ -200,6 +371,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         monthlyProgress={monthlyProgress}
       />
       <main className="flex-1 p-3 sm:p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
+        {archiveMonth ? archiveView : <>
         {/* بطاقة الملف الشخصي المضغوطة — جوال فقط */}
         <div className="lg:hidden flex items-center gap-3 mb-3 px-1" style={{ animation: 'fadeUp .4s var(--sp) both' }}>
           <div
@@ -330,6 +502,44 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 <i className="ti ti-plus text-[15px]" /> أضف شاهداً الآن
               </button>
             </div>
+          </div>
+        )}
+
+        {/* أرشيف الأشهر السابقة — زر + قائمة منسدلة عبر portal */}
+        {supabaseEv && monthlyProgress && archiveMonths.length > 0 && (
+          <div className="relative mb-3 flex justify-end" style={{ animation: 'fadeUp .4s var(--sp) both 0.06s' }}>
+            <button
+              ref={archiveBtnRef}
+              onClick={() => setArchiveDropdownOpen(prev => !prev)}
+              className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl border border-[var(--line2)] bg-white/5 text-[12.5px] font-bold text-[var(--text2)] hover:bg-white/10 hover:border-[var(--em7)]/30 transition-all duration-200 cursor-pointer font-[var(--font)]"
+            >
+              <i className="ti ti-archive text-[15px] text-[var(--em7)]" /> أرشيف الأشهر السابقة
+              <i className={`ti ti-chevron-down text-[13px] transition-transform duration-250 ${archiveDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {archiveDropdownOpen && createPortal(
+              <>
+                <div className="fixed inset-0 z-[60]" onClick={() => setArchiveDropdownOpen(false)} />
+                <div
+                  className="fixed z-[200] w-56 max-h-72 overflow-y-auto rounded-2xl border border-[var(--line2)] bg-[var(--surf2)] shadow-[0_20px_50px_rgba(0,0,0,.5)] p-2"
+                  style={{
+                    top: archiveDropdownPos.top,
+                    left: archiveDropdownPos.left,
+                    animation: 'scaleIn .2s var(--sp) both',
+                  }}
+                >
+                  {archiveMonths.map(m => (
+                    <button
+                      key={`${m.year}-${m.month}`}
+                      onClick={() => { setArchiveMonth(m); setArchiveDropdownOpen(false); }}
+                      className="w-full text-right py-2.5 px-3 rounded-xl text-[13px] font-bold text-[var(--text2)] hover:bg-[var(--em7)]/10 hover:text-[var(--em8)] transition-all duration-150 cursor-pointer font-[var(--font)]"
+                    >
+                      {m.label} {m.year}
+                    </button>
+                  ))}
+                </div>
+              </>,
+              document.body
+            )}
           </div>
         )}
 
@@ -915,6 +1125,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             </div>
           )}
         </div>
+        </>}
       </main>
 
       {/* FAB Speed Dial — Mobile only */}
@@ -1078,6 +1289,21 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             onToast={onToast ?? (() => {})}
           />
         </BottomSheet>
+      )}
+
+      {/* إضافة شاهد من أرشيف شهر سابق — ضمن نافذة التعديل المسموحة فقط */}
+      {supabaseEv && archiveAddTarget.open && (
+        <EvidenceModal
+          isOpen={archiveAddTarget.open}
+          onClose={() => setArchiveAddTarget(prev => ({ ...prev, open: false }))}
+          sectionId={archiveAddTarget.sectionId}
+          sub={archiveAddTarget.sub}
+          userId={userId}
+          supabaseEv={supabaseEv}
+          onAddEv={onAddEv ?? (() => {})}
+          onToast={onToast ?? (() => {})}
+          createdAt={archiveCreatedAt}
+        />
       )}
 
       {/* Announcement Detail Modal */}

@@ -159,6 +159,13 @@ function SectionCard({ sec, isTop, onClick, style }: { sec: SectionWithPct; isTo
           <i className="ti ti-trophy text-[12px]"></i> أبرز إنجاز
         </div>
       )}
+      {/* شارة "تجاوز الهدف" — الرقم المطلق للأدلة التراكمية (لا "+N") لأن
+          الجمهور الخارجي لا يعرف سقف الهدف الشهري الداخلي؛ تظهر فقط إن > 3 */}
+      {sec.evCount > 3 && (
+        <div className="print-decor absolute top-3 right-3 z-20 flex items-center gap-1 py-1 px-2.5 rounded-full text-[10.5px] font-black text-[var(--gold)] bg-[var(--gold)]/15 border border-[var(--gold)]/30">
+          <i className="ti ti-award text-[12px]"></i> {sec.evCount} أدلة موثقة
+        </div>
+      )}
       <div className="print-decor absolute top-0 left-0 w-full h-[3px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundColor: color }}></div>
 
       <div className="flex items-center gap-4 mb-4 relative z-10">
@@ -317,7 +324,13 @@ export default function Public({ state, sections, isSharedView }: PublicProps) {
   // مؤشر الجاهزية الإجمالي (المستوى 1) — متوسط pct عبر كل الأقسام، بما فيها الفارغة
   const overallPct = Math.round(sectionsWithPct.reduce((sum, s) => sum + s.pct, 0) / sectionsWithPct.length);
 
-  const activeSecs = sectionsWithPct.filter(s => s.pct > 0).sort((a, b) => b.pct - a.pct);
+  // تنازلياً بـpct، وعند التساوي (شائع بسبب سقف maxTarget أعلاه) يُرجَّح القسم
+  // الأعلى إجمالي أدلة تراكمية (evCount) — يعكس عمق التوثيق الفعلي رغم تساوي النسبة
+  const activeSecs = sectionsWithPct.filter(s => s.pct > 0).sort((a, b) => {
+    const pctDiff = b.pct - a.pct;
+    if (pctDiff !== 0) return pctDiff;
+    return b.evCount - a.evCount;
+  });
   const emptySecs = sectionsWithPct.filter(s => s.pct === 0);
 
   const exportToPDF = () => {

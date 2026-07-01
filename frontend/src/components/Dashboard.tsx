@@ -269,9 +269,17 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     : nonStratSections;
 
   // الأقسام مرتبة: الأقل اكتمالاً أولاً (بدون إعادة ترتيب عند البحث)
+  // عند تساوي نسبة الشهر الحالي (شائع بسبب سقف 100% عند 3+ أدلة)، يُرجَّح
+  // القسم الأقل عدد أدلة هذا الشهر — فهو الأحوج فعلياً للعمل رغم تساوي النسبة
   const sortedFilteredSections = searchQuery.trim()
     ? filteredSections
-    : [...filteredSections].sort((a, b) => getMonthlyPct(a.id) - getMonthlyPct(b.id));
+    : [...filteredSections].sort((a, b) => {
+        const pctDiff = getMonthlyPct(a.id) - getMonthlyPct(b.id);
+        if (pctDiff !== 0) return pctDiff;
+        const countA = monthlyProgress?.getSectionMonthCount(a.id) ?? 0;
+        const countB = monthlyProgress?.getSectionMonthCount(b.id) ?? 0;
+        return countA - countB;
+      });
 
   const stats = calculateEvaluation(state, sections);
   // إجمالي الأدلة من Supabase مباشرة — يتزامن بعد كل حذف أو إضافة
@@ -817,7 +825,15 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                    </div>
                    
                    <div className="flex-1 min-w-0">
-                     <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{sec.ttl}</div>
+                     <div className="flex items-center gap-1.5 flex-wrap">
+                       <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{sec.ttl}</div>
+                       {/* شارة "تجاوز الهدف" — تظهر فقط إن تجاوز عدد أدلة الشهر الحالي السقف (3)، لا تؤثر على الترتيب/التلوين */}
+                       {monthlyProgress && monthlyProgress.getSectionMonthCount(sec.id) > 3 && (
+                         <span className="inline-flex items-center gap-0.5 text-[9.5px] sm:text-[10px] font-black text-[var(--gold)] bg-[var(--gold)]/12 border border-[var(--gold)]/30 py-0.5 px-1.5 rounded-md leading-none">
+                           <i className="ti ti-bolt text-[9px]"></i>+{monthlyProgress.getSectionMonthCount(sec.id) - 3}
+                         </span>
+                       )}
+                     </div>
                      <div className="text-[11px] sm:text-[12px] text-[var(--text4)] mt-0.5">{totalSubs} قسم فرعي{secTotalEvs ? ` · ${secTotalEvs} دليل` : ''}</div>
                      {monthlyProgress && (
                        <div className="flex items-center gap-1.5 sm:gap-3 mt-1 sm:mt-1.5 flex-wrap">

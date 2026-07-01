@@ -195,6 +195,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ev: state.ev,
     sections,
     csubs: state.csubs,
+    strats: state.strats,
   });
 
   // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب/الترتيب/

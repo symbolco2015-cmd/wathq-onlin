@@ -36,38 +36,23 @@ const getBucketAndPathFromUrl = (publicUrl: string): { bucket: string; path: str
   return { bucket: rest.slice(0, slashIdx), path: rest.slice(slashIdx + 1) };
 };
 
-export interface SectionCompletion {
-  section_id: number;
-  name_ar: string;
-  completion_pct: number;
-  evidence_count: number;
-}
-
 export function useSupabaseEvidence(
   portfolioId: string | null,
   onEvRemoved?: (sectionId: number, createdAt: string) => void,
 ) {
   const [evidence, setEvidence]     = useState<SupabaseEvidence[]>([]);
-  const [completion, setCompletion] = useState<SectionCompletion[]>([]);
   const [loading, setLoading]       = useState(false);
 
   const fetch = useCallback(async () => {
     if (!portfolioId || !supabase) return;
     setLoading(true);
     try {
-      const [evRes, compRes] = await Promise.all([
-        supabase
-          .from('evidence')
-          .select('*')
-          .eq('portfolio_id', portfolioId)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('portfolio_completion')
-          .select('*')
-          .eq('portfolio_id', portfolioId),
-      ]);
+      const evRes = await supabase
+        .from('evidence')
+        .select('*')
+        .eq('portfolio_id', portfolioId)
+        .order('created_at', { ascending: false });
       setEvidence(evRes.data  ?? []);
-      setCompletion(compRes.data ?? []);
     } finally {
       setLoading(false);
     }
@@ -144,22 +129,12 @@ export function useSupabaseEvidence(
   const getBySection = (sectionId: number) =>
     evidence.filter(e => e.section_id === sectionId);
 
-  const getCompletion = (sectionId: number) =>
-    completion.find(c => c.section_id === sectionId)?.completion_pct ?? 0;
-
-  const overallPct = completion.length > 0
-    ? Math.round(completion.reduce((s, c) => s + (c.completion_pct || 0), 0) / 11)
-    : 0;
-
   return {
     evidence,
-    completion,
     loading,
     addEvidence,
     deleteEvidence,
     getBySection,
-    getCompletion,
-    overallPct,
     refetch: fetch,
   };
 }

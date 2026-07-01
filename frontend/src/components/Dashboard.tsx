@@ -814,6 +814,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             const monthlyDepth = monthlyProgress && filledSubs > 0
               ? monthlyProgress.getSectionMonthCount(sec.id) / filledSubs
               : 0;
+            // منطق "الشارة الذهبية": بلوغ 3 أدلة هذا الشهر (الحد الأدنى) = احتفال بصري، لا يؤثر على completionPct/الترتيب/borderColor
+            const monthCount = monthlyProgress?.getSectionMonthCount(sec.id) ?? 0;
+            const isGoldAchieved = monthCount >= 3;
+            const overflowCount = monthCount - 3;
 
             const borderColor =
               completionPct > 70  ? '#22c55e' :
@@ -832,10 +836,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                    <div className="flex-1 min-w-0">
                      <div className="flex items-center gap-1.5 flex-wrap">
                        <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{sec.ttl}</div>
-                       {/* شارة "تجاوز الهدف" — تظهر فقط إن تجاوز عدد أدلة الشهر الحالي السقف (3)، لا تؤثر على الترتيب/التلوين */}
-                       {monthlyProgress && monthlyProgress.getSectionMonthCount(sec.id) > 3 && (
-                         <span className="inline-flex items-center gap-0.5 text-[9.5px] sm:text-[10px] font-black text-[var(--gold)] bg-[var(--gold)]/12 border border-[var(--gold)]/30 py-0.5 px-1.5 rounded-md leading-none">
-                           <i className="ti ti-bolt text-[9px]"></i>+{monthlyProgress.getSectionMonthCount(sec.id) - 3}
+                       {/* شارة "أساسي مُحقَّق" — تظهر عند بلوغ 3 أدلة هذا الشهر (الحد الأدنى)، احتفال بصري بدل توقف صامت، لا تؤثر على الترتيب/التلوين */}
+                       {isGoldAchieved && (
+                         <span
+                           className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black text-[var(--gold3)] bg-[var(--gold)]/12 border border-[var(--gold)]/35 py-0.5 px-1.5 rounded-md leading-none"
+                           style={{ animation: 'scaleIn .35s var(--sp) both' }}
+                         >
+                           ✓ أساسي مُحقَّق
                          </span>
                        )}
                      </div>
@@ -864,19 +871,19 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                            className="h-full rounded-full transition-all duration-700 ease-out"
                            style={{
                              width: `${completionPct}%`,
-                             background: completionPct >= 70
+                             background: isGoldAchieved
+                               ? 'linear-gradient(90deg, var(--gold), var(--gold2), var(--gold3))'
+                               : completionPct >= 70
                                ? 'linear-gradient(90deg, var(--em6), var(--em7))'
                                : completionPct >= 35
                                ? 'linear-gradient(90deg, #b45309, #fcd34d)'
                                : 'linear-gradient(90deg, #9f1239, #f43f5e)',
-                             boxShadow: completionPct >= 70 ? '0 0 8px rgba(82,196,120,.4)' : 'none'
+                             boxShadow: isGoldAchieved
+                               ? '0 0 10px rgba(201,162,39,.5)'
+                               : completionPct >= 70 ? '0 0 8px rgba(82,196,120,.4)' : 'none'
                            }}
                          />
                        </div>
-                       <span className={`text-[11px] font-black shrink-0 ${
-                         completionPct >= 70 ? 'text-[var(--em8)]' :
-                         completionPct >= 35 ? 'text-[#fcd34d]' : 'text-[#f87171]'
-                       }`}>{completionPct}%</span>
                      </div>
                      {/* تسمية الشهر الحالي + الرقم التراكمي الحقيقي — معلومة إضافية فقط، لا تؤثر على الترتيب/التلوين أعلاه */}
                      <div className="flex items-center justify-between mt-1">
@@ -907,7 +914,22 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                    
                    <i className={`ti ti-chevron-down text-[22px] shrink-0 transition-all duration-400 ${isOpen ? 'rotate-180 text-[var(--em7)]' : 'text-[var(--text4)]'}`}></i>
                 </div>
-                
+
+                {/* منطقة الاستمرارية — تظهر فقط عند تجاوز فعلي للحد الأدنى (>3)، تُخفى تماماً غير ذلك */}
+                {overflowCount > 0 && (
+                  <div
+                    className="flex items-center justify-between gap-3 py-2.5 px-3 sm:px-6 border-t border-dashed border-[var(--line)]/60"
+                    style={{ animation: 'scaleIn .35s var(--sp) both' }}
+                  >
+                    <span className="text-[11px] sm:text-[12px] font-bold text-[var(--text3)] flex items-center gap-1.5">
+                      🔥 استمراريتك ملحوظة — واصل التوثيق
+                    </span>
+                    <span className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full border border-[var(--em7)]/40 bg-[var(--em7)]/10 flex items-center justify-center text-[11px] sm:text-[12px] font-black text-[var(--em8)]">
+                      +{overflowCount}
+                    </span>
+                  </div>
+                )}
+
                 <div className={`overflow-hidden transition-all duration-500 ease-[var(--ease)] ${isOpen ? 'max-h-[9999px] opacity-100 border-t border-[var(--line)]' : 'max-h-0 opacity-0 border-t-0'}`}>
 
                   {allSubs.map((sub, idx) => {

@@ -151,15 +151,16 @@ function SectionCard({ sec, isTop, onClick, style }: { sec: SectionWithPct; isTo
   // العمق التراكمي = إجمالي الأدلة (evCount) ÷ عدد المؤشرات الفرعية المغطاة تراكمياً
   const filledSubsCount = new Set(sec.evs.map(e => e.sub)).size;
   const depth = filledSubsCount > 0 ? sec.evCount / filledSubsCount : 0;
+  const hasBadges = isTop || sec.evCount > 3;
   return (
     <div
-      className={`print-card group bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl shadow-lg cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,0,0,.3)] relative overflow-hidden ${isTop ? 'p-6 border-2' : 'p-5 border'}`}
+      className={`print-card group bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl shadow-lg cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,0,0,.3)] relative overflow-hidden ${isTop ? 'px-6 pt-6 border-2' : 'px-5 pt-5 border'} ${hasBadges ? (isTop ? 'pb-11' : 'pb-10') : (isTop ? 'pb-6' : 'pb-5')}`}
       style={{ borderColor: isTop ? color : 'var(--line)', ...style }}
       onClick={onClick}
       title={depth > 1 ? `متوسط ${depth.toFixed(1)} دليل لكل مؤشر مغطى` : undefined}
     >
-      {(isTop || sec.evCount > 3) && (
-        <div className="print-decor absolute top-3 left-3 z-20 flex flex-row items-center gap-1.5">
+      {hasBadges && (
+        <div className="print-decor absolute bottom-3 left-3 z-20 flex flex-row items-center gap-1.5">
           {isTop && (
             <div className="flex items-center gap-1 py-0.5 px-2 rounded-full text-[9px] font-black text-white shrink-0" style={{ backgroundColor: color }}>
               <i className="ti ti-trophy text-[10px]"></i> أبرز إنجاز
@@ -177,7 +178,7 @@ function SectionCard({ sec, isTop, onClick, style }: { sec: SectionWithPct; isTo
       )}
       <div className="print-decor absolute top-0 left-0 w-full h-[3px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundColor: color }}></div>
 
-      <div className="flex items-center gap-4 mb-4 relative z-10">
+      <div className="flex items-center gap-4 relative z-10">
         <div
           className={`print-decor rounded-2xl flex items-center justify-center border shrink-0 transition-all duration-300 ${isTop ? 'w-14 h-14 text-[28px]' : 'w-12 h-12 text-[24px]'}`}
           style={{ color, borderColor: `${color}40`, background: `${color}1a` }}
@@ -186,22 +187,10 @@ function SectionCard({ sec, isTop, onClick, style }: { sec: SectionWithPct; isTo
         </div>
         <div className="flex-1 min-w-0">
           <h3 className={`font-bold text-white leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isTop ? 'text-[16.5px]' : 'text-[15px]'}`}>{sec.fullName}</h3>
-          <p className="text-[12px] text-[var(--text4)] mt-1.5">{sec.isStrat ? 'الاستراتيجيات المضافة' : 'الأدلة الموثقة'}: <strong className="text-white">{sec.evCount}</strong></p>
-        </div>
-      </div>
-
-      <div className="relative z-10">
-        <div className="flex justify-between text-[11px] font-bold mb-2">
-          <span className="text-[var(--text3)]">نسبة الاكتمال</span>
-          <span style={{ color }}>{sec.pct}%</span>
-        </div>
-        <div className="print-progress-track h-2 w-full bg-[#060f0a] rounded-full overflow-hidden border border-white/5">
-          <div
-            className="print-progress-fill h-full transition-all duration-1000 ease-out rounded-full relative"
-            style={{ width: `${sec.pct}%`, backgroundColor: color, '--print-gray': printGray(sec.pct) } as React.CSSProperties}
-          >
-            <div className="print-decor absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent)] animate-[shimmer_2s_infinite]"></div>
-          </div>
+          <p className="text-[12.5px] text-[var(--text4)] mt-2 flex items-baseline gap-1.5">
+            <span>{sec.isStrat ? 'الاستراتيجيات المضافة' : 'الأدلة الموثقة'}</span>
+            <strong className="text-white font-black" style={{ fontSize: isTop ? 22 : 19 }}>{sec.evCount}</strong>
+          </p>
         </div>
       </div>
     </div>

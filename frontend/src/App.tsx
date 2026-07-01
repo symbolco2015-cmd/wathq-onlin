@@ -78,16 +78,19 @@ export default function App() {
   const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence);
 
   // wrapper: يسجّل في monthly_progress عند كل إضافة شاهد
+  // createdAt اختياري: يُمرَّر فقط عند الإضافة من أرشيف شهر سابق ضمن نافذة التعديل
+  // المسموحة، لربط الشاهد بشهره الصحيح في monthly_progress بدل الشهر الحالي الفعلي
   const handleAddEv = (
     sid: number,
     sub: string,
     type: 'pdf' | 'img' | 'doc' | 'vid',
     name: string,
     url?: string,
-    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>
+    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
+    createdAt?: string
   ) => {
     addEv(sid, sub, type, name, url, stratFields);
-    monthlyProgress.recordEvidence(sid);
+    monthlyProgress.recordEvidence(sid, createdAt);
   };
 
   const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string }>({

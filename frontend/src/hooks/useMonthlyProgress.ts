@@ -50,9 +50,9 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  /** حذف شاهد — تنقص evidence_count بمقدار 1 للشهر الحالي */
-  const removeEvidence = useCallback(async (sectionId: number) => {
-    const now2 = new Date();
+  /** حذف شاهد — تنقص evidence_count بمقدار 1 لشهر الدليل المحذوف (createdAt إن وُجد، وإلا الشهر الحالي) */
+  const removeEvidence = useCallback(async (sectionId: number, createdAt?: string) => {
+    const now2 = createdAt ? new Date(createdAt) : new Date();
     const evYear  = now2.getFullYear();
     const evMonth = now2.getMonth() + 1;
 
@@ -97,10 +97,10 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
     }
   }, [userId]);
 
-  /** تسجيل شاهد جديد للبند والشهر الحالي */
-  const recordEvidence = useCallback(async (sectionId: number) => {
+  /** تسجيل شاهد جديد للبند — للشهر الحالي، أو لشهر أرشيف سابق إذا تم تمرير createdAt (إضافة بتأريخ سابق ضمن نافذة التعديل المسموحة) */
+  const recordEvidence = useCallback(async (sectionId: number, createdAt?: string) => {
     // احسب التاريخ لحظة الاستدعاء لتفادي closure مجمّدة عند فتح الصفحة شهراً ثم إضافة شاهد في شهر آخر
-    const now2 = new Date();
+    const now2 = createdAt ? new Date(createdAt) : new Date();
     const evYear  = now2.getFullYear();
     const evMonth = now2.getMonth() + 1;
 

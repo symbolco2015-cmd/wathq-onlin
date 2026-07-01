@@ -45,7 +45,7 @@ export interface SectionCompletion {
 
 export function useSupabaseEvidence(
   portfolioId: string | null,
-  onEvRemoved?: (sectionId: number) => void,
+  onEvRemoved?: (sectionId: number, createdAt: string) => void,
 ) {
   const [evidence, setEvidence]     = useState<SupabaseEvidence[]>([]);
   const [completion, setCompletion] = useState<SectionCompletion[]>([]);
@@ -87,11 +87,11 @@ export function useSupabaseEvidence(
     file_url?: string;
     link_url?: string;
     self_reflection?: string;
-  }) => {
+  }, createdAt?: string) => {
     if (!portfolioId || !supabase) return null;
     const { data, error } = await supabase
       .from('evidence')
-      .insert({ portfolio_id: portfolioId, ...payload })
+      .insert({ portfolio_id: portfolioId, ...payload, ...(createdAt ? { created_at: createdAt } : {}) })
       .select()
       .single();
     if (error) { console.error('[Supabase Evidence]', error); return null; }
@@ -135,7 +135,7 @@ export function useSupabaseEvidence(
     }
 
     if (evItem && onEvRemoved) {
-      onEvRemoved(evItem.section_id);
+      onEvRemoved(evItem.section_id, evItem.created_at);
     }
 
     setEvidence(prev => prev.filter(e => e.id !== id));

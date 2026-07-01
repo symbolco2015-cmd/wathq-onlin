@@ -7,6 +7,8 @@ interface EvidenceListProps {
   loading: boolean;
   onDelete: (id: string) => Promise<void>;
   onAddClick: () => void;
+  /** عرض فقط — يخفي زر الحذف وزر الإضافة بالكامل (يُستخدم لأشهر الأرشيف المقفلة) */
+  readOnly?: boolean;
 }
 
 const TYPE_META: Record<EvidenceType, { icon: string; label: string; color: string }> = {
@@ -18,7 +20,7 @@ const TYPE_META: Record<EvidenceType, { icon: string; label: string; color: stri
   video: { icon: 'ti-video',          label: 'فيديو',  color: '#fcd34d' },
 };
 
-export default function EvidenceList({ evidence, loading, onDelete, onAddClick }: EvidenceListProps) {
+export default function EvidenceList({ evidence, loading, onDelete, onAddClick, readOnly = false }: EvidenceListProps) {
   const [confirmId,   setConfirmId]   = useState<string | null>(null);
   const [deleting,    setDeleting]    = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -54,14 +56,16 @@ export default function EvidenceList({ evidence, loading, onDelete, onAddClick }
         </div>
         <p className="text-[14px] font-bold text-[var(--text3)]">لا توجد شواهد بعد</p>
         <p className="text-[12px] text-[var(--text4)] mt-1 mb-4 max-w-[260px] leading-relaxed">
-          وثّق إنجازاتك بإضافة أول شاهد وابنِ ملف احترافياً
+          {readOnly ? 'لا توجد شواهد مسجّلة لهذا الشهر' : 'وثّق إنجازاتك بإضافة أول شاهد وابنِ ملف احترافياً'}
         </p>
-        <button
-          onClick={onAddClick}
-          className="inline-flex items-center gap-2 py-2 px-5 rounded-xl bg-[var(--em7)]/10 border border-[var(--em7)]/25 text-[var(--em8)] text-[13px] font-bold hover:bg-[var(--em7)]/20 hover:-translate-y-0.5 transition-all cursor-pointer font-[var(--font)]"
-        >
-          <i className="ti ti-plus" /> إضافة شاهد
-        </button>
+        {!readOnly && (
+          <button
+            onClick={onAddClick}
+            className="inline-flex items-center gap-2 py-2 px-5 rounded-xl bg-[var(--em7)]/10 border border-[var(--em7)]/25 text-[var(--em8)] text-[13px] font-bold hover:bg-[var(--em7)]/20 hover:-translate-y-0.5 transition-all cursor-pointer font-[var(--font)]"
+          >
+            <i className="ti ti-plus" /> إضافة شاهد
+          </button>
+        )}
       </div>
     );
   }
@@ -159,7 +163,7 @@ export default function EvidenceList({ evidence, loading, onDelete, onAddClick }
                 </a>
               )}
 
-              {isConfirming ? (
+              {!readOnly && (isConfirming ? (
                 <button
                   onClick={e => { e.stopPropagation(); handleDelete(ev.id); }}
                   disabled={deleting}
@@ -179,7 +183,7 @@ export default function EvidenceList({ evidence, loading, onDelete, onAddClick }
                 >
                   <i className="ti ti-trash" />
                 </button>
-              )}
+              ))}
             </div>
           </div>
         );

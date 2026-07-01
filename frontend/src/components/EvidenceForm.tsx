@@ -25,9 +25,13 @@ export interface EvidenceFormProps {
     type: 'pdf' | 'img' | 'doc' | 'vid',
     name: string,
     url?: string,
-    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>
+    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
+    createdAt?: string
   ) => void;
   onToast: (msg: string, icon?: string) => void;
+  /** يُمرَّر فقط عند الإضافة من أرشيف شهر سابق — يربط الشاهد بذلك الشهر بدل
+   *  تاريخ اليوم الفعلي، في جدول evidence وفي monthly_progress معاً */
+  createdAt?: string;
 }
 
 // accept لنوع 'file' يضم امتدادات + MIME types صريحة معاً: بعض متصفحات أندرويد
@@ -79,7 +83,7 @@ const toLocalType = (t: EvidenceType): 'pdf' | 'img' | 'doc' | 'vid' => {
  * الديسكتوب، أو BottomSheet على الجوال) تحديد شكل العرض الخارجي.
  */
 export default function EvidenceForm({
-  isOpen, onClose, sectionId, sub, userId, supabaseEv, onAddEv, onToast,
+  isOpen, onClose, sectionId, sub, userId, supabaseEv, onAddEv, onToast, createdAt,
 }: EvidenceFormProps) {
   // ── Form state ──────────────────────────────────────────────
   const [title,          setTitle]          = useState('');
@@ -215,7 +219,7 @@ export default function EvidenceForm({
         file_url:        fileUrl               || undefined,
         link_url:        linkUrl.trim()        || undefined,
         self_reflection: selfReflection.trim() || undefined,
-      });
+      }, createdAt);
 
       if (result) {
         // أيضاً احفظ في state.ev المحلي
@@ -227,7 +231,7 @@ export default function EvidenceForm({
           stratPeriod:  stratPeriod ? Number(stratPeriod) : undefined,
           stratSubject: stratSubject.trim() || undefined,
         } : undefined;
-        onAddEv(sectionId, sub, toLocalType(evidenceType), title.trim(), url, stratFields);
+        onAddEv(sectionId, sub, toLocalType(evidenceType), title.trim(), url, stratFields, createdAt);
         onToast('تم إضافة الشاهد بنجاح ✅', '✅');
         onClose();
       } else {
@@ -254,6 +258,11 @@ export default function EvidenceForm({
         <div className="flex-1">
           <div className="text-[18px] font-black text-white">إضافة شاهد جديد</div>
           <div className="text-[12px] text-[var(--text4)] mt-0.5">{sub.startsWith('strat:') ? `استراتيجية: ${sub.replace('strat:', '')}` : sub}</div>
+          {createdAt && (
+            <div className="text-[11px] text-[var(--gold)] mt-1 flex items-center gap-1 font-bold">
+              <i className="ti ti-history" /> سيُسجَّل هذا الشاهد ضمن أرشيف {new Date(createdAt).toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })}
+            </div>
+          )}
         </div>
         <button
           onClick={onClose}

@@ -148,11 +148,15 @@ function Avatar({ profile, size }: { profile: PublicPortfolioState['profile']; s
  * اللون مأخوذ بالكامل من getCompletionColor(pct) في utils.ts. */
 function SectionCard({ sec, isTop, onClick, style }: { sec: SectionWithPct; isTop?: boolean; onClick: () => void; style?: React.CSSProperties }) {
   const color = getCompletionColor(sec.pct);
+  // العمق التراكمي = إجمالي الأدلة (evCount) ÷ عدد المؤشرات الفرعية المغطاة تراكمياً
+  const filledSubsCount = new Set(sec.evs.map(e => e.sub)).size;
+  const depth = filledSubsCount > 0 ? sec.evCount / filledSubsCount : 0;
   return (
     <div
       className={`print-card group bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl shadow-lg cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,0,0,.3)] relative overflow-hidden ${isTop ? 'p-6 border-2' : 'p-5 border'}`}
       style={{ borderColor: isTop ? color : 'var(--line)', ...style }}
       onClick={onClick}
+      title={depth > 1 ? `متوسط ${depth.toFixed(1)} دليل لكل مؤشر مغطى` : undefined}
     >
       {(isTop || sec.evCount > 3) && (
         <div className="print-decor absolute top-3 left-3 z-20 flex flex-row items-center gap-1.5">

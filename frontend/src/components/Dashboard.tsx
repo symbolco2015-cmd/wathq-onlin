@@ -809,6 +809,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             const totalSubs = secStat?.totalSubs ?? allSubs.length;
             // cumulativePct: نسبة الاكتمال التراكمية الحقيقية عبر كل الأدلة منذ البداية (secStat) — تُعرض كمعلومة إضافية فقط
             const cumulativePct = secStat?.completionPct ?? 0;
+            // العمق الشهري = أدلة هذا الشهر ÷ عدد المؤشرات الفرعية المغطاة تراكمياً (filledSubs).
+            // تقريب مقبول: لا توجد بيانات دقيقة عن توزيع أدلة الشهر على مستوى المؤشر الفرعي نفسه.
+            const monthlyDepth = monthlyProgress && filledSubs > 0
+              ? monthlyProgress.getSectionMonthCount(sec.id) / filledSubs
+              : 0;
 
             const borderColor =
               completionPct > 70  ? '#22c55e' :
@@ -881,6 +886,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                          الإجمالي التراكمي: <span className="font-black text-[var(--em8)]">{cumulativePct}%</span>
                        </span>
                      </div>
+                     {monthlyDepth > 1 && (
+                       <div className="flex items-center justify-end mt-1">
+                         <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold flex items-center gap-1">
+                           <i className="ti ti-stack-2 text-[9px] sm:text-[10px]" />
+                           العمق: <span className="font-black text-[var(--em8)]">{monthlyDepth.toFixed(1)}</span> دليل/مؤشر
+                         </span>
+                       </div>
+                     )}
                    </div>
                    
                    {secTotalEvs > 0 && (

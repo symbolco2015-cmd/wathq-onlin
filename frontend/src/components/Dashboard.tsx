@@ -855,7 +855,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                            <span className={monthlyProgress.getSectionMonthCount(sec.id) > 0 ? 'text-[var(--em8)] font-bold' : ''}>
                              {monthlyProgress.getSectionMonthCount(sec.id)}
                            </span>
-                           {' '}/ 3
                          </span>
                          <span className="text-[var(--text4)] opacity-40 text-[9px]">·</span>
                          <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
@@ -885,13 +884,30 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                          />
                        </div>
                      </div>
-                     {/* تسمية الشهر الحالي + الرقم التراكمي الحقيقي — معلومة إضافية فقط، لا تؤثر على الترتيب/التلوين أعلاه */}
-                     <div className="flex items-center justify-between mt-1">
-                       <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold">نشاط هذا الشهر</span>
-                       <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold flex items-center gap-1">
-                         <i className="ti ti-chart-pie-2 text-[9px] sm:text-[10px]" />
-                         الإجمالي التراكمي: <span className="font-black text-[var(--em8)]">{cumulativePct}%</span>
-                       </span>
+                     {/* تسمية الشهر الحالي + شريط التراكم الحقيقي — معلومة إضافية فقط، لا تؤثر على الترتيب/التلوين أعلاه */}
+                     <div className="flex items-center justify-between mt-1 gap-2">
+                       <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold shrink-0">نشاط هذا الشهر</span>
+                       <div className="flex items-center gap-1.5 min-w-0">
+                         <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold flex items-center gap-1 whitespace-nowrap">
+                           <i className="ti ti-chart-pie-2 text-[9px] sm:text-[10px]" />
+                           مسارك التراكمي مستمر
+                         </span>
+                         <div className="w-10 sm:w-14 h-[4px] rounded-full bg-white/8 overflow-hidden shrink-0">
+                           <div
+                             className="h-full rounded-full transition-all duration-700 ease-out"
+                             style={{
+                               width: `${cumulativePct}%`,
+                               background: isGoldAchieved
+                                 ? 'linear-gradient(90deg, var(--gold), var(--gold2), var(--gold3))'
+                                 : completionPct >= 70
+                                 ? 'linear-gradient(90deg, var(--em6), var(--em7))'
+                                 : completionPct >= 35
+                                 ? 'linear-gradient(90deg, #b45309, #fcd34d)'
+                                 : 'linear-gradient(90deg, #9f1239, #f43f5e)'
+                             }}
+                           />
+                         </div>
+                       </div>
                      </div>
                      {monthlyDepth > 1 && (
                        <div className="flex items-center justify-end mt-1">
@@ -908,7 +924,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                        <div className="flex items-center gap-1 text-[12px] font-bold py-1.5 px-3.5 rounded-full bg-[var(--em7)]/10 text-[var(--em8)] border border-[var(--em7)]/15">
                          <i className="ti ti-files text-[13px]"></i> {secTotalEvs}
                        </div>
-                       <div className="text-[10px] text-[var(--text4)] font-bold">{filledSubs}/{totalSubs} مكتمل</div>
+                       <div className="text-[10px] text-[var(--text4)] font-bold">{filledSubs} مكتمل</div>
                      </div>
                    )}
                    

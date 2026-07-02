@@ -276,41 +276,57 @@ function SectionCard({ sec, isTop, onClick, style }: { sec: SectionWithPct; isTo
 
 /** مصغّرة دليل واحد ضمن بطاقة الاستراتيجيات — صورة فعلية / مصغّرة يوتيوب /
  * أيقونة ملف+اسم / أيقونة رابط+دومين / أيقونة ملاحظة، حسب نوع الدليل ورابطه. */
-function EvidenceThumb({ e }: { e: Evidence }) {
+/** onClick اختياري: يُستدعى بدلاً من فتح رابط خارجي مباشرة عند توفره (يُستخدم
+ * لفتح نافذة معاينة/lightbox). الروابط الخارجية العامة (type: 'doc') تبقى
+ * تفتح في تبويب جديد مباشرة دون معاينة. */
+function EvidenceThumb({ e, onClick }: { e: Evidence; onClick?: (e: Evidence) => void }) {
+  const handleClick = (ev: React.MouseEvent) => {
+    if (!onClick) return;
+    ev.stopPropagation();
+    onClick(e);
+  };
+
   if (e.type === 'img' && e.url) {
-    return <img src={e.url} alt={e.name} className="w-full h-[88px] object-cover rounded-xl border border-white/10" />;
+    return (
+      <img
+        src={e.url}
+        alt={e.name}
+        onClick={onClick ? handleClick : undefined}
+        className={`w-full h-[88px] object-cover rounded-xl border border-white/10 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+      />
+    );
   }
 
   const ytId = e.url ? extractYouTubeId(e.url) : null;
   if (ytId) {
     return (
-      <a href={e.url} target="_blank" rel="noreferrer" className="block relative group">
+      <div onClick={onClick ? handleClick : undefined} className={`block relative group ${onClick ? 'cursor-pointer' : ''}`}>
         <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt={e.name} className="w-full h-[88px] object-cover rounded-xl border border-white/10" />
         <span className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors rounded-xl">
           <i className="ti ti-player-play-filled text-white text-[26px] drop-shadow-lg"></i>
         </span>
-      </a>
+      </div>
     );
   }
 
   if (e.type === 'pdf' || e.type === 'vid') {
     const t = EVT_CONFIG[e.type];
     return (
-      <a
-        {...(e.url ? { href: e.url, target: '_blank', rel: 'noreferrer' } : {})}
-        className={`flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 ${e.url ? 'hover:bg-white/10 cursor-pointer' : ''}`}
+      <div
+        onClick={e.url && onClick ? handleClick : undefined}
+        className={`flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 ${e.url && onClick ? 'hover:bg-white/10 cursor-pointer' : ''}`}
       >
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[16px] shrink-0 ${t.cls}`}>
           <i className={`ti ${t.icon}`}></i>
         </div>
         <span className="text-[12px] font-bold text-white truncate">{e.name}</span>
-      </a>
+      </div>
     );
   }
 
   if (e.type === 'doc' && e.url) {
     return (
-      <a href={e.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-[var(--em8)] hover:bg-white/10 transition-colors">
+      <a href={e.url} target="_blank" rel="noreferrer" onClick={ev => ev.stopPropagation()} className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-[var(--em8)] hover:bg-white/10 transition-colors">
         <i className="ti ti-link text-[18px]"></i>
         <span className="text-[12px] font-bold truncate" dir="ltr">{getDomain(e.url)}</span>
       </a>
@@ -349,6 +365,62 @@ function EvidenceContextTags({ e }: { e: Evidence }) {
   );
 }
 
+/** نافذة معاينة مصغّرة (lightbox) خاصة بأدلة قسم الاستراتيجيات فقط — منفصلة
+ * كلياً عن previewFile العام حتى لا تمتد التعديلات لأي قسم آخر في الصفحة.
+ * ترتيب الفحص يطابق EvidenceThumb تماماً: صورة → يوتيوب → PDF → فيديو مباشر. */
+function StrategyLightbox({ item, onClose }: { item: { name: string; url: string; type: Evidence['type'] } | null; onClose: () => void }) {
+  if (!item) return null;
+  const ytId = item.type !== 'img' ? extractYouTubeId(item.url) : null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
+      <div className="relative bg-[#0c1c12]/95 border border-[var(--gold)]/25 w-full max-w-3xl rounded-[24px] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden" style={{ animation: 'jumpIn .4s var(--sp) both' }}>
+        <div className="flex items-center justify-between py-4 px-6 border-b border-white/10 bg-black/20">
+          <h3 className="text-[15px] font-black text-white truncate max-w-[280px] sm:max-w-[500px]" dir="rtl">{item.name}</h3>
+          <button
+            className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[var(--text3)] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 transition-all cursor-pointer"
+            onClick={onClose}
+          >
+            <i className="ti ti-x text-[18px]"></i>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-6 bg-black/10 flex items-center justify-center">
+          {item.type === 'img' && (
+            <img src={item.url} alt={item.name} className="max-w-full max-h-[65vh] object-contain rounded-2xl shadow-2xl" />
+          )}
+
+          {item.type !== 'img' && ytId && (
+            <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl">
+              <iframe
+                src={`https://www.youtube.com/embed/${ytId}`}
+                className="w-full h-full border-none"
+                title={item.name}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          )}
+
+          {item.type === 'pdf' && !ytId && (
+            <div className="w-full h-[65vh] flex flex-col gap-3">
+              <iframe src={`${item.url}#toolbar=0`} className="w-full flex-1 border-none rounded-2xl bg-white" title={item.name} />
+              <a href={item.url} target="_blank" rel="noreferrer" className="self-center text-[12px] font-bold text-[var(--gold)] hover:underline flex items-center gap-1.5">
+                <i className="ti ti-external-link"></i> فتح الملف في تبويب جديد
+              </a>
+            </div>
+          )}
+
+          {item.type === 'vid' && !ytId && (
+            <video src={item.url} controls className="max-w-full max-h-[65vh] rounded-2xl" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Public({ state, sections, isSharedView, continuity }: PublicProps) {
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
@@ -361,6 +433,20 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
     url: string;
     type: 'pdf' | 'img' | 'doc' | 'vid';
   } | null>(null);
+
+  // حالة بطاقة "استراتيجيات التدريس المتنوعة" فقط — طي/فتح القسم كاملاً
+  // (مطوي افتراضياً)، طي/فتح كل استراتيجية على حدة (مفتوحة افتراضياً، يُحفظ
+  // اسمها في closedStrats فقط عند طيّها يدوياً)، ومعاينة مصغّرات الأدلة.
+  const [stratCollapsed, setStratCollapsed] = useState(true);
+  const [closedStrats, setClosedStrats] = useState<Set<string>>(new Set());
+  const [stratPreview, setStratPreview] = useState<{ name: string; url: string; type: Evidence['type'] } | null>(null);
+  const toggleStratRow = (name: string) => {
+    setClosedStrats(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
 
   const stats = calculateEvaluation(state, sections);
   const totalEvs = stats.totalEvs;
@@ -611,49 +697,73 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
             </div>
           )}
 
-          {/* بطاقة استراتيجيات التدريس — مستقلة كلياً عن نظام النسب أعلاه، بدون أي رقم نسبة */}
+          {/* بطاقة استراتيجيات التدريس — مستقلة كلياً عن نظام النسب أعلاه، بدون أي رقم نسبة.
+              مطوية بالكامل افتراضياً؛ نسخة الطباعة (print:) تُجبَر دائماً على الفتح الكامل
+              بصرف النظر عن حالة الطي على الشاشة، حفاظاً على سلوك تصدير PDF السابق. */}
           {stratSection && (
             <div className="print-card mt-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--gold)]/20 shadow-lg p-6 sm:p-8">
-              <div className="mb-6 flex items-center gap-2">
-                <i className="ti ti-bulb text-[var(--gold)] text-[20px]"></i>
-                <h2 className="text-[18px] font-black text-white">استراتيجيات التدريس المتنوعة</h2>
+              <div
+                className="flex items-center justify-between gap-3 cursor-pointer select-none print:pointer-events-none"
+                onClick={() => setStratCollapsed(v => !v)}
+              >
+                <div className="flex items-center gap-2">
+                  <i className="ti ti-bulb text-[var(--gold)] text-[20px]"></i>
+                  <h2 className="text-[18px] font-black text-white">استراتيجيات التدريس المتنوعة</h2>
+                </div>
+                <div className="flex items-center gap-2.5 print:hidden">
+                  {state.strats.length > 0 && (
+                    <span className="text-[11px] font-black text-[#241a05] bg-[var(--gold)] px-2.5 py-1 rounded-full whitespace-nowrap">
+                      {state.strats.length} استراتيجيات
+                    </span>
+                  )}
+                  <i className={`ti ti-chevron-down text-[var(--text3)] text-[18px] transition-transform duration-300 ${stratCollapsed ? '' : 'rotate-180'}`}></i>
+                </div>
               </div>
 
-              {state.strats.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
-                    <i className="ti ti-bulb-off"></i>
+              <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 print:!mt-6 ${stratCollapsed ? 'max-h-0 opacity-0' : 'max-h-[10000px] opacity-100 mt-6'}`}>
+                {state.strats.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
+                      <i className="ti ti-bulb-off"></i>
+                    </div>
+                    <p className="text-[var(--text3)] text-[13.5px]">لا توجد استراتيجيات مسجّلة بعد</p>
                   </div>
-                  <p className="text-[var(--text3)] text-[13.5px]">لا توجد استراتيجيات مسجّلة بعد</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-5">
-                  {state.strats.map(name => {
-                    const evs = state.ev[`${stratSection.id}|strat:${name}`] || [];
-                    return (
-                      <div key={name} className="bg-white/5 rounded-2xl p-4 border border-[var(--gold)]/10">
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="w-2 h-2 rounded-full bg-[var(--gold)] shrink-0"></div>
-                          <span className="text-[14px] font-bold text-white">{name}</span>
-                          {evs.length > 0 && <span className="text-[11px] font-black text-[var(--gold)] bg-[var(--gold)]/10 px-2 py-0.5 rounded-md">{evs.length} شواهد</span>}
-                        </div>
-                        {evs.length > 0 ? (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                            {evs.map((e, idx) => (
-                              <div key={idx}>
-                                <EvidenceThumb e={e} />
-                                <EvidenceContextTags e={e} />
-                              </div>
-                            ))}
+                ) : (
+                  <div className="flex flex-col gap-5">
+                    {state.strats.map(name => {
+                      const evs = state.ev[`${stratSection.id}|strat:${name}`] || [];
+                      const rowOpen = !closedStrats.has(name);
+                      return (
+                        <div key={name} className="bg-white/5 rounded-2xl p-4 border border-[var(--gold)]/10">
+                          <div
+                            className="flex items-center gap-2 mb-3 cursor-pointer select-none print:pointer-events-none"
+                            onClick={ev => { ev.stopPropagation(); toggleStratRow(name); }}
+                          >
+                            <div className="w-2 h-2 rounded-full bg-[var(--gold)] shrink-0"></div>
+                            <span className="text-[14px] font-bold text-white flex-1">{name}</span>
+                            {evs.length > 0 && <span className="text-[11px] font-black text-[var(--gold)] bg-[var(--gold)]/10 px-2 py-0.5 rounded-md">{evs.length} شواهد</span>}
+                            <i className={`ti ti-chevron-down text-[var(--text4)] text-[13px] transition-transform duration-300 print:hidden ${rowOpen ? 'rotate-180' : ''}`}></i>
                           </div>
-                        ) : (
-                          <p className="text-[12px] text-[var(--text4)] italic">لا توجد شواهد مرفقة لهذه الاستراتيجية حالياً.</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                          <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 ${rowOpen ? 'max-h-[4000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                            {evs.length > 0 ? (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                                {evs.map((e, idx) => (
+                                  <div key={idx}>
+                                    <EvidenceThumb e={e} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
+                                    <EvidenceContextTags e={e} />
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[12px] text-[var(--text4)] italic">لا توجد شواهد مرفقة لهذه الاستراتيجية حالياً.</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -928,6 +1038,8 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
           </div>
         </div>
       )}
+
+      <StrategyLightbox item={stratPreview} onClose={() => setStratPreview(null)} />
     </div>
   );
 }

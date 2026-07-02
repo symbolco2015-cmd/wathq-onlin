@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { Evidence, PublicPortfolioState, SectionData } from '../types';
+import type { ContinuityData, Evidence, PublicPortfolioState, SectionData } from '../types';
 import { calculateEvaluation, getCompletionColor, getCompletionLabel } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
@@ -20,6 +20,9 @@ interface PublicProps {
   sections: SectionData[];
   /** When true, this view is accessed via a public share link (no auth required) */
   isSharedView?: boolean;
+  /** مؤشر الاستمرارية عبر الزمن — غائب فقط أثناء التحميل أو إن تعذّر الجلب،
+   * وفي هذه الحالة القسم لا يُعرض إطلاقاً بدل عرض بيانات فارغة مضلّلة. */
+  continuity?: ContinuityData | null;
 }
 
 /** يستخرج معرّف فيديو يوتيوب من أي صيغة رابط شائعة (watch؟v=, youtu.be/, embed/, shorts/)،
@@ -107,6 +110,80 @@ function StatsRow({ totalEvs, sectionsCount, years, justify }: { totalEvs: numbe
           <div className="text-[11px] text-[var(--text4)] mt-1">سنة خبرة</div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const MONTH_ABBR: Record<number, string> = {
+  1: 'ينا', 2: 'فبر', 3: 'مار', 4: 'أبر', 5: 'ماي', 6: 'يون',
+  7: 'يول', 8: 'أغس', 9: 'سبت', 10: 'أكت', 11: 'نوف', 12: 'ديس',
+};
+const MONTH_FULL: Record<number, string> = {
+  1: 'يناير', 2: 'فبراير', 3: 'مارس', 4: 'أبريل', 5: 'مايو', 6: 'يونيو',
+  7: 'يوليو', 8: 'أغسطس', 9: 'سبتمبر', 10: 'أكتوبر', 11: 'نوفمبر', 12: 'ديسمبر',
+};
+
+/** يبني 12 شهراً بالترتيب بدءاً من yearStartMonth للسنة الدراسية الحالية —
+ * نفس منطق academicStartYear في useMonthlyProgress.ts، معاد محلياً هنا لأن
+ * تلك النسخة مرتبطة بحالة قابلة للتعديل خاصة بلوحة التحكم (recordEvidence/
+ * removeEvidence) لا حاجة لها في العرض العام للقراءة فقط. */
+function buildAcademicMonths(yearStartMonth: number): { year: number; month: number }[] {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const startYear = currentMonth >= yearStartMonth ? currentYear : currentYear - 1;
+  const startFlat = startYear * 12 + (yearStartMonth - 1);
+
+  return Array.from({ length: 12 }, (_, i) => {
+    const flat = startFlat + i;
+    return { year: Math.floor(flat / 12), month: (flat % 12) + 1 };
+  });
+}
+
+/** شبكة "الاستمرارية عبر العام الدراسي" — 12 مربعاً بترتيب السنة الدراسية،
+ * بثلاث حالات بصرية: نشط (توثيق فعلي)، مضى بلا توثيق، ومستقبلي لم يحن بعد
+ * (منقّط بلا خلفية) حتى لا يُقرأ كإخفاق. */
+function ContinuityGrid({ continuity }: { continuity: ContinuityData }) {
+  const months = buildAcademicMonths(continuity.yearStartMonth);
+  const activeSet = new Set(continuity.activeMonths.map(m => `${m.year}-${m.month}`));
+
+  const now = new Date();
+  const currentFlat = now.getFullYear() * 12 + (now.getMonth() + 1);
+
+  let activeCount = 0;
+  const cells = months.map(m => {
+    const flat = m.year * 12 + m.month;
+    const isFuture = flat > currentFlat;
+    const isActive = !isFuture && activeSet.has(`${m.year}-${m.month}`);
+    if (isActive) activeCount++;
+    return { ...m, isFuture, isActive };
+  });
+
+  return (
+    <div className="print-card mb-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line)] shadow-lg p-6 sm:p-8">
+      <h2 className="text-[15px] font-bold text-[var(--text3)] flex items-center gap-2 mb-4">
+        <i className="ti ti-calendar-stats text-[var(--em8)]"></i> الاستمرارية عبر العام الدراسي
+      </h2>
+      <div className="grid grid-cols-12 gap-1.5 sm:gap-2">
+        {cells.map((c, i) => (
+          <div
+            key={i}
+            title={`${MONTH_FULL[c.month]} ${c.year} — ${c.isFuture ? 'لم يحن بعد' : c.isActive ? 'تم التوثيق' : 'بلا توثيق'}`}
+            className={`aspect-square rounded-lg flex items-center justify-center text-[9px] sm:text-[11px] font-bold transition-colors ${
+              c.isFuture
+                ? 'border border-dashed border-[var(--line)] text-[var(--text4)]/50 bg-transparent'
+                : c.isActive
+                ? 'bg-[var(--em7)]/20 border border-[var(--em7)]/50 text-[var(--em8)]'
+                : 'bg-white/5 border border-[var(--line)] text-[var(--text4)]'
+            }`}
+          >
+            {MONTH_ABBR[c.month]}
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[12.5px] text-[var(--text3)]">
+        نشط في <strong className="text-white">{activeCount}</strong> من 12 شهراً
+      </p>
     </div>
   );
 }
@@ -272,7 +349,7 @@ function EvidenceContextTags({ e }: { e: Evidence }) {
   );
 }
 
-export default function Public({ state, sections, isSharedView }: PublicProps) {
+export default function Public({ state, sections, isSharedView, continuity }: PublicProps) {
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
@@ -478,6 +555,8 @@ export default function Public({ state, sections, isSharedView }: PublicProps) {
             </div>
             <div className="mt-3 text-[12.5px] font-bold relative z-10" style={{ color: getCompletionColor(overallPct) }}>{getCompletionLabel(overallPct)}</div>
           </div>
+
+          {continuity && <ContinuityGrid continuity={continuity} />}
 
           <div className="mb-6 flex justify-between items-end flex-wrap gap-4">
             <div>

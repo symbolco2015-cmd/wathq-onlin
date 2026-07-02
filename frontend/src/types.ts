@@ -73,3 +73,11 @@ export interface AppState {
 /** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */
 export type PublicPortfolioState = Pick<AppState, 'ev' | 'strats' | 'csubs' | 'profile'>;
 
+/** مؤشر الاستمرارية عبر الزمن — بداية السنة الدراسية + الأشهر التي فيها
+ * توثيق فعلي (أي قسم)، لعرضها في Public.tsx. يُبنى من get_shared_monthly_progress()
+ * في العرض العام، أو مباشرة من monthlyProgress.rows في معاينة المالك لملفه. */
+export interface ContinuityData {
+  yearStartMonth: number;
+  activeMonths: { year: number; month: number }[];
+}
+

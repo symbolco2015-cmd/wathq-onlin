@@ -17,6 +17,8 @@ import { SECS } from './data';
 import { calculateEvaluation, isProfileIncomplete } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
 import { useMonthlyProgress } from './hooks/useMonthlyProgress';
+import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
+import type { ContinuityData } from './types';
 
 const SECS_REMOVED = true;
 
@@ -101,6 +103,19 @@ export default function App() {
   const { state: sharedState, loading: sharedLoading, error: sharedError } = usePublicProfile(
     shareUserId ?? null
   );
+
+  // مؤشر الاستمرارية عبر الزمن للعرض العام — جلب منفصل عبر RPC آمنة (RLS
+  // تمنع قراءة monthly_progress مباشرة لغير المالك، انظر usePublicMonthlyProgress).
+  const sharedContinuity = usePublicMonthlyProgress(shareUserId ?? null);
+
+  // نفس البيانات لمعاينة المالك لملفه الخاص (صفحة 'public' داخل التطبيق) —
+  // تُبنى مباشرة من monthlyProgress.rows المحمّلة أصلاً بلا أي طلب إضافي.
+  const ownContinuity: ContinuityData = {
+    yearStartMonth: state.yearStartMonth ?? 9,
+    activeMonths: monthlyProgress.rows
+      .filter(r => r.evidence_count > 0)
+      .map(r => ({ year: r.year, month: r.month })),
+  };
 
   // Redirect users dynamically based on auth status — but not when in shared-profile view
   useEffect(() => {
@@ -696,7 +711,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={SECS} isSharedView />
+          <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} />
         </main>
       </>
     );
@@ -765,7 +780,7 @@ export default function App() {
           />
         )}
         
-        {currentPage === 'public' && <Public state={state} sections={SECS} />}
+        {currentPage === 'public' && <Public state={state} sections={SECS} continuity={ownContinuity} />}
         
         {currentPage === 'admin' && isAdmin && (
           <AdminDashboard

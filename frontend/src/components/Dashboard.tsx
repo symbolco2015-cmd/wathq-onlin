@@ -6,9 +6,10 @@ import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import { calculateEvaluation, isLastDaysOfMonth, upcomingAcademicDate } from '../utils';
+import { calculateEvaluation, calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
 import { useQuickCapture } from '../hooks/useQuickCapture';
+import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -18,6 +19,9 @@ const ARCHIVE_MONTHS_AR = [
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
 export interface MonthlyProgressData {
+  /** صفوف monthly_progress الخام لكل قسم/شهر — تُستخدم في calculatePointsLevel
+   * لحساب نقاط الملف العام (نافذة آخر 3 أشهر، بصرف النظر عن القسم) */
+  rows: MonthlyProgressRow[];
   currentMonthTotal: number;
   currentMonthName: string;
   currentYear: number;
@@ -215,6 +219,12 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         / (nonStratSections.length * 3) * 100
       ))
     : 0;
+
+  // نقاط ومستوى الملف العام (نافذة متحركة لآخر 3 أشهر تقويمية، بصرف النظر عن
+  // القسم) — مستقل كلياً عن overallPct/getMonthlyPct، لا يؤثر فيهما ولا يتأثر بهما
+  const pointsLevel = monthlyProgress
+    ? calculatePointsLevel(monthlyProgress.rows.map(r => ({ year: r.year, month: r.month, evidenceCount: r.evidence_count })))
+    : null;
 
   // البند الأقل اكتمالاً — الخطوة التالية (بناءً على monthly_progress)
   const incompleteSections = nonStratSections.filter(s => getMonthlyPct(s.id) < 100);
@@ -667,6 +677,58 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             </div>
           </div>
         </div>
+
+        {/* POINTS & LEVEL — نظام النقاط والمستوى العام لكامل الملف الشخصي (نافذة
+            متحركة لآخر 3 أشهر تقويمية، مجموع evidence_count الخام بصرف النظر عن
+            القسم) — مؤشر عام واحد، لا لكل قسم على حدة */}
+        {pointsLevel && (
+          <div className="mb-4 sm:mb-8 rounded-[18px] sm:rounded-[22px] p-4 sm:p-6 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--gold)]/20 relative overflow-hidden" style={{ animation: 'fadeUp .6s var(--sp) both 0.12s' }}>
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_80%_at_0%_50%,rgba(201,162,39,.06),transparent_60%)]" />
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-[13.5px] font-bold text-[var(--text3)]">نقاط الإنجاز</span>
+                  <span
+                    className="inline-flex items-center gap-1.5 text-[11px] sm:text-[11.5px] font-black text-[var(--gold3)] bg-[var(--gold)]/12 border border-[var(--gold)]/35 py-1 px-2.5 rounded-full leading-none"
+                    style={{ animation: 'scaleIn .35s var(--sp) both' }}
+                  >
+                    <i className={`ti ${pointsLevel.levelIcon} text-[12px]`} /> {pointsLevel.levelLabel}
+                  </span>
+                </div>
+                <span className="text-[30px] sm:text-[34px] font-black text-white font-[var(--font)] leading-none">
+                  {pointsLevel.points}<span className="text-[13px] text-[var(--text4)] font-bold"> نقطة</span>
+                </span>
+              </div>
+              {pointsLevel.nextThreshold !== null ? (
+                <>
+                  <div className="h-2.5 bg-white/8 rounded-full overflow-hidden mb-2">
+                    <div
+                      className="h-full rounded-full relative overflow-hidden"
+                      style={{
+                        width: `${pointsLevel.progressToNext}%`,
+                        transition: 'width 1200ms cubic-bezier(.16,1,.3,1)',
+                        background: 'linear-gradient(90deg, var(--gold), var(--gold2), var(--gold3))',
+                        boxShadow: '0 0 12px rgba(201,162,39,.4)',
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)] bg-[length:200%_auto]" style={{ animation: 'goldShimmer 2.5s linear infinite' }} />
+                    </div>
+                  </div>
+                  <span className="text-[12px] text-[var(--text4)]">
+                    {pointsLevel.pointsToNext} نقطة للوصول إلى المستوى التالي
+                  </span>
+                </>
+              ) : (
+                <span className="text-[12px] text-[var(--gold3)] font-bold flex items-center gap-1.5">
+                  <i className="ti ti-trophy text-[13px]" /> بلغت أعلى مستوى
+                </span>
+              )}
+              <p className="mt-3 text-[10.5px] text-[var(--text4)]">
+                محسوبة من مجموع الشواهد الموثقة خلال آخر 3 أشهر تقويمية
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ANNOUNCEMENTS SECTION */}
         {announcements && announcements.length > 0 && (

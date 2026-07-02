@@ -78,6 +78,9 @@ export type PublicPortfolioState = Pick<AppState, 'ev' | 'strats' | 'csubs' | 'p
  * في العرض العام، أو مباشرة من monthlyProgress.rows في معاينة المالك لملفه. */
 export interface ContinuityData {
   yearStartMonth: number;
-  activeMonths: { year: number; month: number }[];
+  /** evidenceCount: مجموع evidence_count عبر كل الأقسام لهذا الشهر (بصرف النظر
+   * عن القسم) — اختياري لأن الاستمرارية القديمة لا تحتاجه، يُستخدم فقط من
+   * calculatePointsLevel في Public.tsx لحساب نقاط/مستوى الملف العام. */
+  activeMonths: { year: number; month: number; evidenceCount?: number }[];
 }
 

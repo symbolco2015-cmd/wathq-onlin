@@ -110,11 +110,18 @@ export default function App() {
 
   // نفس البيانات لمعاينة المالك لملفه الخاص (صفحة 'public' داخل التطبيق) —
   // تُبنى مباشرة من monthlyProgress.rows المحمّلة أصلاً بلا أي طلب إضافي.
+  // evidenceCount هنا هو مجموع evidence_count عبر كل الأقسام لنفس الشهر
+  // (الصفوف الخام مقسّمة لكل قسم على حدة) — يُستخدم في نظام النقاط بـPublic.tsx.
+  const ownMonthTotals = new Map<string, { year: number; month: number; evidenceCount: number }>();
+  monthlyProgress.rows.forEach(r => {
+    const key = `${r.year}-${r.month}`;
+    const existing = ownMonthTotals.get(key);
+    if (existing) existing.evidenceCount += r.evidence_count;
+    else ownMonthTotals.set(key, { year: r.year, month: r.month, evidenceCount: r.evidence_count });
+  });
   const ownContinuity: ContinuityData = {
     yearStartMonth: state.yearStartMonth ?? 9,
-    activeMonths: monthlyProgress.rows
-      .filter(r => r.evidence_count > 0)
-      .map(r => ({ year: r.year, month: r.month })),
+    activeMonths: Array.from(ownMonthTotals.values()).filter(m => m.evidenceCount > 0),
   };
 
   // Redirect users dynamically based on auth status — but not when in shared-profile view

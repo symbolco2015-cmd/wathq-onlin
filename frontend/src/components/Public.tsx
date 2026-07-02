@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { ContinuityData, Evidence, PublicPortfolioState, SectionData } from '../types';
-import { calculateEvaluation, getCompletionColor, getCompletionLabel } from '../utils';
+import { calculateEvaluation, calculatePointsLevel, getCompletionColor, getCompletionLabel } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import './Public.print.css';
@@ -185,6 +185,20 @@ function ContinuityGrid({ continuity }: { continuity: ContinuityData }) {
         نشط في <strong className="text-white">{activeCount}</strong> من 12 شهراً
       </p>
     </div>
+  );
+}
+
+/** شارة لقب المستوى (خطوة ثابتة / مسيرة واثقة / قدوة متميزة) — بجانب اسم المعلم
+ * أعلى صفحة المشاركة، بنفس تصميم الشارة الذهبية المستخدمة في بطاقات الأقسام. */
+function LevelBadge({ pointsLevel }: { pointsLevel: ReturnType<typeof calculatePointsLevel> }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-[12px] sm:text-[13px] font-black text-[var(--gold3)] bg-[var(--gold)]/12 border border-[var(--gold)]/35 py-1.5 px-3 rounded-full leading-none relative z-10"
+      style={{ animation: 'scaleIn .35s var(--sp) both' }}
+      title={`${pointsLevel.points} نقطة خلال آخر 3 أشهر`}
+    >
+      <i className={`ti ${pointsLevel.levelIcon} text-[13px]`} /> {pointsLevel.levelLabel}
+    </span>
   );
 }
 
@@ -451,6 +465,15 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
   const stats = calculateEvaluation(state, sections);
   const totalEvs = stats.totalEvs;
 
+  // نقاط ومستوى الملف العام (نافذة متحركة لآخر 3 أشهر) — تُبنى من
+  // continuity.activeMonths (evidenceCount لكل شهر، بصرف النظر عن القسم)؛
+  // غائبة فقط أثناء تحميل continuity أو تعذّر جلبه، فلا تُعرض الشارة حينها.
+  const pointsLevel = continuity
+    ? calculatePointsLevel(
+        continuity.activeMonths.map(m => ({ year: m.year, month: m.month, evidenceCount: m.evidenceCount ?? 0 }))
+      )
+    : null;
+
   // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب (المستويات
   // 1-2-3 أدناه) — له بطاقة طولية مستقلة بلا أي رقم نسبة (انظر أسفل الصفحة).
   const stratSection = sections.find(s => s.isStrat) ?? null;
@@ -582,7 +605,10 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
               <Avatar profile={state.profile} size={112} />
             </div>
 
-            <h1 className="text-[34px] font-black text-white tracking-tight mb-2 relative z-10">{state.profile.name}</h1>
+            <div className="flex items-center justify-center gap-3 flex-wrap mb-2">
+              <h1 className="text-[34px] font-black text-white tracking-tight relative z-10">{state.profile.name}</h1>
+              {pointsLevel && <LevelBadge pointsLevel={pointsLevel} />}
+            </div>
             <p className="text-[15px] text-[var(--text3)] mb-5 relative z-10">{state.profile.role} — {state.profile.school}</p>
 
             <div className="mb-7">
@@ -608,7 +634,10 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
 
             <div className="flex-1 flex flex-col gap-5 items-end">
               <div>
-                <h1 className="text-[34px] font-black text-white tracking-tight mb-2 relative z-10">{state.profile.name}</h1>
+                <div className="flex items-center justify-end gap-3 flex-wrap mb-2">
+                  <h1 className="text-[34px] font-black text-white tracking-tight relative z-10">{state.profile.name}</h1>
+                  {pointsLevel && <LevelBadge pointsLevel={pointsLevel} />}
+                </div>
                 <p className="text-[15px] text-[var(--text3)] relative z-10">{state.profile.role} — {state.profile.school}</p>
               </div>
 

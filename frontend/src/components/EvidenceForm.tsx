@@ -32,7 +32,20 @@ export interface EvidenceFormProps {
   /** يُمرَّر فقط عند الإضافة من أرشيف شهر سابق — يربط الشاهد بذلك الشهر بدل
    *  تاريخ اليوم الفعلي، في جدول evidence وفي monthly_progress معاً */
   createdAt?: string;
+  aiConsentGiven?: boolean;
+  onGiveAiConsent?: () => void;
 }
+
+const readFileAsBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 
 // accept لنوع 'file' يضم امتدادات + MIME types صريحة معاً: بعض متصفحات أندرويد
 // (خصوصاً Chrome مع واجهات OEM مخصصة) تفتح معرض الصور افتراضياً حين يكون accept
@@ -84,6 +97,7 @@ const toLocalType = (t: EvidenceType): 'pdf' | 'img' | 'doc' | 'vid' => {
  */
 export default function EvidenceForm({
   isOpen, onClose, sectionId, sub, userId, supabaseEv, onAddEv, onToast, createdAt,
+  aiConsentGiven, onGiveAiConsent,
 }: EvidenceFormProps) {
   // ── Form state ──────────────────────────────────────────────
   const [title,          setTitle]          = useState('');
@@ -113,6 +127,13 @@ export default function EvidenceForm({
   // ── Indicators ───────────────────────────────────────────────
   const [indicators, setIndicators] = useState<Indicator[]>([]);
 
+  // ── اقتراح تلقائي من الصورة (Beta) ──────────────────────────
+  const [aiSelectedFile,      setAiSelectedFile]      = useState<File | null>(null);
+  const [aiConsentPromptOpen, setAiConsentPromptOpen] = useState(false);
+  const [aiLoading,           setAiLoading]           = useState(false);
+  const [aiSuggestion,        setAiSuggestion]        = useState('');
+  const [aiFeatureEnabled,    setAiFeatureEnabled]    = useState(false);
+
   // ── Misc ─────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -125,6 +146,7 @@ export default function EvidenceForm({
     setAcademicTerm(''); setSelfReflection(''); setLinkUrl('');
     setFileUrl(''); setFileName(''); setUploadSuccess(false);
     setStratDate(''); setStratStage(''); setStratGrade(''); setStratPeriod(''); setStratSubject('');
+    setAiSelectedFile(null); setAiConsentPromptOpen(false); setAiLoading(false); setAiSuggestion('');
   }, [isOpen]);
 
   // Fetch indicators for this section
@@ -138,7 +160,70 @@ export default function EvidenceForm({
       .then(({ data }) => setIndicators(data ?? []));
   }, [isOpen, sectionId]);
 
+  // بوابة صلاحية ميزة "اقتراح تلقائي من الصورة" (Beta) — يديرها الأدمن عبر
+  // feature_flags/portfolio_feature_overrides في قاعدة البيانات، وليست قائمة مكتوبة بالكود.
+  useEffect(() => {
+    if (!isOpen || !supabase) { setAiFeatureEnabled(false); return; }
+    let cancelled = false;
+    supabase
+      .rpc('is_feature_enabled', { p_feature: 'image_suggestion' })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.warn('[EvidenceForm] تعذّر التحقق من صلاحية الميزة:', error.message); setAiFeatureEnabled(false); return; }
+        setAiFeatureEnabled(!!data);
+      });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
   const currentTypeConfig = TYPE_CONFIG.find(t => t.id === evidenceType)!;
+
+  const isAiSuggestionEligible = aiFeatureEnabled && evidenceType === 'image';
+
+  // ── اقتراح تلقائي من الصورة (Beta) ───────────────────────────
+  const runAiSuggestion = async () => {
+    if (!aiSelectedFile || !supabase) return;
+    setAiLoading(true);
+    setAiSuggestion('');
+    try {
+      const imageBase64 = await readFileAsBase64(aiSelectedFile);
+      const { data, error } = await supabase.functions.invoke('suggest-from-image', {
+        body: {
+          imageBase64,
+          mimeType: aiSelectedFile.type,
+          section_id: sectionId,
+          indicator_id: indicatorId || undefined,
+        },
+      });
+      if (error) throw error;
+      if (data?.error === 'daily_limit_reached') {
+        onToast('الخدمة مشغولة حالياً، حاول لاحقاً', '⏳');
+        return;
+      }
+      if (data?.error || !data?.description) throw new Error(data?.error || 'no description');
+      setAiSuggestion(data.description as string);
+    } catch (err) {
+      console.warn('[EvidenceForm] تعذّر توليد الاقتراح:', err);
+      onToast('تعذّر توليد اقتراح الآن، يمكنك المتابعة بالكتابة يدوياً.', '⚠️');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleAiSuggestClick = () => {
+    if (!aiConsentGiven) { setAiConsentPromptOpen(true); return; }
+    runAiSuggestion();
+  };
+
+  const handleAiConsentAccept = () => {
+    onGiveAiConsent?.();
+    setAiConsentPromptOpen(false);
+    runAiSuggestion();
+  };
+
+  const acceptAiSuggestion = () => {
+    setDescription(aiSuggestion);
+    setAiSuggestion('');
+  };
 
   // ── File upload ───────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,6 +241,9 @@ export default function EvidenceForm({
     setUploading(true);
     setUploadSuccess(false);
     setFileUrl('');
+    setAiSelectedFile(null);
+    setAiSuggestion('');
+    setAiConsentPromptOpen(false);
     try {
       let fileToUpload: File = file;
 
@@ -168,6 +256,7 @@ export default function EvidenceForm({
           console.warn('[EvidenceForm] فشل ضغط الصورة، تم استخدام الملف الأصلي:', compressErr);
           fileToUpload = file;
         }
+        setAiSelectedFile(fileToUpload);
       }
 
       const ext      = file.name.split('.').pop();
@@ -351,7 +440,7 @@ export default function EvidenceForm({
               <button
                 key={t.id}
                 type="button"
-                onClick={() => { setEvidenceType(t.id); setFileUrl(''); setFileName(''); setUploadSuccess(false); setLinkUrl(''); }}
+                onClick={() => { setEvidenceType(t.id); setFileUrl(''); setFileName(''); setUploadSuccess(false); setLinkUrl(''); setAiSelectedFile(null); setAiSuggestion(''); setAiConsentPromptOpen(false); }}
                 className="flex flex-col items-center gap-2 py-3.5 px-2 rounded-2xl border-[1.5px] text-[12px] font-bold transition-all duration-250 hover:-translate-y-0.5 cursor-pointer font-[var(--font)]"
                 style={evidenceType === t.id
                   ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}18` }
@@ -405,6 +494,50 @@ export default function EvidenceForm({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* اقتراح تلقائي من الصورة (Beta) — مرئية فقط لحسابات مُفعَّلة ولأقسام محددة */}
+        {isAiSuggestionEligible && (
+          <div className="bg-[var(--em7)]/5 border border-[var(--em7)]/15 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className={labelCls + ' !mb-0'}><i className="ti ti-sparkles text-[var(--em7)]" /> اقتراح تلقائي من الصورة</span>
+              <span className="text-[9.5px] font-black text-[var(--gold)] bg-[var(--gold)]/10 border border-[var(--gold)]/30 rounded-full px-2 py-0.5">Beta</span>
+            </div>
+
+            {aiConsentPromptOpen ? (
+              <div className="bg-black/20 border border-[var(--gold)]/25 rounded-xl p-3.5 space-y-3">
+                <p className="text-[12px] text-[var(--text3)] leading-relaxed">
+                  هذه ميزة تجريبية تستخدم صوراً عبر خدمة خارجية (Google Gemini). لا ترفع صوراً فيها وجوه طلاب واضحة.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={handleAiConsentAccept} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12px] font-bold cursor-pointer">أوافق ومتابعة</button>
+                  <button type="button" onClick={() => setAiConsentPromptOpen(false)} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12px] font-bold cursor-pointer">إلغاء</button>
+                </div>
+              </div>
+            ) : aiSuggestion ? (
+              <div className="space-y-2.5">
+                <textarea
+                  className={inputCls + ' resize-none'}
+                  rows={3}
+                  value={aiSuggestion}
+                  onChange={e => setAiSuggestion(e.target.value)}
+                />
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={acceptAiSuggestion} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12px] font-bold cursor-pointer">استخدام هذا الوصف</button>
+                  <button type="button" onClick={() => setAiSuggestion('')} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12px] font-bold cursor-pointer">تجاهل</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleAiSuggestClick}
+                disabled={!aiSelectedFile || !uploadSuccess || aiLoading}
+                className="flex items-center gap-2 py-2 px-4 rounded-lg bg-[var(--em6)]/15 border border-[var(--em6)]/30 text-[var(--em8)] text-[12px] font-bold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {aiLoading ? <><i className="ti ti-loader animate-spin" /> جاري التحليل...</> : <><i className="ti ti-wand" /> اقترح لي وصفاً</>}
+              </button>
+            )}
           </div>
         )}
 

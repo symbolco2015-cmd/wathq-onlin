@@ -61,6 +61,8 @@ interface DashboardProps {
     createdAt?: string
   ) => void;
   onToast?: (msg: string, icon?: string) => void;
+  aiConsentGiven?: boolean;
+  onGiveAiConsent?: () => void;
 }
 
 const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
@@ -70,7 +72,7 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -1417,6 +1419,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             supabaseEv={supabaseEv}
             onAddEv={onAddEv ?? (() => {})}
             onToast={onToast ?? (() => {})}
+            aiConsentGiven={aiConsentGiven}
+            onGiveAiConsent={onGiveAiConsent}
           />
         </BottomSheet>
       )}
@@ -1433,6 +1437,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           onAddEv={onAddEv ?? (() => {})}
           onToast={onToast ?? (() => {})}
           createdAt={archiveCreatedAt}
+          aiConsentGiven={aiConsentGiven}
+          onGiveAiConsent={onGiveAiConsent}
         />
       )}
 

@@ -18,6 +18,12 @@ export interface AdminUser {
   is_banned?: boolean;
 }
 
+export interface PortfolioFeatureOverride {
+  portfolio_id: string;
+  feature: string;
+  enabled: boolean;
+}
+
 export interface PlatformStats {
   totalUsers: number;
   activeUsers: number;      // updated in last 30 days
@@ -35,6 +41,8 @@ export function useAdminStore(isAdmin: boolean) {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
+  const [featureOverrides, setFeatureOverrides] = useState<PortfolioFeatureOverride[]>([]);
 
   const loadAdminData = useCallback(async () => {
     if (!isAdmin || !supabase) return;
@@ -165,6 +173,85 @@ export function useAdminStore(isAdmin: boolean) {
       loadAdminData();
     }
   }, [isAdmin, loadAdminData]);
+
+  // Load feature flags + per-portfolio overrides (admin only)
+  const loadFeatureFlags = useCallback(async () => {
+    if (!isAdmin || !supabase) return;
+    try {
+      const [{ data: flags, error: flagsError }, { data: overrides, error: overridesError }] = await Promise.all([
+        supabase.from('feature_flags').select('feature, enabled'),
+        supabase.from('portfolio_feature_overrides').select('portfolio_id, feature, enabled'),
+      ]);
+      if (flagsError) throw flagsError;
+      if (overridesError) throw overridesError;
+
+      const flagsMap: Record<string, boolean> = {};
+      (flags || []).forEach((f: any) => { flagsMap[f.feature] = f.enabled; });
+      setFeatureFlags(flagsMap);
+      setFeatureOverrides(overrides || []);
+    } catch (e: any) {
+      console.error('Load feature flags error:', e);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadFeatureFlags();
+    }
+  }, [isAdmin, loadFeatureFlags]);
+
+  // Set the platform-wide switch for a feature (admin only)
+  const setGlobalFeatureFlag = async (featureKey: string, enabled: boolean): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('feature_flags')
+        .upsert({ feature: featureKey, enabled, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      setFeatureFlags(prev => ({ ...prev, [featureKey]: enabled }));
+      return true;
+    } catch (e) {
+      console.error('Set global feature flag error:', e);
+      return false;
+    }
+  };
+
+  // Create/update a per-portfolio exception for a feature (admin only)
+  const setPortfolioFeatureOverride = async (portfolioId: string, featureKey: string, enabled: boolean): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('portfolio_feature_overrides')
+        .upsert({ portfolio_id: portfolioId, feature: featureKey, enabled, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      setFeatureOverrides(prev => {
+        const withoutExisting = prev.filter(o => !(o.portfolio_id === portfolioId && o.feature === featureKey));
+        return [...withoutExisting, { portfolio_id: portfolioId, feature: featureKey, enabled }];
+      });
+      return true;
+    } catch (e) {
+      console.error('Set portfolio feature override error:', e);
+      return false;
+    }
+  };
+
+  // Remove a per-portfolio exception, falling back to the platform-wide switch (admin only)
+  const removePortfolioFeatureOverride = async (portfolioId: string, featureKey: string): Promise<boolean> => {
+    if (!isAdmin || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('portfolio_feature_overrides')
+        .delete()
+        .eq('portfolio_id', portfolioId)
+        .eq('feature', featureKey);
+      if (error) throw error;
+      setFeatureOverrides(prev => prev.filter(o => !(o.portfolio_id === portfolioId && o.feature === featureKey)));
+      return true;
+    } catch (e) {
+      console.error('Remove portfolio feature override error:', e);
+      return false;
+    }
+  };
 
   // Delete a user's portfolio (admin only)
   const deleteUserPortfolio = async (userId: string): Promise<boolean> => {
@@ -403,5 +490,10 @@ export function useAdminStore(isAdmin: boolean) {
     createAcademicDate,
     updateAcademicDate,
     deleteAcademicDate,
+    featureFlags,
+    featureOverrides,
+    setGlobalFeatureFlag,
+    setPortfolioFeatureOverride,
+    removePortfolioFeatureOverride,
   };
 }

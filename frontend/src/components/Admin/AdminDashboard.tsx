@@ -1,8 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import type { AdminUser, PlatformStats } from '../../hooks/useAdminStore';
+import type { AdminUser, PlatformStats, PortfolioFeatureOverride } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
 import { getCompletionColor } from '../../utils';
 import UserCard from './UserCard';
+
+// مفتاح الميزة التجريبية الوحيدة المُدارة حالياً من تبويب "الميزات التجريبية".
+// أضف مفاتيح أخرى هنا مستقبلاً إذا احتاجت المنصة ميزات تجريبية إضافية بنفس النمط.
+const IMAGE_SUGGESTION_FEATURE_KEY = 'image_suggestion';
 
 // نفس نظام الألوان الدلالي الموحد المستخدم في باقي المنصة (Sidebar/getCompletionColor):
 // أخضر ≥70% — نُعيد استخدام قيمته الثابتة لحالة "نشط" بدل اختراع أخضر مختلف.
@@ -90,6 +94,59 @@ function DistributionList({ data, title, limit = 5 }: {
           );
         })}
         {sorted.length === 0 && <div className="dist-empty">لا توجد بيانات</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Feature Override Row — استثناء فردي لمعلم واحد لميزة تجريبية محددة
+───────────────────────────────────────────── */
+function FeatureOverrideRow({ user, override, onSetOverride, onRemoveOverride }: {
+  user: AdminUser;
+  override: PortfolioFeatureOverride | undefined;
+  onSetOverride: (enabled: boolean) => Promise<boolean>;
+  onRemoveOverride: () => Promise<boolean>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const mode: 'enabled' | 'disabled' | 'default' = override ? (override.enabled ? 'enabled' : 'disabled') : 'default';
+
+  const applyMode = async (next: 'enabled' | 'disabled' | 'default') => {
+    if (next === mode) return;
+    setSaving(true);
+    try {
+      if (next === 'default') await onRemoveOverride();
+      else await onSetOverride(next === 'enabled');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="ann-manage-item"
+      style={{
+        background: 'rgba(255, 255, 255, 0.03)',
+        border: '1px solid var(--line2)',
+        borderRadius: '16px',
+        padding: '14px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+        flexWrap: 'wrap',
+        opacity: saving ? 0.6 : 1,
+        transition: 'opacity .2s',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: '160px' }}>
+        <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0 }}>{user.name}</h4>
+        <p style={{ fontSize: '12px', color: 'var(--text4)', margin: '2px 0 0' }}>{user.email || '—'}</p>
+      </div>
+      <div className="filter-btns">
+        <button type="button" disabled={saving} className={`filter-btn ${mode === 'enabled' ? 'active' : ''}`} onClick={() => applyMode('enabled')}>استثناء فردي: تفعيل</button>
+        <button type="button" disabled={saving} className={`filter-btn ${mode === 'disabled' ? 'active' : ''}`} onClick={() => applyMode('disabled')}>استثناء فردي: تعطيل</button>
+        <button type="button" disabled={saving} className={`filter-btn ${mode === 'default' ? 'active' : ''}`} onClick={() => applyMode('default')}>بدون استثناء (اتبع الإعداد العام)</button>
       </div>
     </div>
   );
@@ -366,17 +423,25 @@ interface AdminDashboardProps {
   onUpdateAcademicDate?: (id: string, title: string, date: string, hijriLabel?: string) => Promise<boolean>;
   onDeleteAcademicDate?: (id: string) => Promise<boolean>;
   academicDates?: AcademicDate[];
+  featureFlags?: Record<string, boolean>;
+  featureOverrides?: PortfolioFeatureOverride[];
+  onSetGlobalFeatureFlag?: (featureKey: string, enabled: boolean) => Promise<boolean>;
+  onSetPortfolioFeatureOverride?: (portfolioId: string, featureKey: string, enabled: boolean) => Promise<boolean>;
+  onRemovePortfolioFeatureOverride?: (portfolioId: string, featureKey: string) => Promise<boolean>;
 }
 
 export default function AdminDashboard({
-  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onUpdateAnnouncement, onDeleteAnnouncement, announcements, onPublishAcademicDate, onUpdateAcademicDate, onDeleteAcademicDate, academicDates
+  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onUpdateAnnouncement, onDeleteAnnouncement, announcements, onPublishAcademicDate, onUpdateAcademicDate, onDeleteAcademicDate, academicDates,
+  featureFlags, featureOverrides, onSetGlobalFeatureFlag, onSetPortfolioFeatureOverride, onRemovePortfolioFeatureOverride,
 }: AdminDashboardProps) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'evidenceCount' | 'updated_at' | 'created_at'>('updated_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'announcements' | 'academic-dates'>('users');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'announcements' | 'academic-dates' | 'features'>('users');
+  const [featureSearch, setFeatureSearch] = useState('');
+  const [savingGlobalFlag, setSavingGlobalFlag] = useState(false);
 
   const [annTitle, setAnnTitle] = useState('');
   const [annContent, setAnnContent] = useState('');
@@ -482,6 +547,28 @@ export default function AdminDashboard({
     () => [...(academicDates || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     [academicDates]
   );
+
+  const imageSuggestionOverrides = useMemo(
+    () => (featureOverrides || []).filter(o => o.feature === IMAGE_SUGGESTION_FEATURE_KEY),
+    [featureOverrides]
+  );
+
+  const matchedFeatureUsers = useMemo(() => {
+    const q = featureSearch.trim().toLowerCase();
+    if (!q) return [];
+    return users.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)).slice(0, 8);
+  }, [users, featureSearch]);
+
+  const handleToggleGlobalFlag = async (enabled: boolean) => {
+    if (!onSetGlobalFeatureFlag) return;
+    setSavingGlobalFlag(true);
+    try {
+      const ok = await onSetGlobalFeatureFlag(IMAGE_SUGGESTION_FEATURE_KEY, enabled);
+      onToast(ok ? 'تم تحديث إعداد الميزة بنجاح ✅' : 'فشل تحديث إعداد الميزة ❌', ok ? '✅' : '❌');
+    } finally {
+      setSavingGlobalFlag(false);
+    }
+  };
 
   const resetAdForm = () => {
     setAdTitle('');
@@ -691,6 +778,13 @@ export default function AdminDashboard({
         >
           <i className="ti ti-calendar-event" /> المواعيد الدراسية
           <span className="tab-count">{sortedAcademicDates.length}</span>
+        </button>
+        <button
+          className={`admin-tab ${activeTab === 'features' ? 'active' : ''}`}
+          onClick={() => setActiveTab('features')}
+        >
+          <i className="ti ti-flask" /> الميزات التجريبية
+          <span className="tab-count">{imageSuggestionOverrides.length}</span>
         </button>
       </div>
 
@@ -1185,6 +1279,164 @@ export default function AdminDashboard({
               <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '32px 16px', textAlign: 'center', color: 'var(--text4)' }}>
                 <i className="ti ti-calendar-event" style={{ fontSize: '24px', marginBottom: '8px', display: 'block', opacity: 0.4 }}></i>
                 <span>لا توجد مواعيد دراسية مضافة حالياً</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── FEATURES TAB ── */}
+      {activeTab === 'features' && (
+        <div className="admin-announcements-tab" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
+          {/* السويتش العام */}
+          <div className="announcement-form-card">
+            <div className="form-header">
+              <i className="ti ti-flask" />
+              <span>اقتراح تلقائي من الصورة (Beta)</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', padding: '4px 2px 6px' }}>
+              <div style={{ maxWidth: '520px' }}>
+                <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'white' }}>تفعيل اقتراح الصورة للمنصة بالكامل</div>
+                <p style={{ fontSize: '12px', color: 'var(--text4)', margin: '4px 0 0', lineHeight: 1.6 }}>
+                  عند التفعيل يظهر زر "اقترح لي وصفاً" لكل المعلمين عند إضافة شاهد من نوع صورة، ما لم يوجد استثناء فردي لحساب معيّن أدناه يتجاوز هذا الإعداد.
+                </p>
+              </div>
+              <div className="filter-btns">
+                <button
+                  type="button"
+                  disabled={savingGlobalFlag}
+                  className={`filter-btn ${featureFlags?.[IMAGE_SUGGESTION_FEATURE_KEY] ? 'active' : ''}`}
+                  onClick={() => handleToggleGlobalFlag(true)}
+                >
+                  مفعّلة للجميع
+                </button>
+                <button
+                  type="button"
+                  disabled={savingGlobalFlag}
+                  className={`filter-btn ${!featureFlags?.[IMAGE_SUGGESTION_FEATURE_KEY] ? 'active' : ''}`}
+                  onClick={() => handleToggleGlobalFlag(false)}
+                >
+                  معطّلة للجميع
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* استثناء فردي */}
+          <div className="announcement-form-card" style={{ marginTop: '24px' }}>
+            <div className="form-header">
+              <i className="ti ti-user-cog" />
+              <span>استثناء فردي لمعلم محدد</span>
+            </div>
+            <div className="form-group">
+              <label>ابحث بالاسم أو البريد الإلكتروني</label>
+              <input
+                type="text"
+                placeholder="مثال: أحمد أو ahmed@edu.sa"
+                value={featureSearch}
+                onChange={e => setFeatureSearch(e.target.value)}
+                className="form-input"
+              />
+            </div>
+
+            {featureSearch.trim() && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
+                {matchedFeatureUsers.length > 0 ? matchedFeatureUsers.map(u => (
+                  <FeatureOverrideRow
+                    key={u.id}
+                    user={u}
+                    override={imageSuggestionOverrides.find(o => o.portfolio_id === u.id)}
+                    onSetOverride={enabled => onSetPortfolioFeatureOverride
+                      ? onSetPortfolioFeatureOverride(u.id, IMAGE_SUGGESTION_FEATURE_KEY, enabled)
+                      : Promise.resolve(false)}
+                    onRemoveOverride={() => onRemovePortfolioFeatureOverride
+                      ? onRemovePortfolioFeatureOverride(u.id, IMAGE_SUGGESTION_FEATURE_KEY)
+                      : Promise.resolve(false)}
+                  />
+                )) : (
+                  <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '20px 16px', textAlign: 'center', color: 'var(--text4)' }}>
+                    <span>لا يوجد معلم مطابق للبحث</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* قائمة الاستثناءات الحالية */}
+          <div className="announcements-manage-section" style={{ marginTop: '32px' }}>
+            <div className="form-header" style={{ marginBottom: '16px' }}>
+              <i className="ti ti-list" />
+              <span>الاستثناءات الفردية الحالية ({imageSuggestionOverrides.length})</span>
+            </div>
+
+            {imageSuggestionOverrides.length > 0 ? (
+              <div className="ann-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {imageSuggestionOverrides.map(o => {
+                  const u = users.find(us => us.id === o.portfolio_id);
+                  return (
+                    <div
+                      key={o.portfolio_id}
+                      className="ann-manage-item"
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid var(--line2)',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '16px',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                          <span
+                            className={`inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border ${
+                              o.enabled
+                                ? 'bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20'
+                                : 'bg-red-500/10 text-red-400 border-red-500/20'
+                            }`}
+                          >
+                            {o.enabled ? 'استثناء: مفعّلة' : 'استثناء: معطّلة'}
+                          </span>
+                        </div>
+                        <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u?.name || 'مستخدم محذوف'}</h4>
+                        <p style={{ fontSize: '12px', color: 'var(--text4)', margin: '4px 0 0' }}>{u?.email || o.portfolio_id}</p>
+                      </div>
+
+                      <button
+                        style={{
+                          padding: '8px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(248,113,113,.2)',
+                          color: '#f87171',
+                          background: 'rgba(248,113,113,.05)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.2s',
+                          flexShrink: 0,
+                        }}
+                        title="إزالة الاستثناء"
+                        onClick={async () => {
+                          const ok = onRemovePortfolioFeatureOverride
+                            ? await onRemovePortfolioFeatureOverride(o.portfolio_id, IMAGE_SUGGESTION_FEATURE_KEY)
+                            : false;
+                          onToast(ok ? 'تمت إزالة الاستثناء بنجاح 🗑️' : 'فشلت إزالة الاستثناء ❌', ok ? '🗑️' : '❌');
+                        }}
+                      >
+                        <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '32px 16px', textAlign: 'center', color: 'var(--text4)' }}>
+                <i className="ti ti-flask" style={{ fontSize: '24px', marginBottom: '8px', display: 'block', opacity: 0.4 }}></i>
+                <span>لا توجد استثناءات فردية حالياً</span>
               </div>
             )}
           </div>

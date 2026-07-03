@@ -52,6 +52,7 @@ export default function App() {
     updateYearStartMonth,
     shareEnabled,
     updateShareEnabled,
+    setAiSuggestConsent,
   } = useAppStore();
 
   const {
@@ -70,6 +71,11 @@ export default function App() {
     createAcademicDate,
     updateAcademicDate,
     deleteAcademicDate,
+    featureFlags,
+    featureOverrides,
+    setGlobalFeatureFlag,
+    setPortfolioFeatureOverride,
+    removePortfolioFeatureOverride,
   } = useAdminStore(isAdmin);
 
   const monthlyProgress = useMonthlyProgress({
@@ -784,9 +790,11 @@ export default function App() {
             userId={user?.id}
             onAddEv={handleAddEv}
             onToast={showToast}
+            aiConsentGiven={!!state.aiSuggestConsentAt}
+            onGiveAiConsent={setAiSuggestConsent}
           />
         )}
-        
+
         {currentPage === 'public' && <Public state={state} sections={SECS} continuity={ownContinuity} />}
         
         {currentPage === 'admin' && isAdmin && (
@@ -809,6 +817,11 @@ export default function App() {
             onUpdateAcademicDate={updateAcademicDate}
             onDeleteAcademicDate={deleteAcademicDate}
             academicDates={academicDates}
+            featureFlags={featureFlags}
+            featureOverrides={featureOverrides}
+            onSetGlobalFeatureFlag={setGlobalFeatureFlag}
+            onSetPortfolioFeatureOverride={setPortfolioFeatureOverride}
+            onRemovePortfolioFeatureOverride={removePortfolioFeatureOverride}
           />
         )}
       </main>
@@ -824,6 +837,8 @@ export default function App() {
         supabaseEv={supabaseEv}
         onAddEv={handleAddEv}
         onToast={showToast}
+        aiConsentGiven={!!state.aiSuggestConsentAt}
+        onGiveAiConsent={setAiSuggestConsent}
       />
 
       <Toast {...toastData} />

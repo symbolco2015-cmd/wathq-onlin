@@ -395,6 +395,13 @@ export function useAppStore() {
     }
   };
 
+  // يُسجَّل مرة واحدة فقط لكل حساب — يمنع تكرار عرض تحذير خصوصية ميزة
+  // "اقتراح تلقائي من الصورة" بعد أول موافقة.
+  const setAiSuggestConsent = () => {
+    if (state.aiSuggestConsentAt) return;
+    saveState({ ...state, aiSuggestConsentAt: new Date().toISOString() });
+  };
+
   return {
     state,
     user,
@@ -417,7 +424,8 @@ export function useAppStore() {
     academicDates,
     updateYearStartMonth,
     shareEnabled,
-    updateShareEnabled
+    updateShareEnabled,
+    setAiSuggestConsent,
   };
 }
 

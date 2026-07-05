@@ -20,6 +20,35 @@ const TYPE_META: Record<EvidenceType, { icon: string; label: string; color: stri
   video: { icon: 'ti-video',          label: 'فيديو',  color: '#fcd34d' },
 };
 
+/** أيقونة نوع الشاهد — تعرض مصغّرة الصورة الفعلية (file_url) للشواهد من نوع
+ * 'image'، مع رجوع تلقائي للأيقونة العامة إن فشل تحميل الصورة (رابط معطوب). */
+function EvidenceTypeIcon({ ev, meta }: { ev: SupabaseEvidence; meta: { icon: string; label: string; color: string } }) {
+  const [imgError, setImgError] = useState(false);
+  const showImage = ev.evidence_type === 'image' && !!ev.file_url && !imgError;
+
+  return (
+    <div
+      className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-[17px] border overflow-hidden transition-transform duration-200 group-hover:scale-105"
+      style={{
+        color:           meta.color,
+        borderColor:     `${meta.color}30`,
+        backgroundColor: `${meta.color}15`,
+      }}
+    >
+      {showImage ? (
+        <img
+          src={ev.file_url!}
+          alt={ev.title}
+          className="w-full h-full object-cover"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <i className={`ti ${meta.icon}`} />
+      )}
+    </div>
+  );
+}
+
 export default function EvidenceList({ evidence, loading, onDelete, onAddClick, readOnly = false }: EvidenceListProps) {
   const [confirmId,   setConfirmId]   = useState<string | null>(null);
   const [deleting,    setDeleting]    = useState(false);
@@ -93,16 +122,7 @@ export default function EvidenceList({ evidence, loading, onDelete, onAddClick, 
             onClick={() => confirmId && confirmId !== ev.id && setConfirmId(null)}
           >
             {/* أيقونة النوع */}
-            <div
-              className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-[17px] border transition-transform duration-200 group-hover:scale-105"
-              style={{
-                color:           meta.color,
-                borderColor:     `${meta.color}30`,
-                backgroundColor: `${meta.color}15`,
-              }}
-            >
-              <i className={`ti ${meta.icon}`} />
-            </div>
+            <EvidenceTypeIcon ev={ev} meta={meta} />
 
             {/* المحتوى */}
             <div className="flex-1 min-w-0">
@@ -142,7 +162,7 @@ export default function EvidenceList({ evidence, loading, onDelete, onAddClick, 
               </div>
 
               {ev.description && (
-                <p className="text-[11.5px] text-[var(--text4)] mt-1 line-clamp-1 leading-relaxed">
+                <p className="text-[11.5px] text-[var(--text4)] mt-1 leading-relaxed whitespace-pre-wrap break-words">
                   {ev.description}
                 </p>
               )}

@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { ContinuityData, Evidence, PublicPortfolioState, SectionData } from '../types';
 import { calculateEvaluation, calculatePointsLevel, getCompletionColor, getCompletionLabel } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
+import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
+import EvidenceList from './EvidenceList';
 import './Public.print.css';
 
 /** تدرج رمادي واحد فقط لوضع الطباعة، تتحكم النسبة بدرجته — لا يُستخدم على
@@ -23,6 +25,9 @@ interface PublicProps {
   /** مؤشر الاستمرارية عبر الزمن — غائب فقط أثناء التحميل أو إن تعذّر الجلب،
    * وفي هذه الحالة القسم لا يُعرض إطلاقاً بدل عرض بيانات فارغة مضلّلة. */
   continuity?: ContinuityData | null;
+  /** شواهد جدول evidence الجديد (الغني) — غائبة أثناء التحميل، وفي هذه الحالة
+   * القسم الإضافي في نافذة تفاصيل البند لا يُعرض إطلاقاً (نفس منطق continuity). */
+  evidence?: SupabaseEvidence[] | null;
 }
 
 /** يستخرج معرّف فيديو يوتيوب من أي صيغة رابط شائعة (watch؟v=, youtu.be/, embed/, shorts/)،
@@ -435,7 +440,7 @@ function StrategyLightbox({ item, onClose }: { item: { name: string; url: string
   );
 }
 
-export default function Public({ state, sections, isSharedView, continuity }: PublicProps) {
+export default function Public({ state, sections, isSharedView, continuity, evidence }: PublicProps) {
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
@@ -464,6 +469,16 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
 
   const stats = calculateEvaluation(state, sections);
   const totalEvs = stats.totalEvs;
+
+  // تجميع شواهد جدول evidence الجديد (الغني) حسب section_id — لعرضها كقائمة
+  // إضافية في نافذة تفاصيل البند العادي (لا يمسّ قسم الاستراتيجيات إطلاقاً).
+  const evidenceBySection = useMemo(() => {
+    const map: Record<number, SupabaseEvidence[]> = {};
+    (evidence ?? []).forEach(e => {
+      (map[e.section_id] ??= []).push(e);
+    });
+    return map;
+  }, [evidence]);
 
   // نقاط ومستوى الملف العام (نافذة متحركة لآخر 3 أشهر) — تُبنى من
   // continuity.activeMonths (evidenceCount لكل شهر، بصرف النظر عن القسم)؛
@@ -923,7 +938,8 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
                   </div>
                 )
               ) : (
-                selectedSecData.evs.length > 0 ? (
+                <>
+                {selectedSecData.evs.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {selectedSecData.evs.map((e, idx) => {
                       const t = EVT_CONFIG[e.type] || EVT_CONFIG.doc;
@@ -955,7 +971,23 @@ export default function Public({ state, sections, isSharedView, continuity }: Pu
                     </div>
                     <p className="text-[var(--text3)] text-[14px]">لا توجد أدلة موثقة في هذا القسم</p>
                   </div>
-                )
+                )}
+                {(evidenceBySection[selectedSecData.id]?.length ?? 0) > 0 && (
+                  <div className="mt-6 pt-6 border-t border-[var(--line)]">
+                    <div className="text-[14px] font-bold text-white mb-3 flex items-center gap-2">
+                      <i className="ti ti-files text-[var(--em8)]"></i> الشواهد الموثّقة
+                    </div>
+                    <EvidenceList
+                      sectionId={selectedSecData.id}
+                      evidence={evidenceBySection[selectedSecData.id] ?? []}
+                      loading={false}
+                      onDelete={async () => {}}
+                      onAddClick={() => {}}
+                      readOnly
+                    />
+                  </div>
+                )}
+                </>
               )}
             </div>
             <div className="p-4 border-t border-[var(--line)] bg-[var(--surf0)] flex justify-end">

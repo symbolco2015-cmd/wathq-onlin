@@ -3,6 +3,7 @@ import type { Evidence, PageType, SectionData, UserProfile } from './types';
 import { useAppStore } from './hooks/useAppStore';
 import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
+import { usePublicEvidence } from './hooks/usePublicEvidence';
 
 import Background from './components/Background';
 import Nav from './components/Nav';
@@ -113,6 +114,10 @@ export default function App() {
   // مؤشر الاستمرارية عبر الزمن للعرض العام — جلب منفصل عبر RPC آمنة (RLS
   // تمنع قراءة monthly_progress مباشرة لغير المالك، انظر usePublicMonthlyProgress).
   const sharedContinuity = usePublicMonthlyProgress(shareUserId ?? null);
+
+  // شواهد جدول evidence الجديد (الغني) للعرض العام — جلب منفصل عبر RPC آمنة
+  // (RLS تمنع قراءة evidence مباشرة لغير المالك، انظر usePublicEvidence).
+  const sharedEvidence = usePublicEvidence(shareUserId ?? null);
 
   // نفس البيانات لمعاينة المالك لملفه الخاص (صفحة 'public' داخل التطبيق) —
   // تُبنى مباشرة من monthlyProgress.rows المحمّلة أصلاً بلا أي طلب إضافي.
@@ -724,7 +729,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} />
+          <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} />
         </main>
       </>
     );
@@ -795,7 +800,7 @@ export default function App() {
           />
         )}
 
-        {currentPage === 'public' && <Public state={state} sections={SECS} continuity={ownContinuity} />}
+        {currentPage === 'public' && <Public state={state} sections={SECS} continuity={ownContinuity} evidence={supabaseEv.evidence} />}
         
         {currentPage === 'admin' && isAdmin && (
           <AdminDashboard

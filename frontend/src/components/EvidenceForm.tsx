@@ -3,6 +3,8 @@ import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
 import type { EvidenceType } from '../hooks/useSupabaseEvidence';
 import type { Evidence } from '../types';
+import { useVoiceRecording } from '../hooks/useVoiceRecording';
+import { AI_CONSENT_TEXT } from '../utils';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -134,6 +136,14 @@ export default function EvidenceForm({
   const [aiSuggestion,        setAiSuggestion]        = useState('');
   const [aiFeatureEnabled,    setAiFeatureEnabled]    = useState(false);
 
+  // ── التوثيق الصوتي (Beta) ────────────────────────────────────
+  const voiceRecording = useVoiceRecording();
+  const [voiceFeatureEnabled,    setVoiceFeatureEnabled]    = useState(false);
+  const [voiceConsentPromptOpen, setVoiceConsentPromptOpen] = useState(false);
+  const [voiceLoading,           setVoiceLoading]           = useState(false);
+  const [voiceTranscript,        setVoiceTranscript]        = useState('');
+  const [voiceSuggestedDesc,     setVoiceSuggestedDesc]     = useState('');
+
   // ── Misc ─────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -147,6 +157,7 @@ export default function EvidenceForm({
     setFileUrl(''); setFileName(''); setUploadSuccess(false);
     setStratDate(''); setStratStage(''); setStratGrade(''); setStratPeriod(''); setStratSubject('');
     setAiSelectedFile(null); setAiConsentPromptOpen(false); setAiLoading(false); setAiSuggestion('');
+    setVoiceConsentPromptOpen(false); setVoiceLoading(false); setVoiceTranscript(''); setVoiceSuggestedDesc('');
   }, [isOpen]);
 
   // Fetch indicators for this section
@@ -171,6 +182,20 @@ export default function EvidenceForm({
         if (cancelled) return;
         if (error) { console.warn('[EvidenceForm] تعذّر التحقق من صلاحية الميزة:', error.message); setAiFeatureEnabled(false); return; }
         setAiFeatureEnabled(!!data);
+      });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  // بوابة صلاحية ميزة "التوثيق الصوتي" (Beta) — نفس آلية image_suggestion بمفتاح مستقل
+  useEffect(() => {
+    if (!isOpen || !supabase) { setVoiceFeatureEnabled(false); return; }
+    let cancelled = false;
+    supabase
+      .rpc('is_feature_enabled', { p_feature: 'voice_documentation' })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.warn('[EvidenceForm] تعذّر التحقق من صلاحية ميزة التوثيق الصوتي:', error.message); setVoiceFeatureEnabled(false); return; }
+        setVoiceFeatureEnabled(!!data);
       });
     return () => { cancelled = true; };
   }, [isOpen]);
@@ -223,6 +248,67 @@ export default function EvidenceForm({
   const acceptAiSuggestion = () => {
     setDescription(aiSuggestion);
     setAiSuggestion('');
+  };
+
+  // ── التوثيق الصوتي (Beta) ─────────────────────────────────────
+  const runVoiceTranscription = async (audioBase64: string, mimeType: string) => {
+    if (!supabase) return;
+    setVoiceLoading(true);
+    setVoiceTranscript('');
+    setVoiceSuggestedDesc('');
+    try {
+      const { data, error } = await supabase.functions.invoke('transcribe-voice', {
+        body: {
+          audioBase64,
+          mimeType,
+          section_id: sectionId,
+          indicator_id: indicatorId || undefined,
+        },
+      });
+      if (error) throw error;
+      if (data?.error === 'daily_limit_reached') {
+        onToast('الخدمة مشغولة حالياً، حاول لاحقاً', '⏳');
+        return;
+      }
+      if (data?.error) throw new Error(data.error);
+      setVoiceTranscript((data?.transcript as string) || '');
+      setVoiceSuggestedDesc((data?.description as string) || '');
+    } catch (err) {
+      console.warn('[EvidenceForm] تعذّر تفريغ التسجيل الصوتي:', err);
+      onToast('تعذّر تفريغ التسجيل الصوتي الآن، يمكنك المتابعة بالكتابة يدوياً.', '⚠️');
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
+  // بعد انتهاء التسجيل الصوتي (audioBase64 جاهز) — أرسله فوراً للتفريغ
+  useEffect(() => {
+    if (!voiceRecording.audioBase64) return;
+    runVoiceTranscription(voiceRecording.audioBase64, voiceRecording.mimeType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceRecording.audioBase64]);
+
+  const handleVoiceButtonClick = () => {
+    if (voiceRecording.isRecording) { voiceRecording.stopRecording(); return; }
+    if (!aiConsentGiven) { setVoiceConsentPromptOpen(true); return; }
+    voiceRecording.startRecording();
+  };
+
+  const handleVoiceConsentAccept = () => {
+    onGiveAiConsent?.();
+    setVoiceConsentPromptOpen(false);
+    voiceRecording.startRecording();
+  };
+
+  const acceptVoiceSuggestion = () => {
+    setDescription(voiceSuggestedDesc);
+    setVoiceTranscript('');
+    setVoiceSuggestedDesc('');
+  };
+
+  const dismissVoiceSuggestion = () => {
+    setVoiceTranscript('');
+    setVoiceSuggestedDesc('');
   };
 
   // ── File upload ───────────────────────────────────────────────
@@ -508,7 +594,7 @@ export default function EvidenceForm({
             {aiConsentPromptOpen ? (
               <div className="bg-black/20 border border-[var(--gold)]/25 rounded-xl p-3.5 space-y-3">
                 <p className="text-[12px] text-[var(--text3)] leading-relaxed">
-                  هذه ميزة تجريبية تستخدم صوراً عبر خدمة خارجية (Google Gemini). لا ترفع صوراً فيها وجوه طلاب واضحة.
+                  {AI_CONSENT_TEXT}
                 </p>
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={handleAiConsentAccept} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12px] font-bold cursor-pointer">أوافق ومتابعة</button>
@@ -564,7 +650,75 @@ export default function EvidenceForm({
 
             {/* الوصف */}
             <div>
-              <div className={labelCls}><i className="ti ti-align-right text-[var(--em7)]" /> وصف الشاهد</div>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className={labelCls + ' !mb-0'}><i className="ti ti-align-right text-[var(--em7)]" /> وصف الشاهد</div>
+                {voiceFeatureEnabled && (
+                  <button
+                    type="button"
+                    onClick={handleVoiceButtonClick}
+                    disabled={voiceLoading}
+                    title={voiceRecording.isRecording ? 'إيقاف التسجيل' : 'توثيق صوتي'}
+                    className={`flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-[11.5px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                      voiceRecording.isRecording
+                        ? 'bg-red-500/15 border border-red-500/30 text-red-400'
+                        : 'bg-[var(--em6)]/15 border border-[var(--em6)]/30 text-[var(--em8)]'
+                    }`}
+                  >
+                    {voiceRecording.isRecording
+                      ? <><i className="ti ti-player-stop-filled" /> إيقاف · {voiceRecording.secondsElapsed}ث</>
+                      : <><i className="ti ti-microphone" /> توثيق صوتي</>}
+                    <span className="text-[9.5px] font-black text-[var(--gold)] bg-[var(--gold)]/10 border border-[var(--gold)]/30 rounded-full px-1.5 py-0.5">Beta</span>
+                  </button>
+                )}
+              </div>
+
+              {voiceFeatureEnabled && voiceConsentPromptOpen && (
+                <div className="bg-black/20 border border-[var(--gold)]/25 rounded-xl p-3.5 space-y-3 mb-3">
+                  <p className="text-[12px] text-[var(--text3)] leading-relaxed">{AI_CONSENT_TEXT}</p>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={handleVoiceConsentAccept} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12px] font-bold cursor-pointer">أوافق ومتابعة</button>
+                    <button type="button" onClick={() => setVoiceConsentPromptOpen(false)} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12px] font-bold cursor-pointer">إلغاء</button>
+                  </div>
+                </div>
+              )}
+
+              {voiceFeatureEnabled && voiceRecording.error && (
+                <p className="text-[11.5px] text-red-400 mb-2 flex items-center gap-1.5"><i className="ti ti-alert-circle" /> {voiceRecording.error}</p>
+              )}
+
+              {voiceFeatureEnabled && voiceLoading && (
+                <div className="flex items-center gap-2 text-[12px] text-[var(--text3)] font-bold mb-3">
+                  <i className="ti ti-loader animate-spin text-[var(--em8)]" /> جاري تفريغ التسجيل الصوتي...
+                </div>
+              )}
+
+              {voiceFeatureEnabled && !voiceLoading && (voiceTranscript || voiceSuggestedDesc) && (
+                <div className="bg-[var(--em7)]/5 border border-[var(--em7)]/15 rounded-2xl p-4 space-y-3 mb-3">
+                  <div>
+                    <div className="text-[11px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5">التفريغ النصي</div>
+                    <textarea
+                      className={inputCls + ' resize-none'}
+                      rows={2}
+                      value={voiceTranscript}
+                      onChange={e => setVoiceTranscript(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5">الوصف المقترح</div>
+                    <textarea
+                      className={inputCls + ' resize-none'}
+                      rows={2}
+                      value={voiceSuggestedDesc}
+                      onChange={e => setVoiceSuggestedDesc(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={acceptVoiceSuggestion} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12px] font-bold cursor-pointer">استخدام هذا الوصف</button>
+                    <button type="button" onClick={dismissVoiceSuggestion} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12px] font-bold cursor-pointer">تجاهل</button>
+                  </div>
+                </div>
+              )}
+
               <textarea
                 className={inputCls + ' resize-none'}
                 rows={2}

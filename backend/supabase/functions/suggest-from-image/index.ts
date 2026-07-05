@@ -2,8 +2,9 @@
 //
 // ميزة تجريبية (Beta): تحلّل صورة شاهد وتقترح وصفاً نصياً عربياً قابلاً
 // للتعديل من المعلم قبل الحفظ. القالب معزول عن مزوّد الذكاء الاصطناعي —
-// callAIProvider() هي النقطة الوحيدة التي تعرف تفاصيل Gemini؛ أي شيء آخر في
-// هذا الملف يتعامل فقط مع الشكل الموحّد { description, section_id, indicator_id }.
+// callAIProvider() (في _shared/ai-provider.ts، مشتركة أيضاً مع transcribe-voice)
+// هي النقطة الوحيدة التي تعرف تفاصيل Gemini؛ أي شيء آخر في هذا الملف يتعامل
+// فقط مع الشكل الموحّد { description, section_id, indicator_id }.
 //
 // متغيرات البيئة المطلوبة (تُضبط من Supabase Dashboard → Edge Functions → Secrets):
 //   GEMINI_API_KEY   — مفتاح Gemini API
@@ -11,6 +12,7 @@
 // SUPABASE_URL و SUPABASE_ANON_KEY متوفرتان تلقائياً من بيئة تشغيل الدالة.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { callAIProvider } from '../_shared/ai-provider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,52 +30,6 @@ interface UnifiedSuggestion {
   description: string;
   section_id: number;
   indicator_id: string | null;
-}
-
-/**
- * الدالة العامة الوحيدة التي تعرف تفاصيل مزوّد الذكاء الاصطناعي (Gemini):
- * شكل الطلب، الـ headers، وتفسير الرد. تغيير المزود مستقبلاً يعني تعديل
- * هذه الدالة فقط — لا شيء آخر في الملف يفترض شكل رد Gemini.
- */
-async function callAIProvider(
-  imageBase64: string,
-  mimeType: string,
-  promptText: string,
-): Promise<{ description: string }> {
-  const apiKey = Deno.env.get('GEMINI_API_KEY');
-  const modelName = Deno.env.get('AI_MODEL_NAME');
-  if (!apiKey || !modelName) {
-    throw new Error('AI provider is not configured (missing GEMINI_API_KEY or AI_MODEL_NAME).');
-  }
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: promptText },
-            { inline_data: { mime_type: mimeType, data: imageBase64 } },
-          ],
-        }],
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`AI provider request failed (${res.status}): ${errText}`);
-  }
-
-  const json = await res.json();
-  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text || typeof text !== 'string') {
-    throw new Error('AI provider returned no usable text.');
-  }
-
-  return { description: text.trim() };
 }
 
 function buildPrompt(): string {
@@ -128,7 +84,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'daily_limit_reached' });
     }
 
-    const { description } = await callAIProvider(imageBase64, mimeType, buildPrompt());
+    const { text: description } = await callAIProvider(mimeType, imageBase64, buildPrompt());
 
     const result: UnifiedSuggestion = {
       description,

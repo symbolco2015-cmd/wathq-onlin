@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { AppState, SectionData, Announcement, AcademicDate, Evidence } from '../types';
 import Sidebar from './Sidebar';
@@ -6,10 +6,11 @@ import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import { calculateEvaluation, calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate } from '../utils';
+import { calculateEvaluation, calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
 import { useQuickCapture } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
+import { supabase } from '../supabaseClient';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -194,7 +195,23 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     supabaseEv,
     onAddEv: onAddEv ?? (() => {}),
     onToast: onToast ?? (() => {}),
+    sections,
+    aiConsentGiven,
+    onGiveAiConsent,
   });
+
+  // بوابة صلاحية ميزة "التوثيق الصوتي" (Beta) — تتحكم بظهور خيار "تسجيل صوتي سريع" في الـ FAB
+  const [voiceFeatureEnabled, setVoiceFeatureEnabled] = useState(false);
+  useEffect(() => {
+    if (!supabase) { setVoiceFeatureEnabled(false); return; }
+    let cancelled = false;
+    supabase.rpc('is_feature_enabled', { p_feature: 'voice_documentation' }).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) { console.warn('[Dashboard] تعذّر التحقق من صلاحية ميزة التوثيق الصوتي:', error.message); setVoiceFeatureEnabled(false); return; }
+      setVoiceFeatureEnabled(!!data);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية
   const { stats: evStats, getSectionStat } = useEvidenceStore({
@@ -1309,6 +1326,23 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 <i className="ti ti-camera" />
               </span>
             </button>
+            {voiceFeatureEnabled && (
+              <button
+                className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
+                style={{
+                  background: 'linear-gradient(135deg, #b45309, #f59e0b)',
+                  boxShadow: '0 4px 16px rgba(180,83,9,.5)',
+                  animation: 'fadeUp .2s var(--sp) both .08s',
+                }}
+                onClick={() => { setFabExpanded(false); quickCapture.startVoiceCapture(); }}
+                title="تسجيل صوتي سريع"
+              >
+                تسجيل صوتي سريع
+                <span className="w-[32px] h-[32px] rounded-full bg-white/15 flex items-center justify-center text-[16px]">
+                  <i className="ti ti-microphone" />
+                </span>
+              </button>
+            )}
           </>
         )}
 
@@ -1404,6 +1438,68 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               </button>
             ))}
           </div>
+        </div>
+      </BottomSheet>
+
+      {/* Bottom Sheet — تسجيل صوتي سريع (Beta) — جوال فقط */}
+      <BottomSheet isOpen={quickCapture.voiceSheetOpen || quickCapture.voiceConsentPromptOpen} onClose={quickCapture.cancelVoiceCapture}>
+        <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
+              <i className="ti ti-microphone" />
+            </div>
+            <div className="text-[16px] font-black text-white flex items-center gap-2">
+              تسجيل صوتي سريع
+              <span className="text-[9.5px] font-black text-[var(--gold)] bg-[var(--gold)]/10 border border-[var(--gold)]/30 rounded-full px-2 py-0.5">Beta</span>
+            </div>
+          </div>
+          <button
+            onClick={quickCapture.cancelVoiceCapture}
+            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
+          >
+            <i className="ti ti-x" />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-6 space-y-4">
+          {quickCapture.voiceConsentPromptOpen ? (
+            <div className="bg-black/20 border border-[var(--gold)]/25 rounded-xl p-3.5 space-y-3">
+              <p className="text-[12.5px] text-[var(--text3)] leading-relaxed">{AI_CONSENT_TEXT}</p>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={quickCapture.acceptVoiceConsent} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12.5px] font-bold cursor-pointer">أوافق ومتابعة</button>
+                <button type="button" onClick={quickCapture.cancelVoiceCapture} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12.5px] font-bold cursor-pointer">إلغاء</button>
+              </div>
+            </div>
+          ) : quickCapture.voiceRecording.error ? (
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <i className="ti ti-alert-circle text-[32px] text-red-400" />
+              <p className="text-[13px] text-red-400 font-semibold">{quickCapture.voiceRecording.error}</p>
+              <button type="button" onClick={quickCapture.cancelVoiceCapture} className="py-2 px-5 rounded-lg border border-[var(--line2)] text-[var(--text3)] text-[12.5px] font-bold cursor-pointer">إغلاق</button>
+            </div>
+          ) : quickCapture.voiceSaving ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <i className="ti ti-loader animate-spin text-[36px] text-[var(--em8)]" />
+              <p className="text-[13.5px] text-white font-bold">جاري تفريغ التسجيل وحفظ الشاهد...</p>
+            </div>
+          ) : quickCapture.voiceRecording.isRecording ? (
+            <div className="flex flex-col items-center gap-4 py-6 text-center">
+              <div className="w-20 h-20 rounded-full bg-red-500/15 border-2 border-red-500/40 flex items-center justify-center text-[32px] text-red-400" style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>
+                <i className="ti ti-microphone" />
+              </div>
+              <p className="text-[15px] font-black text-white">جاري التسجيل... {quickCapture.voiceRecording.secondsElapsed}/30 ث</p>
+              <button
+                type="button"
+                onClick={quickCapture.voiceRecording.stopRecording}
+                className="flex items-center gap-2 py-2.5 px-6 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[13px] font-bold cursor-pointer"
+              >
+                <i className="ti ti-player-stop-filled" /> إيقاف التسجيل
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <i className="ti ti-loader animate-spin text-[32px] text-[var(--em8)]" />
+              <p className="text-[13px] text-[var(--text3)] font-semibold">جاري تجهيز التسجيل...</p>
+            </div>
+          )}
         </div>
       </BottomSheet>
 

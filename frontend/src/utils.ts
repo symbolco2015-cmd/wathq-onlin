@@ -4,6 +4,13 @@ import type { AcademicDate, AppState, SectionData, UserProfile } from './types';
 // الجديدة التي لم تُكمّل بياناتها بعد — تُستخدم لتمييز الملف "الناقص" عن "المكتمل".
 const UNSET_PLACEHOLDER = 'غير محدد';
 
+// نص الموافقة الموحّد لكل ميزات الذكاء الاصطناعي التجريبية (اقتراح الصورة،
+// التوثيق الصوتي، ...) — يظهر مرة واحدة فقط لكل حساب (aiSuggestConsentAt في
+// AppState) بصرف النظر عن أي ميزة استدعته أولاً.
+export const AI_CONSENT_TEXT =
+  'هذه ميزة تجريبية (Beta) تستخدم نموذج ذكاء اصطناعي خارجي (Google Gemini) لمعالجة الملفات التي ترفعها ضمن هذه الميزة. ' +
+  'يرجى توخي الحذر عند الرفع وعدم تضمين أي معلومات أو صور أو تسجيلات صوتية تحتوي على بيانات تعريفية لطلاب.';
+
 export const isProfileIncomplete = (profile: UserProfile): boolean => {
   return (
     !profile.name?.trim() ||

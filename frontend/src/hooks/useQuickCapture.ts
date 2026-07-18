@@ -171,7 +171,7 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
         }
         if (data?.error) throw new Error(data.error);
 
-        const sectionMeta = sections.find(s => s.id === data?.section_id) ?? sections[0];
+        const sectionMeta = sections.find(s => s.id === data?.section_id) ?? null;
         const ext = voiceRecording.mimeType.includes('mp4') ? 'm4a' : 'webm';
 
         let fileUrl = '';
@@ -191,7 +191,7 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
 
         const title = `شاهد صوتي سريع - ${new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}`;
         const result = await supabaseEv.addEvidence({
-          section_id: sectionMeta.id,
+          section_id: sectionMeta?.id ?? null,
           title,
           description: (data?.description as string) || (data?.transcript as string) || undefined,
           evidence_type: 'audio',
@@ -204,8 +204,14 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
           return;
         }
 
-        onAddEv(sectionMeta.id, sectionMeta.subs[0] ?? 'عام', 'doc', title, fileUrl);
-        onToast('تم حفظ الشاهد الصوتي بنجاح ✅', '✅');
+        if (sectionMeta) {
+          onAddEv(sectionMeta.id, sectionMeta.subs[0] ?? 'عام', 'doc', title, fileUrl);
+          onToast(`تم حفظ الشاهد الصوتي في "${sectionMeta.ttl}" ✅`, '✅');
+        } else {
+          // لم يتمكّن الذكاء الاصطناعي من التصنيف بثقة — يُحفظ بلا قسم (section_id
+          // null) دون تحديث عدّاد شهري، ويظهر لاحقاً في قائمة "غير مصنّف"
+          onToast('تم حفظ الشاهد، يحتاج تصنيف 📋', '📋');
+        }
         setVoiceSheetOpen(false);
       } catch (err) {
         console.error('[QuickCapture] خطأ في حفظ الشاهد الصوتي:', err);

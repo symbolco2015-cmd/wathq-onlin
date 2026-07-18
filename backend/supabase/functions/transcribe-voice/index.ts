@@ -134,6 +134,9 @@ Deno.serve(async (req: Request) => {
     const transcript = typeof parsed.transcript === 'string' ? parsed.transcript : '';
     const description = typeof parsed.description === 'string' ? parsed.description : transcript;
 
+    // لا يوجد احتياط بقسم افتراضي: إن تعذّر على الذكاء الاصطناعي الاختيار بثقة
+    // (رد غير صالح أو رقم خارج القائمة المُرسَلة) يبقى section_id بقيمة null —
+    // الشاهد يُحفظ لاحقاً في حالة "غير مصنّف" يعيد المعلم تصنيفه يدوياً.
     let resolvedSectionId: number | null = null;
     if (typeof section_id === 'number') {
       resolvedSectionId = section_id;
@@ -142,8 +145,6 @@ Deno.serve(async (req: Request) => {
       sections?.some(s => s.id === parsed.section_id)
     ) {
       resolvedSectionId = parsed.section_id;
-    } else if (sections && sections.length > 0) {
-      resolvedSectionId = sections[0].id; // احتياط آمن إن تعذّر على الذكاء الاصطناعي الاختيار
     }
 
     const result: UnifiedVoiceSuggestion = {

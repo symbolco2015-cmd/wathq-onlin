@@ -6,7 +6,7 @@ export type EvidenceType = 'file' | 'image' | 'link' | 'note' | 'audio' | 'video
 export interface SupabaseEvidence {
   id: string;
   portfolio_id: string;
-  section_id: number;
+  section_id: number | null;
   indicator_id: string | null;
   title: string;
   description: string | null;
@@ -39,6 +39,7 @@ const getBucketAndPathFromUrl = (publicUrl: string): { bucket: string; path: str
 export function useSupabaseEvidence(
   portfolioId: string | null,
   onEvRemoved?: (sectionId: number, createdAt: string) => void,
+  onEvReclassified?: (sectionId: number, createdAt: string) => void,
 ) {
   const [evidence, setEvidence]     = useState<SupabaseEvidence[]>([]);
   const [loading, setLoading]       = useState(false);
@@ -61,7 +62,7 @@ export function useSupabaseEvidence(
   useEffect(() => { fetch(); }, [fetch]);
 
   const addEvidence = async (payload: {
-    section_id: number;
+    section_id: number | null;
     indicator_id?: string;
     title: string;
     description?: string;
@@ -119,11 +120,41 @@ export function useSupabaseEvidence(
       }
     }
 
-    if (evItem && onEvRemoved) {
+    // شاهد بلا قسم (section_id === null، "غير مصنّف") لم يُحتسب في monthly_progress
+    // أصلاً — تخطَّ إنقاص العدّاد الشهري تماماً بدل تمرير null كـ sectionId
+    if (evItem && onEvRemoved && evItem.section_id !== null) {
       onEvRemoved(evItem.section_id, evItem.created_at);
     }
 
     setEvidence(prev => prev.filter(e => e.id !== id));
+  };
+
+  /** إعادة تصنيف شاهد "غير مصنّف" (section_id === null) إلى قسم فعلي — يُسجَّل
+   * الشهر للمرة الأولى هنا لأن الشاهد لم يُحتسب بأي شهر وقت الحفظ الأصلي. */
+  const reclassifyEvidence = async (evidenceId: string, newSectionId: number): Promise<boolean> => {
+    if (!supabase) return false;
+    const evItem = evidence.find(e => e.id === evidenceId);
+
+    const { data, error } = await supabase
+      .from('evidence')
+      .update({ section_id: newSectionId })
+      .eq('id', evidenceId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Supabase Evidence] reclassify error:', error);
+      return false;
+    }
+
+    await fetch();
+
+    if (onEvReclassified) {
+      const createdAt = (data as SupabaseEvidence | null)?.created_at ?? evItem?.created_at ?? new Date().toISOString();
+      onEvReclassified(newSectionId, createdAt);
+    }
+
+    return true;
   };
 
   const getBySection = (sectionId: number) =>
@@ -134,6 +165,7 @@ export function useSupabaseEvidence(
     loading,
     addEvidence,
     deleteEvidence,
+    reclassifyEvidence,
     getBySection,
     refetch: fetch,
   };

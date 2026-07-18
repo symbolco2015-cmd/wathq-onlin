@@ -84,7 +84,7 @@ export default function App() {
     yearStartMonth: state.yearStartMonth ?? 9,
   });
 
-  const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence);
+  const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence, monthlyProgress.recordEvidence);
 
   // wrapper: يسجّل في monthly_progress عند كل إضافة شاهد
   // createdAt اختياري: يُمرَّر فقط عند الإضافة من أرشيف شهر سابق ضمن نافذة التعديل

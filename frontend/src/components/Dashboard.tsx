@@ -73,6 +73,103 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
 
+interface SectionReclassifyDropdownProps {
+  sections: SectionData[];
+  isOpen: boolean;
+  isBusy: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onSelect: (sectionId: string) => void;
+}
+
+// بديل مخصّص لـ <select>/<option> الأصليين — Safari/iOS يتجاهل تنسيق <option>
+// بالكامل تقريباً (خلفية بيضاء ثابتة من النظام)، فلا يمكن مطابقة الهوية
+// البصرية الداكنة عبر CSS وحده على كل المتصفحات المستهدفة.
+//
+// القائمة تُعرض عبر createPortal إلى document.body بموضع fixed محسوب من
+// getBoundingClientRect بدل absolute داخل الشجرة — BottomSheet.tsx يحمل
+// overflow-hidden وحاوية القائمة الأب overflow-y-auto، وكلاهما يقصّان أي
+// absolute متجاوز لحدودهما (نفس حل أرشيف الأشهر السابقة في هذا الملف).
+const RECLASSIFY_MENU_MAX_H = 240;
+
+function SectionReclassifyDropdown({
+  sections, isOpen, isBusy, onOpen, onClose, onSelect,
+}: SectionReclassifyDropdownProps) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; openUpward: boolean }>({ top: 0, left: 0, openUpward: false });
+
+  useLayoutEffect(() => {
+    if (!isOpen || !btnRef.current) return;
+    const update = () => {
+      if (!btnRef.current) return;
+      const rect = btnRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUpward = spaceBelow < RECLASSIFY_MENU_MAX_H && rect.top > RECLASSIFY_MENU_MAX_H;
+      setPos({
+        top: openUpward ? rect.top - 6 : rect.bottom + 6,
+        left: rect.left,
+        openUpward,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={isBusy}
+        onClick={() => (isOpen ? onClose() : onOpen())}
+        className="py-2 px-3 text-[12px] font-bold bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer disabled:opacity-50 disabled:cursor-wait flex items-center gap-1.5"
+      >
+        اختر القسم
+        <i className={`ti ti-chevron-down text-[11px] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isBusy && (
+        <i className="ti ti-loader animate-spin text-[13px] text-[var(--em8)] absolute -left-6 top-1/2 -translate-y-1/2" />
+      )}
+
+      {isOpen && createPortal(
+        <>
+          <div className="fixed inset-0 z-[600]" onClick={onClose} />
+          <div
+            className="fixed z-[601] min-w-[190px] max-h-[240px] overflow-y-auto rounded-xl border border-[var(--line2)] bg-[var(--surf2)] shadow-[0_12px_32px_rgba(0,0,0,.45)] py-1.5"
+            style={{
+              top: pos.openUpward ? undefined : pos.top,
+              bottom: pos.openUpward ? window.innerHeight - pos.top : undefined,
+              left: pos.left,
+              animation: 'scaleIn .15s var(--sp) both',
+            }}
+          >
+            {sections.map(sec => (
+              <button
+                key={sec.id}
+                type="button"
+                onClick={() => onSelect(String(sec.id))}
+                className="w-full text-right px-3.5 py-2.5 text-[12.5px] font-bold text-white hover:bg-[var(--gold)]/10 hover:text-[var(--gold3)] transition-colors cursor-pointer"
+              >
+                {sec.ttl}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -165,6 +262,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     return map;
   }, [supabaseEv, archiveMonth]);
 
+  // شواهد "غير مصنّفة" — section_id === null (تدفّق FAB الصوتي عندما يعجز
+  // الذكاء الاصطناعي عن اختيار قسم بثقة كافية، بدل fallback عشوائي سابقاً)
+  const unclassifiedEvidence = useMemo(() => {
+    if (!supabaseEv) return [];
+    return supabaseEv.evidence.filter(e => e.section_id === null);
+  }, [supabaseEv]);
+
   // الشهر القابل للتعديل: تُعرض كل الأقسام (لإتاحة إضافة شاهد لأي قسم حتى لو
   // كان بلا شواهد بعد). الشهر المقفل (read-only): تُعرض فقط الأقسام التي بها
   // شواهد فعلية — لا فائدة من عرض بطاقات قسم فارغة لا يمكن التفاعل معها.
@@ -188,6 +292,24 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const handlePickSection = (sec: SectionData) => {
     setSectionPickerOpen(false);
     setMobileSheet({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' });
+  };
+
+  // إعادة تصنيف شاهد "غير مصنّف" — قائمة/حالة BottomSheet مستقلة عن اختيار
+  // القسم أعلاه (ذاك لإضافة شاهد جديد، هذا لتصنيف شاهد محفوظ مسبقاً بلا قسم)
+  const [unclassifiedSheetOpen, setUnclassifiedSheetOpen] = useState(false);
+  const [reclassifyingId, setReclassifyingId] = useState<string | null>(null);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const handleReclassify = async (evidenceId: string, sectionIdRaw: string) => {
+    const newSectionId = Number(sectionIdRaw);
+    if (!supabaseEv || !sectionIdRaw || Number.isNaN(newSectionId)) return;
+    setReclassifyingId(evidenceId);
+    const ok = await supabaseEv.reclassifyEvidence(evidenceId, newSectionId);
+    setReclassifyingId(null);
+    if (ok) {
+      onToast?.('تم تصنيف الشاهد بنجاح ✅', '✅');
+    } else {
+      onToast?.('فشل التصنيف، حاول مرة أخرى ❌', '❌');
+    }
   };
 
   const quickCapture = useQuickCapture({
@@ -502,6 +624,34 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 title="إغلاق"
               >
                 <i className="ti ti-x text-[16px]" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* بانر: أدلة تحتاج تصنيف (section_id === null) — أعلى بطاقة "الخطوة التالية" مباشرة */}
+        {unclassifiedEvidence.length > 0 && (
+          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold-dim)] via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
+            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
+            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[22px] text-[var(--gold3)]">
+                  <i className="ti ti-folder-question" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-[var(--gold3)] tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
+                    <i className="ti ti-alert-circle text-[12px]" /> يحتاج تصنيف
+                  </div>
+                  <div className="text-[15px] font-extrabold text-white leading-snug">
+                    {unclassifiedEvidence.length} {unclassifiedEvidence.length === 1 ? 'شاهد بحاجة إلى تصنيف' : 'أدلة بحاجة إلى تصنيف'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setUnclassifiedSheetOpen(true)}
+                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
+              >
+                <i className="ti ti-list-check text-[15px]" /> تصنيف الآن
               </button>
             </div>
           </div>
@@ -1499,6 +1649,63 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               <i className="ti ti-loader animate-spin text-[32px] text-[var(--em8)]" />
               <p className="text-[13px] text-[var(--text3)] font-semibold">جاري تجهيز التسجيل...</p>
             </div>
+          )}
+        </div>
+      </BottomSheet>
+
+      {/* Bottom Sheet — إعادة تصنيف الأدلة "غير المصنّفة" (section_id === null) */}
+      <BottomSheet isOpen={unclassifiedSheetOpen} onClose={() => setUnclassifiedSheetOpen(false)}>
+        <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[18px] text-[var(--gold3)]">
+              <i className="ti ti-folder-question" />
+            </div>
+            <div className="text-[16px] font-black text-white">أدلة تحتاج تصنيف</div>
+          </div>
+          <button
+            onClick={() => setUnclassifiedSheetOpen(false)}
+            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
+          >
+            <i className="ti ti-x" />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-5 space-y-2.5">
+          {unclassifiedEvidence.length === 0 ? (
+            <p className="text-[13px] text-[var(--text4)] text-center py-6">لا توجد أدلة بحاجة تصنيف حالياً</p>
+          ) : (
+            unclassifiedEvidence.map(ev => {
+              const isImg = ev.evidence_type === 'image' && !!ev.file_url;
+              const date = new Date(ev.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' });
+              const isBusy = reclassifyingId === ev.id;
+              return (
+                <div key={ev.id} className="flex items-center gap-3 py-3 px-4 bg-white/[0.03] rounded-xl border border-[var(--line)]">
+                  <div className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-[16px] border border-[var(--gold)]/20 bg-[var(--gold)]/10 text-[var(--gold3)] overflow-hidden">
+                    {isImg ? (
+                      <img src={ev.file_url!} alt={ev.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <i className={`ti ${ev.evidence_type === 'audio' ? 'ti-microphone' : ev.evidence_type === 'video' ? 'ti-video' : ev.evidence_type === 'link' ? 'ti-link' : 'ti-file-text'}`} />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold text-white truncate leading-snug">{ev.title}</div>
+                    <div className="text-[11px] text-[var(--text4)] flex items-center gap-1 mt-0.5">
+                      <i className="ti ti-calendar text-[11px]" /> {date}
+                    </div>
+                  </div>
+                  <SectionReclassifyDropdown
+                    sections={sections}
+                    isOpen={openDropdownId === ev.id}
+                    isBusy={isBusy}
+                    onOpen={() => setOpenDropdownId(ev.id)}
+                    onClose={() => setOpenDropdownId(null)}
+                    onSelect={(sectionId) => {
+                      setOpenDropdownId(null);
+                      handleReclassify(ev.id, sectionId);
+                    }}
+                  />
+                </div>
+              );
+            })
           )}
         </div>
       </BottomSheet>

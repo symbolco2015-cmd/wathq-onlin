@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { AppState, SectionData, Announcement, AcademicDate, Evidence } from '../types';
 import Sidebar from './Sidebar';
@@ -11,6 +11,8 @@ import { useEvidenceStore } from '../hooks/useEvidenceStore';
 import { useQuickCapture } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import { supabase } from '../supabaseClient';
+import BulkImportPicker from './BulkImportPicker';
+import BulkImportReview from './BulkImportReview';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -92,7 +94,7 @@ interface SectionReclassifyDropdownProps {
 // absolute متجاوز لحدودهما (نفس حل أرشيف الأشهر السابقة في هذا الملف).
 const RECLASSIFY_MENU_MAX_H = 240;
 
-function SectionReclassifyDropdown({
+export function SectionReclassifyDropdown({
   sections, isOpen, isBusy, onOpen, onClose, onSelect,
 }: SectionReclassifyDropdownProps) {
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -312,6 +314,12 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     }
   };
 
+  // الاستيراد الجماعي — مستقل تماماً عن تصنيف "غير مصنّف" أعلاه (مصدر البيانات
+  // مختلف: bulk_import_queue وليس evidence)
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [isBulkImportReviewOpen, setIsBulkImportReviewOpen] = useState(false);
+  const [bulkImportReadyCount, setBulkImportReadyCount] = useState(0);
+
   const quickCapture = useQuickCapture({
     userId,
     supabaseEv,
@@ -334,6 +342,27 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     });
     return () => { cancelled = true; };
   }, []);
+
+  // عدد ملفات الاستيراد الجماعي الجاهزة للمراجعة (status='classified') — يُجلب
+  // مرة واحدة عند تحميل لوحة التحكم (بنفس توقيت باقي بيانات Dashboard)، ويُعاد
+  // جلبه أيضاً بعد اكتمال أي تصنيف بالخلفية (انظر onClassificationSettled بالأسفل)
+  // — لا يوجد أي polling/setInterval هنا، التحديث مرتبط بأحداث فعلية فقط
+  const refetchBulkImportReadyCount = useCallback(() => {
+    if (!supabase || !userId) { setBulkImportReadyCount(0); return; }
+    supabase
+      .from('bulk_import_queue')
+      .select('id', { count: 'exact', head: true })
+      .eq('portfolio_id', userId)
+      .eq('status', 'classified')
+      .then(({ count, error }) => {
+        if (error) { console.warn('[Dashboard] تعذّر التحقق من صفوف الاستيراد الجماعي الجاهزة:', error.message); return; }
+        setBulkImportReadyCount(count ?? 0);
+      });
+  }, [userId]);
+
+  useEffect(() => {
+    refetchBulkImportReadyCount();
+  }, [refetchBulkImportReadyCount]);
 
   // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية
   const { stats: evStats, getSectionStat } = useEvidenceStore({
@@ -652,6 +681,35 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
               >
                 <i className="ti ti-list-check text-[15px]" /> تصنيف الآن
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* بانر: استيراد جماعي جاهز للمراجعة (bulk_import_queue بحالة classified) —
+            مستقل تماماً عن بانر "أدلة تحتاج تصنيف" أعلاه، مصدر البيانات مختلف تماماً */}
+        {bulkImportReadyCount > 0 && (
+          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold-dim)] via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
+            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
+            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[22px] text-[var(--gold3)]">
+                  <i className="ti ti-photo-check" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-[var(--gold3)] tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
+                    <i className="ti ti-sparkles text-[12px]" /> استيراد جماعي
+                  </div>
+                  <div className="text-[15px] font-extrabold text-white leading-snug">
+                    لديك {bulkImportReadyCount} ملف من الاستيراد الجماعي جاهز للمراجعة
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBulkImportReviewOpen(true)}
+                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
+              >
+                <i className="ti ti-photo-check text-[15px]" /> مراجعة الآن
               </button>
             </div>
           </div>
@@ -1476,6 +1534,21 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 <i className="ti ti-camera" />
               </span>
             </button>
+            <button
+              className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
+              style={{
+                background: 'linear-gradient(135deg, var(--gold2), var(--gold))',
+                boxShadow: '0 4px 16px rgba(201,162,39,.5)',
+                animation: 'fadeUp .2s var(--sp) both .06s',
+              }}
+              onClick={() => { setFabExpanded(false); setIsBulkImportOpen(true); }}
+              title="استيراد جماعي"
+            >
+              استيراد جماعي
+              <span className="w-[32px] h-[32px] rounded-full bg-white/15 flex items-center justify-center text-[16px]">
+                <i className="ti ti-photo-up" />
+              </span>
+            </button>
             {voiceFeatureEnabled && (
               <button
                 className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
@@ -1709,6 +1782,24 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           )}
         </div>
       </BottomSheet>
+
+      {/* Bottom Sheets — استيراد جماعي: اختيار الصور ثم مراجعة التصنيف */}
+      <BulkImportPicker
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        userId={userId}
+        onToast={onToast ?? (() => {})}
+        onClassificationSettled={refetchBulkImportReadyCount}
+      />
+      <BulkImportReview
+        isOpen={isBulkImportReviewOpen}
+        onClose={() => setIsBulkImportReviewOpen(false)}
+        userId={userId}
+        sections={sections}
+        supabaseEv={supabaseEv}
+        onAddEv={onAddEv}
+        onToast={onToast}
+      />
 
       {/* Bottom Sheet — إضافة شاهد (الخطوة الثانية) — جوال فقط */}
       {supabaseEv && (

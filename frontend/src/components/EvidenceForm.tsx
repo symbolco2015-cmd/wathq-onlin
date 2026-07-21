@@ -129,12 +129,17 @@ export default function EvidenceForm({
   // ── Indicators ───────────────────────────────────────────────
   const [indicators, setIndicators] = useState<Indicator[]>([]);
 
-  // ── اقتراح تلقائي من الصورة (Beta) ──────────────────────────
-  const [aiSelectedFile,      setAiSelectedFile]      = useState<File | null>(null);
-  const [aiConsentPromptOpen, setAiConsentPromptOpen] = useState(false);
-  const [aiLoading,           setAiLoading]           = useState(false);
-  const [aiSuggestion,        setAiSuggestion]        = useState('');
-  const [aiFeatureEnabled,    setAiFeatureEnabled]    = useState(false);
+  // ── اقتراح تلقائي من الصورة (Beta) — قرار مستقل لكل حقل ─────
+  const [aiSelectedFile,          setAiSelectedFile]          = useState<File | null>(null);
+  const [aiConsentPromptOpen,     setAiConsentPromptOpen]     = useState(false);
+  const [aiLoading,               setAiLoading]               = useState(false);
+  const [aiTitleSuggestion,       setAiTitleSuggestion]       = useState('');
+  const [aiIndicatorSuggestion,   setAiIndicatorSuggestion]   = useState<Indicator | null>(null);
+  const [aiDescriptionSuggestion, setAiDescriptionSuggestion] = useState('');
+  /** true بعد استلام رد ناجح من الدالة، بصرف النظر عن محتواه — تحكم عرض
+   *  رسالة "لم يقترح النموذج مؤشراً بثقة كافية" فقط بعد محاولة فعلية */
+  const [aiSuggestionAttempted,   setAiSuggestionAttempted]   = useState(false);
+  const [aiFeatureEnabled,        setAiFeatureEnabled]        = useState(false);
 
   // ── التوثيق الصوتي (Beta) ────────────────────────────────────
   const voiceRecording = useVoiceRecording();
@@ -156,7 +161,8 @@ export default function EvidenceForm({
     setAcademicTerm(''); setSelfReflection(''); setLinkUrl('');
     setFileUrl(''); setFileName(''); setUploadSuccess(false);
     setStratDate(''); setStratStage(''); setStratGrade(''); setStratPeriod(''); setStratSubject('');
-    setAiSelectedFile(null); setAiConsentPromptOpen(false); setAiLoading(false); setAiSuggestion('');
+    setAiSelectedFile(null); setAiConsentPromptOpen(false); setAiLoading(false);
+    setAiTitleSuggestion(''); setAiIndicatorSuggestion(null); setAiDescriptionSuggestion(''); setAiSuggestionAttempted(false);
     setVoiceConsentPromptOpen(false); setVoiceLoading(false); setVoiceTranscript(''); setVoiceSuggestedDesc('');
   }, [isOpen]);
 
@@ -208,7 +214,10 @@ export default function EvidenceForm({
   const runAiSuggestion = async () => {
     if (!aiSelectedFile || !supabase) return;
     setAiLoading(true);
-    setAiSuggestion('');
+    setAiTitleSuggestion('');
+    setAiIndicatorSuggestion(null);
+    setAiDescriptionSuggestion('');
+    setAiSuggestionAttempted(false);
     try {
       const imageBase64 = await readFileAsBase64(aiSelectedFile);
       const { data, error } = await supabase.functions.invoke('suggest-from-image', {
@@ -216,7 +225,6 @@ export default function EvidenceForm({
           imageBase64,
           mimeType: aiSelectedFile.type,
           section_id: sectionId,
-          indicator_id: indicatorId || undefined,
         },
       });
       if (error) throw error;
@@ -224,8 +232,23 @@ export default function EvidenceForm({
         onToast('الخدمة مشغولة حالياً، حاول لاحقاً', '⏳');
         return;
       }
-      if (data?.error || !data?.description) throw new Error(data?.error || 'no description');
-      setAiSuggestion(data.description as string);
+      if (data?.error) throw new Error(data.error);
+
+      const gotTitle = typeof data?.title === 'string' && data.title.trim().length > 0;
+      const gotDescription = typeof data?.description === 'string' && data.description.trim().length > 0;
+      // indicator_id يرجع UUID فعلي فقط عند ثقة عالية (مُطبَّق في الدالة نفسها) —
+      // نطابقه بقائمة indicators المحلية (نفس القائمة المعروضة في select القسم)
+      // للحصول على name_ar القابل للعرض، UUID وحده غير مفيد للمعلم
+      const matchedIndicator = typeof data?.indicator_id === 'string'
+        ? indicators.find(ind => ind.id === data.indicator_id) ?? null
+        : null;
+
+      if (!gotTitle && !gotDescription && !matchedIndicator) throw new Error('empty suggestion');
+
+      if (gotTitle) setAiTitleSuggestion((data.title as string).trim());
+      if (gotDescription) setAiDescriptionSuggestion((data.description as string).trim());
+      setAiIndicatorSuggestion(matchedIndicator);
+      setAiSuggestionAttempted(true);
     } catch (err) {
       console.warn('[EvidenceForm] تعذّر توليد الاقتراح:', err);
       onToast('تعذّر توليد اقتراح الآن، يمكنك المتابعة بالكتابة يدوياً.', '⚠️');
@@ -245,10 +268,18 @@ export default function EvidenceForm({
     runAiSuggestion();
   };
 
-  const acceptAiSuggestion = () => {
-    setDescription(aiSuggestion);
-    setAiSuggestion('');
+  // كل حقل له قبول/رفض مستقل — قبول حقل لا يمس حالة الحقول الأخرى المقترحة
+  const acceptAiTitle = () => { setTitle(aiTitleSuggestion); setAiTitleSuggestion(''); };
+  const dismissAiTitle = () => setAiTitleSuggestion('');
+
+  const acceptAiIndicator = () => {
+    if (aiIndicatorSuggestion) setIndicatorId(aiIndicatorSuggestion.id);
+    setAiIndicatorSuggestion(null);
   };
+  const dismissAiIndicator = () => setAiIndicatorSuggestion(null);
+
+  const acceptAiDescription = () => { setDescription(aiDescriptionSuggestion); setAiDescriptionSuggestion(''); };
+  const dismissAiDescription = () => setAiDescriptionSuggestion('');
 
   // ── التوثيق الصوتي (Beta) ─────────────────────────────────────
   const runVoiceTranscription = async (audioBase64: string, mimeType: string) => {
@@ -328,7 +359,7 @@ export default function EvidenceForm({
     setUploadSuccess(false);
     setFileUrl('');
     setAiSelectedFile(null);
-    setAiSuggestion('');
+    setAiTitleSuggestion(''); setAiIndicatorSuggestion(null); setAiDescriptionSuggestion(''); setAiSuggestionAttempted(false);
     setAiConsentPromptOpen(false);
     try {
       let fileToUpload: File = file;
@@ -526,7 +557,7 @@ export default function EvidenceForm({
               <button
                 key={t.id}
                 type="button"
-                onClick={() => { setEvidenceType(t.id); setFileUrl(''); setFileName(''); setUploadSuccess(false); setLinkUrl(''); setAiSelectedFile(null); setAiSuggestion(''); setAiConsentPromptOpen(false); }}
+                onClick={() => { setEvidenceType(t.id); setFileUrl(''); setFileName(''); setUploadSuccess(false); setLinkUrl(''); setAiSelectedFile(null); setAiTitleSuggestion(''); setAiIndicatorSuggestion(null); setAiDescriptionSuggestion(''); setAiSuggestionAttempted(false); setAiConsentPromptOpen(false); }}
                 className="flex flex-col items-center gap-2 py-3.5 px-2 rounded-2xl border-[1.5px] text-[12px] font-bold transition-all duration-250 hover:-translate-y-0.5 cursor-pointer font-[var(--font)]"
                 style={evidenceType === t.id
                   ? { borderColor: t.color, color: t.color, backgroundColor: `${t.color}18` }
@@ -601,18 +632,57 @@ export default function EvidenceForm({
                   <button type="button" onClick={() => setAiConsentPromptOpen(false)} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12px] font-bold cursor-pointer">إلغاء</button>
                 </div>
               </div>
-            ) : aiSuggestion ? (
-              <div className="space-y-2.5">
-                <textarea
-                  className={inputCls + ' resize-none'}
-                  rows={3}
-                  value={aiSuggestion}
-                  onChange={e => setAiSuggestion(e.target.value)}
-                />
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={acceptAiSuggestion} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12px] font-bold cursor-pointer">استخدام هذا الوصف</button>
-                  <button type="button" onClick={() => setAiSuggestion('')} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12px] font-bold cursor-pointer">تجاهل</button>
-                </div>
+            ) : (aiTitleSuggestion || aiIndicatorSuggestion || aiDescriptionSuggestion || aiSuggestionAttempted) ? (
+              <div className="space-y-3.5">
+                {/* اقتراح العنوان — قبول/رفض مستقل */}
+                {aiTitleSuggestion && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-extrabold text-[var(--text4)] tracking-wide uppercase">العنوان المقترح</div>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      value={aiTitleSuggestion}
+                      onChange={e => setAiTitleSuggestion(e.target.value)}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={acceptAiTitle} className="py-1.5 px-3.5 rounded-lg bg-[var(--em6)] text-white text-[11.5px] font-bold cursor-pointer">استخدام هذا العنوان</button>
+                      <button type="button" onClick={dismissAiTitle} className="py-1.5 px-3.5 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[11.5px] font-bold cursor-pointer">تجاهل</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* اقتراح المؤشر الفرعي — قبول/رفض مستقل، أو رسالة إن لم تكن الثقة كافية */}
+                {aiIndicatorSuggestion ? (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-extrabold text-[var(--text4)] tracking-wide uppercase">المؤشر الفرعي المقترح</div>
+                    <div className="text-[12.5px] text-white font-semibold py-2.5 px-3.5 bg-white/5 border border-[var(--line2)] rounded-xl">{aiIndicatorSuggestion.name_ar}</div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={acceptAiIndicator} className="py-1.5 px-3.5 rounded-lg bg-[var(--em6)] text-white text-[11.5px] font-bold cursor-pointer">استخدام هذا المؤشر</button>
+                      <button type="button" onClick={dismissAiIndicator} className="py-1.5 px-3.5 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[11.5px] font-bold cursor-pointer">تجاهل</button>
+                    </div>
+                  </div>
+                ) : aiSuggestionAttempted && (
+                  <div className="text-[11.5px] text-[var(--text4)] flex items-center gap-1.5">
+                    <i className="ti ti-info-circle" /> لم يقترح النموذج مؤشراً بثقة كافية — يمكنك اختياره يدوياً أعلاه
+                  </div>
+                )}
+
+                {/* اقتراح الوصف — قبول/رفض مستقل */}
+                {aiDescriptionSuggestion && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-extrabold text-[var(--text4)] tracking-wide uppercase">الوصف المقترح</div>
+                    <textarea
+                      className={inputCls + ' resize-none'}
+                      rows={3}
+                      value={aiDescriptionSuggestion}
+                      onChange={e => setAiDescriptionSuggestion(e.target.value)}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={acceptAiDescription} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12px] font-bold cursor-pointer">استخدام هذا الوصف</button>
+                      <button type="button" onClick={dismissAiDescription} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12px] font-bold cursor-pointer">تجاهل</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <button
@@ -621,7 +691,7 @@ export default function EvidenceForm({
                 disabled={!aiSelectedFile || !uploadSuccess || aiLoading}
                 className="flex items-center gap-2 py-2 px-4 rounded-lg bg-[var(--em6)]/15 border border-[var(--em6)]/30 text-[var(--em8)] text-[12px] font-bold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
-                {aiLoading ? <><i className="ti ti-loader animate-spin" /> جاري التحليل...</> : <><i className="ti ti-wand" /> اقترح لي وصفاً</>}
+                {aiLoading ? <><i className="ti ti-loader animate-spin" /> جاري التحليل...</> : <><i className="ti ti-wand" /> اقترح لي البيانات</>}
               </button>
             )}
           </div>

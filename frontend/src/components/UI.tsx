@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ToastProps {
   msg: string;
@@ -52,6 +53,121 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConf
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+export interface SelectDropdownOption {
+  value: string;
+  label: string;
+}
+
+interface SelectDropdownProps {
+  options: SelectDropdownOption[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  /** classes للزر الظاهر (المُشغّل) — مرّر نفس كلاس حقل الإدخال المستخدم في
+   *  النموذج المستدعي ليطابق شكل باقي الحقول */
+  triggerClassName: string;
+  /** يعرض صفاً علوياً في القائمة لمسح التحديد (قيمة فارغة) — استخدمه فقط
+   *  حين تحتاج حالة "بلا اختيار" فعلية (وليس لقوائم تكون قيمة دائماً محدّدة) */
+  allowClear?: boolean;
+}
+
+// بديل مخصّص لـ <select>/<option> الأصليين — Safari/iOS يتجاهل تنسيق
+// <option> بالكامل تقريباً (خلفية بيضاء ثابتة من النظام)، فلا يمكن مطابقة
+// الهوية البصرية الداكنة عبر CSS وحده على كل المتصفحات المستهدفة (والمنصة
+// 90% استخدام جوال). القائمة تُعرض عبر createPortal إلى document.body
+// بموضع fixed محسوب من getBoundingClientRect بدل absolute داخل الشجرة، حتى
+// لا يقصّها أي حاوٍ أب بـ overflow-hidden/overflow-y-auto (مودالات وbottom
+// sheets في التطبيق). عُمِّم هذا المكوّن من IndicatorSelectDropdown في
+// EvidenceForm.tsx بعد أن ثبتت صلاحية النمط هناك.
+const SELECT_MENU_MAX_H = 240;
+
+export function SelectDropdown({ options, value, onChange, placeholder, triggerClassName, allowClear = false }: SelectDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; openUpward: boolean }>({ top: 0, left: 0, width: 0, openUpward: false });
+
+  useLayoutEffect(() => {
+    if (!isOpen || !btnRef.current) return;
+    const update = () => {
+      if (!btnRef.current) return;
+      const rect = btnRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUpward = spaceBelow < SELECT_MENU_MAX_H && rect.top > SELECT_MENU_MAX_H;
+      setPos({
+        top: openUpward ? rect.top - 6 : rect.bottom + 6,
+        left: rect.left,
+        width: rect.width,
+        openUpward,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsOpen(false); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen]);
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div className="relative">
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setIsOpen(o => !o)}
+        className={triggerClassName + ' flex items-center justify-between gap-2'}
+      >
+        <span className={selected ? 'text-white' : 'text-[var(--text4)]'}>{selected ? selected.label : placeholder}</span>
+        <i className={`ti ti-chevron-down text-[13px] text-[var(--text4)] transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && createPortal(
+        <>
+          <div className="fixed inset-0 z-[600]" onClick={() => setIsOpen(false)} />
+          <div
+            className="fixed z-[601] max-h-[240px] overflow-y-auto rounded-xl border border-[var(--line2)] bg-[var(--surf2)] shadow-[0_12px_32px_rgba(0,0,0,.45)] py-1.5"
+            style={{
+              top: pos.openUpward ? undefined : pos.top,
+              bottom: pos.openUpward ? window.innerHeight - pos.top : undefined,
+              left: pos.left,
+              width: pos.width,
+              animation: 'scaleIn .15s var(--sp) both',
+            }}
+          >
+            {allowClear && (
+              <button
+                type="button"
+                onClick={() => { onChange(''); setIsOpen(false); }}
+                className="w-full text-right px-3.5 py-2.5 text-[12.5px] font-bold text-[var(--text4)] hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                {placeholder}
+              </button>
+            )}
+            {options.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { onChange(opt.value); setIsOpen(false); }}
+                className={`w-full text-right px-3.5 py-2.5 text-[12.5px] font-bold transition-colors cursor-pointer ${
+                  opt.value === value ? 'text-[var(--gold3)] bg-[var(--gold)]/10' : 'text-white hover:bg-[var(--gold)]/10 hover:text-[var(--gold3)]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import type { EvidenceType } from '../hooks/useSupabaseEvidence';
 import type { Evidence } from '../types';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import { AI_CONSENT_TEXT } from '../utils';
+import { SelectDropdown } from './UI';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -48,6 +49,9 @@ const readFileAsBase64 = (file: File): Promise<string> =>
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+
+// نمط الإدخال الموحّد لحقول النموذج
+const INPUT_CLS = 'w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-xl text-[13.5px] font-[var(--font)] text-white outline-none transition-all duration-200 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_3px_rgba(42,122,68,.12)]';
 
 // accept لنوع 'file' يضم امتدادات + MIME types صريحة معاً: بعض متصفحات أندرويد
 // (خصوصاً Chrome مع واجهات OEM مخصصة) تفتح معرض الصور افتراضياً حين يكون accept
@@ -448,7 +452,7 @@ export default function EvidenceForm({
     }
   };
 
-  const inputCls = 'w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-xl text-[13.5px] font-[var(--font)] text-white outline-none transition-all duration-200 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_3px_rgba(42,122,68,.12)]';
+  const inputCls = INPUT_CLS;
   const labelCls = 'text-[11.5px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5 flex items-center gap-1.5';
 
   return (
@@ -498,16 +502,14 @@ export default function EvidenceForm({
         {indicators.length > 0 && (
           <div>
             <div className={labelCls}><i className="ti ti-list-check text-[var(--em7)]" /> المؤشر الفرعي</div>
-            <select
-              className={inputCls + ' cursor-pointer'}
+            <SelectDropdown
+              options={indicators.map(i => ({ value: i.id, label: i.name_ar }))}
               value={indicatorId}
-              onChange={e => setIndicatorId(e.target.value)}
-            >
-              <option value="">— اختر المؤشر (اختياري) —</option>
-              {indicators.map(ind => (
-                <option key={ind.id} value={ind.id}>{ind.name_ar}</option>
-              ))}
-            </select>
+              onChange={setIndicatorId}
+              placeholder="— اختر المؤشر (اختياري) —"
+              triggerClassName={inputCls + ' cursor-pointer'}
+              allowClear
+            />
           </div>
         )}
 
@@ -524,12 +526,18 @@ export default function EvidenceForm({
               </div>
               <div>
                 <div className={labelCls}><i className="ti ti-school text-[var(--em7)]" /> المرحلة الدراسية</div>
-                <select className={inputCls + ' cursor-pointer'} value={stratStage} onChange={e => setStratStage(e.target.value)}>
-                  <option value="">— اختر —</option>
-                  <option value="ابتدائي">ابتدائي</option>
-                  <option value="متوسط">متوسط</option>
-                  <option value="ثانوي">ثانوي</option>
-                </select>
+                <SelectDropdown
+                  options={[
+                    { value: 'ابتدائي', label: 'ابتدائي' },
+                    { value: 'متوسط', label: 'متوسط' },
+                    { value: 'ثانوي', label: 'ثانوي' },
+                  ]}
+                  value={stratStage}
+                  onChange={setStratStage}
+                  placeholder="— اختر —"
+                  triggerClassName={inputCls + ' cursor-pointer'}
+                  allowClear
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -824,15 +832,17 @@ export default function EvidenceForm({
               </div>
               <div>
                 <div className={labelCls}><i className="ti ti-calendar text-[var(--em7)]" /> الفصل الدراسي</div>
-                <select
-                  className={inputCls + ' cursor-pointer'}
+                <SelectDropdown
+                  options={[
+                    { value: 'الأول', label: 'الفصل الأول' },
+                    { value: 'الثاني', label: 'الفصل الثاني' },
+                  ]}
                   value={academicTerm}
-                  onChange={e => setAcademicTerm(e.target.value)}
-                >
-                  <option value="">— اختر —</option>
-                  <option value="الأول">الفصل الأول</option>
-                  <option value="الثاني">الفصل الثاني</option>
-                </select>
+                  onChange={setAcademicTerm}
+                  placeholder="— اختر —"
+                  triggerClassName={inputCls + ' cursor-pointer'}
+                  allowClear
+                />
               </div>
             </div>
 

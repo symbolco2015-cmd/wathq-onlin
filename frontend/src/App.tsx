@@ -12,7 +12,7 @@ import Dashboard from './components/Dashboard';
 import Public from './components/Public';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import Onboarding from './components/Onboarding';
-import { Modal, Toast } from './components/UI';
+import { Modal, Toast, SelectDropdown } from './components/UI';
 import EvidenceModal from './components/EvidenceModal';
 import { SECS } from './data';
 import { calculateEvaluation, isProfileIncomplete } from './utils';
@@ -502,15 +502,13 @@ export default function App() {
             </div>
             <div>
               <div className="text-[12px] font-bold text-[var(--text3)] mb-2">شهر بداية السنة الدراسية</div>
-              <select
-                value={localYearStart}
-                onChange={e => { const v = Number(e.target.value); setLocalYearStart(v); yearStart = v; }}
-                className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer"
-              >
-                {ARABIC_MONTHS_LIST.map(m => (
-                  <option key={m.v} value={m.v}>{m.l}</option>
-                ))}
-              </select>
+              <SelectDropdown
+                options={ARABIC_MONTHS_LIST.map(m => ({ value: String(m.v), label: m.l }))}
+                value={String(localYearStart)}
+                onChange={v => { const n = Number(v); setLocalYearStart(n); yearStart = n; }}
+                placeholder="اختر الشهر"
+                triggerClassName="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer"
+              />
               <div className="text-[11px] text-[var(--text4)] mt-1.5">يُستخدم لحساب المعدل الشهري ونسب الإنجاز السنوي</div>
             </div>
           </div>

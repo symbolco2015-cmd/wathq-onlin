@@ -74,7 +74,16 @@ export interface AppState {
 }
 
 /** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */
-export type PublicPortfolioState = Pick<AppState, 'ev' | 'strats' | 'csubs' | 'profile'>;
+export type PublicPortfolioState = Pick<AppState, 'ev' | 'strats' | 'csubs' | 'profile'> & {
+  /** ملخص عام مولَّد بالذكاء الاصطناعي (عمود ai_summary في portfolios) — غائب
+   * أو null قبل أول توليد أو لملف بلا شواهد مصنَّفة؛ الصفحة تتدهور بأمان لسلوكها
+   * الحالي بدون هذا الحقل. */
+  ai_summary?: string | null;
+  /** معرّف الشاهد الذي اختاره الذكاء الاصطناعي كأبرز إنجاز (عمود
+   * ai_top_achievement_evidence_id) — يُطابَق مقابل مصفوفة evidence المجلوبة من
+   * get_shared_evidence()؛ غائب أو null يعني الرجوع لمنطق heuristic القسم الأعلى اكتمالاً. */
+  ai_top_achievement_evidence_id?: string | null;
+};
 
 /** مؤشر الاستمرارية عبر الزمن — بداية السنة الدراسية + الأشهر التي فيها
  * توثيق فعلي (أي قسم)، لعرضها في Public.tsx. يُبنى من get_shared_monthly_progress()

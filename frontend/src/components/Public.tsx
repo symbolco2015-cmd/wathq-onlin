@@ -480,6 +480,23 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     return map;
   }, [evidence]);
 
+  // "أبرز إنجاز" مُختار بالذكاء الاصطناعي (ai_top_achievement_evidence_id) —
+  // مستقل تماماً عن شارة "أبرز إنجاز" على مستوى القسم (SectionCard/isTop/
+  // activeSecs أدناه)، لا بديل لها ولا تعديل عليها. يُعتمَد فقط إذا طابق شاهداً
+  // موجوداً فعلياً ضمن evidence (لا نفترض أن المعرّف صالح دائماً) وله section_id
+  // غير فارغ يقابل قسماً حقيقياً ضمن sections — حراسة مزدوجة تمنع الإشارة لشاهد
+  // غير مصنَّف أو لقسم لم يعد موجوداً، حتى لو لم يُطبَّق فلتر section_id IS NOT
+  // NULL على مستوى get_shared_evidence نفسها (غير مؤكَّد من ملفات هذا المستودع).
+  const aiTopAchievement = useMemo(() => {
+    const targetId = state.ai_top_achievement_evidence_id;
+    if (!targetId || !evidence) return null;
+    const matched = evidence.find(e => e.id === targetId);
+    if (!matched || matched.section_id == null) return null;
+    const section = sections.find(s => s.id === matched.section_id);
+    if (!section) return null;
+    return { evidence: matched, sectionName: section.ttl };
+  }, [state.ai_top_achievement_evidence_id, evidence, sections]);
+
   // نقاط ومستوى الملف العام (نافذة متحركة لآخر 3 أشهر) — تُبنى من
   // continuity.activeMonths (evidenceCount لكل شهر، بصرف النظر عن القسم)؛
   // غائبة فقط أثناء تحميل continuity أو تعذّر جلبه، فلا تُعرض الشارة حينها.
@@ -685,6 +702,57 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             </div>
             <div className="mt-3 text-[12.5px] font-bold relative z-10" style={{ color: getCompletionColor(overallPct) }}>{getCompletionLabel(overallPct)}</div>
           </div>
+
+          {/* ملخص الملف بالذكاء الاصطناعي (ai_summary) — لا يُعرض شيء إطلاقاً إن
+              كانت القيمة غائبة أو فارغة، بلا أي نص بديل أو رسالة خطأ */}
+          {state.ai_summary && (
+            <div className="print-card mb-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line)] shadow-lg p-6 sm:p-8 relative overflow-hidden">
+              <div className="print-decor absolute top-0 left-0 w-full h-[3px] bg-[var(--em7)]" />
+              <h2 className="text-[15px] font-bold text-[var(--text3)] flex items-center gap-2 mb-3 relative z-10">
+                <i className="ti ti-sparkles text-[var(--em8)]"></i> نبذة عن الملف
+              </h2>
+              <p className="text-[14px] text-[var(--text2)] leading-relaxed relative z-10">{state.ai_summary}</p>
+            </div>
+          )}
+
+          {/* بطاقة "أبرز إنجاز" المُختارة بالذكاء الاصطناعي — منفصلة تماماً عن
+              شارة "أبرز إنجاز" على مستوى القسم في شبكة الأقسام أدناه (لا تستبدلها
+              ولا تعدّلها). لا تُعرض إطلاقاً إن لم يجتز aiTopAchievement الحراسة
+              المزدوجة أعلاه */}
+          {aiTopAchievement && (
+            <div className="print-card mb-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--gold)]/25 shadow-lg p-6 sm:p-8 relative overflow-hidden">
+              <div className="print-decor absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-[var(--gold)] to-transparent" />
+              <div className="flex items-start gap-4 relative z-10">
+                <div className="w-12 h-12 rounded-2xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/25 flex items-center justify-center text-[22px] text-[var(--gold)]">
+                  <i className="ti ti-trophy"></i>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-bold text-[var(--gold3)] tracking-wider uppercase mb-1.5 flex items-center gap-1.5">
+                    <i className="ti ti-sparkles text-[12px]"></i> أبرز إنجاز
+                  </div>
+                  <h3 className="text-[17px] font-black text-white leading-snug">{aiTopAchievement.evidence.title}</h3>
+                  {aiTopAchievement.evidence.description && (
+                    <p className="text-[13px] text-[var(--text3)] mt-2 leading-relaxed">{aiTopAchievement.evidence.description}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    <span className="text-[11px] font-bold text-[var(--text4)] bg-white/5 border border-white/10 rounded-md py-1 px-2.5">
+                      {aiTopAchievement.sectionName}
+                    </span>
+                    {(aiTopAchievement.evidence.file_url || aiTopAchievement.evidence.link_url) && (
+                      <a
+                        href={aiTopAchievement.evidence.file_url ?? aiTopAchievement.evidence.link_url ?? undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] font-bold text-[var(--gold)] hover:underline flex items-center gap-1"
+                      >
+                        <i className="ti ti-external-link text-[11px]"></i> عرض الدليل
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {continuity && <ContinuityGrid continuity={continuity} />}
 

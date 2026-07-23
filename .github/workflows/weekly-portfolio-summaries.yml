@@ -1,0 +1,59 @@
+# جدولة أسبوعية لتوليد ملخصات "الملف العام" وأبرز إنجاز بالذكاء الاصطناعي —
+# تستدعي Edge Function واحدة (generate-portfolio-summaries)، والتي تتولى
+# اختيار الملفات المرشّحة (share_enabled = true + ai_summary_stale = true +
+# كولداون 7 أيام) وحجزها ذرياً بنفسها. راجع
+# backend/supabase/functions/generate-portfolio-summaries/index.ts للتفاصيل.
+#
+# التوقيت الحالي: السبت 3:00 صباحاً UTC (وقت منخفض الازدحام). عدّل قيمة cron
+# أدناه لتغيير الجدولة — الصيغة القياسية: "دقيقة ساعة يوم-الشهر شهر يوم-الأسبوع"
+# (يوم الأسبوع: 0=الأحد ... 6=السبت). مثال: لتغييره إلى كل يوم أحد 5 صباحاً UTC
+# استبدل '0 3 * * 6' بـ '0 5 * * 0'.
+#
+# Secrets مطلوبة في إعدادات المستودع (Settings → Secrets and variables → Actions):
+#   SUPABASE_PORTFOLIO_SUMMARY_URL  — رابط الدالة الكامل، مثال:
+#                                     https://<project-ref>.functions.supabase.co/generate-portfolio-summaries
+#   PORTFOLIO_SUMMARY_SERVICE_KEY   — نفس قيمة secret الدالة المضبوط على
+#                                     Supabase (Edge Functions → Secrets) —
+#                                     تُرسَل كهيدر مخصّص X-Portfolio-Summary-Key
+#                                     بدل Authorization، لأن بوابة Supabase
+#                                     (Kong) تتدخل تلقائياً بأي Authorization
+#                                     بصيغة sb_...، فهيدر مخصّص يتفادى ذلك
+#                                     تماماً (نفس السبب الموثَّق في
+#                                     process-bulk-queue لهيدر X-Bulk-Import-Key
+#                                     المماثل).
+#
+# Variables مطلوبة في نفس الصفحة (تبويب Variables، وليس Secrets):
+#   SUPABASE_ANON_KEY               — مفتاح anon العلني لهذا المشروع (نفس قيمة
+#                                     VITE_SUPABASE_ANON_KEY في frontend/.env،
+#                                     الظاهر أصلاً في حزمة الفرونت إند المصرَّفة
+#                                     القابلة للعرض في أي متصفح — ليس سرياً على
+#                                     الإطلاق). وُضع في Variables لا Secrets
+#                                     عمداً: القيمة تبقى قابلة للمراجعة لاحقاً من
+#                                     واجهة GitHub، بعكس Secrets التي تُخفى نهائياً
+#                                     بعد الحفظ. مطلوب لأن بوابة Supabase (Kong)
+#                                     تفرض وجود Authorization صالح (anon أو JWT)
+#                                     قبل وصول الطلب لكود الدالة أصلاً — بصرف
+#                                     النظر تماماً عن X-Portfolio-Summary-Key الذي
+#                                     يبقى وحده مسؤولاً عن اختيار مسار الدفعة
+#                                     الموثوق داخل كود الدالة نفسه.
+
+name: Weekly Portfolio Summaries
+
+on:
+  schedule:
+    - cron: '0 3 * * 6'
+  workflow_dispatch: {}
+
+jobs:
+  generate-summaries:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger generate-portfolio-summaries Edge Function
+        run: |
+          curl --fail --silent --show-error \
+            --request POST \
+            "${{ secrets.SUPABASE_PORTFOLIO_SUMMARY_URL }}" \
+            --header "Authorization: Bearer ${{ vars.SUPABASE_ANON_KEY }}" \
+            --header "X-Portfolio-Summary-Key: ${{ secrets.PORTFOLIO_SUMMARY_SERVICE_KEY }}" \
+            --header "Content-Type: application/json" \
+            --data '{}'

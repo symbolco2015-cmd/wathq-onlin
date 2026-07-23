@@ -93,3 +93,38 @@ export async function callAIProviderMultiImage(
 
   return { text: text.trim() };
 }
+
+// نفس النداء أعلاه لكن بلا أي inline_data (لا صورة ولا صوت) — نص فقط. مستخدمة في
+// generate-portfolio-summaries التي تلخّص شواهد نصية (عنوان/وصف) بدل تحليل ملف
+// مرفق. بقية الدوال أعلاه (صورة/صوت واحد، أو عدة صور) تبقى كما هي لبقية الميزات.
+export async function callAIProviderText(promptText: string): Promise<{ text: string }> {
+  const apiKey = Deno.env.get('GEMINI_API_KEY');
+  const modelName = Deno.env.get('AI_MODEL_NAME');
+  if (!apiKey || !modelName) {
+    throw new Error('AI provider is not configured (missing GEMINI_API_KEY or AI_MODEL_NAME).');
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }],
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`AI provider request failed (${res.status}): ${errText}`);
+  }
+
+  const json = await res.json();
+  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text || typeof text !== 'string') {
+    throw new Error('AI provider returned no usable text.');
+  }
+
+  return { text: text.trim() };
+}

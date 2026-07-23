@@ -364,6 +364,97 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     refetchBulkImportReadyCount();
   }, [refetchBulkImportReadyCount]);
 
+  // ملخص الملف العام بالذكاء الاصطناعي — حالة أهلية زر "تحديث الملخص الآن".
+  // نفس الحقول المستخدمة في شرط الحجز الذري داخل generate-portfolio-summaries
+  // (ai_summary_stale + كولداون 7 أيام) بالإضافة إلى share_enabled الذي تفرضه
+  // الدالة كفحص منفصل قبل الحجز في مسارها اليدوي — تُحسَب هنا محلياً فقط لعرض
+  // نص الزر، لا كبديل عن تحقق الدالة نفسها.
+  const [summaryStatus, setSummaryStatus] = useState<{
+    shareEnabled: boolean;
+    stale: boolean;
+    generatedAt: string | null;
+  } | null>(null);
+  const [summaryRefreshBusy, setSummaryRefreshBusy] = useState(false);
+
+  const refetchSummaryStatus = useCallback(() => {
+    if (!supabase || !userId) { setSummaryStatus(null); return; }
+    supabase
+      .from('portfolios')
+      .select('share_enabled, ai_summary_stale, ai_summary_generated_at')
+      .eq('id', userId)
+      .single()
+      .then(({ data, error }) => {
+        if (error) { console.warn('[Dashboard] تعذّر جلب حالة ملخص الملف العام:', error.message); return; }
+        setSummaryStatus({
+          shareEnabled: !!data?.share_enabled,
+          stale: data?.ai_summary_stale ?? true,
+          generatedAt: data?.ai_summary_generated_at ?? null,
+        });
+      });
+  }, [userId]);
+
+  useEffect(() => {
+    refetchSummaryStatus();
+  }, [refetchSummaryStatus]);
+
+  const SUMMARY_COOLDOWN_DAYS = 7;
+  const summaryDaysSince = summaryStatus?.generatedAt
+    ? Math.floor((Date.now() - new Date(summaryStatus.generatedAt).getTime()) / 86400000)
+    : null;
+  const summaryCooldownPassed = summaryDaysSince === null || summaryDaysSince >= SUMMARY_COOLDOWN_DAYS;
+  const summaryDaysRemaining = summaryDaysSince !== null && !summaryCooldownPassed
+    ? SUMMARY_COOLDOWN_DAYS - summaryDaysSince
+    : 0;
+
+  let summaryButtonDisabled = summaryRefreshBusy || !summaryStatus;
+  let summaryHelperText: string | null = null;
+  if (summaryStatus && !summaryStatus.shareEnabled) {
+    summaryButtonDisabled = true;
+    summaryHelperText = 'فعّل المشاركة العامة من إعدادات الملف الشخصي أولاً';
+  } else if (summaryStatus && !summaryStatus.stale) {
+    summaryButtonDisabled = true;
+    summaryHelperText = 'لا يوجد تغيير جديد منذ آخر ملخص';
+  } else if (summaryStatus && !summaryCooldownPassed) {
+    summaryButtonDisabled = true;
+    summaryHelperText = `آخر تحديث: منذ ${summaryDaysSince} ${summaryDaysSince === 1 ? 'يوم' : 'أيام'} — يمكنك التحديث بعد ${summaryDaysRemaining} ${summaryDaysRemaining === 1 ? 'يوم' : 'أيام'}`;
+  }
+
+  const handleRefreshSummary = async () => {
+    if (!supabase || summaryRefreshBusy) return;
+    setSummaryRefreshBusy(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) {
+        onToast?.('يجب تسجيل الدخول أولاً ⚠️', '⚠️');
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke('generate-portfolio-summaries', {
+        body: {},
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (error) {
+        onToast?.('تعذّر تحديث الملخص، حاول مجدداً ❌', '❌');
+        return;
+      }
+      if (data?.updated && data?.summarized) {
+        onToast?.('تم تحديث الملخص بنجاح ✅', '✅');
+      } else if (data?.reason === 'sharing_disabled') {
+        onToast?.('فعّل المشاركة العامة أولاً من إعدادات الملف الشخصي', 'ℹ️');
+      } else if (data?.reason === 'no_evidence') {
+        onToast?.('لا توجد شواهد مصنَّفة كافية لإنشاء ملخص بعد', 'ℹ️');
+      } else {
+        onToast?.('الملخص غير مؤهل للتحديث حالياً', 'ℹ️');
+      }
+      refetchSummaryStatus();
+    } catch (err) {
+      console.error('[Dashboard] فشل تحديث الملخص:', err);
+      onToast?.('تعذّر تحديث الملخص، حاول مجدداً ❌', '❌');
+    } finally {
+      setSummaryRefreshBusy(false);
+    }
+  };
+
   // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية
   const { stats: evStats, getSectionStat } = useEvidenceStore({
     ev: state.ev,
@@ -710,6 +801,46 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
               >
                 <i className="ti ti-photo-check text-[15px]" /> مراجعة الآن
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* بانر: ملخص الملف العام بالذكاء الاصطناعي — مستقل تماماً عن البانرات
+            الثلاثة أعلاه (مصدر البيانات: عمودا ai_summary_stale/ai_summary_generated_at
+            على portfolios، وليس evidence أو bulk_import_queue). يظهر دائماً طالما
+            summaryStatus محمَّل — حتى لمن لم يفعّل المشاركة العامة بعد، مع
+            summaryHelperText يوجّهه لتفعيلها أولاً، بدل إخفاء الميزة كلياً. */}
+        {summaryStatus && (
+          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--em7)]/25 bg-gradient-to-br from-[var(--em7)]/10 via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
+            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--em7)]/40 to-transparent" />
+            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--em7)]/10 border border-[var(--em7)]/20 flex items-center justify-center text-[22px] text-[var(--em8)]">
+                  <i className="ti ti-sparkles" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-[var(--em8)]/80 tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
+                    <i className="ti ti-file-text text-[12px]" /> ملخص الملف العام
+                  </div>
+                  <div className="text-[15px] font-extrabold text-white leading-snug">
+                    ملخص وأبرز إنجاز بالذكاء الاصطناعي لصفحة المشاركة
+                  </div>
+                  {summaryHelperText && (
+                    <div className="text-[12.5px] text-[var(--text3)] mt-1">{summaryHelperText}</div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={handleRefreshSummary}
+                disabled={summaryButtonDisabled}
+                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--em6)] to-[var(--em8)] text-white border border-[var(--em7)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(42,122,68,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              >
+                {summaryRefreshBusy ? (
+                  <><i className="ti ti-loader animate-spin text-[15px]" /> جارٍ التحديث...</>
+                ) : (
+                  <><i className="ti ti-refresh text-[15px]" /> تحديث الملخص الآن</>
+                )}
               </button>
             </div>
           </div>

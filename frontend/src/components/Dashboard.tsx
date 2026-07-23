@@ -1614,6 +1614,12 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           )}
         </div>
         </>}
+
+        <footer className="mt-12 pt-6 border-t border-[var(--line)] text-center">
+          <p className="text-[12px] font-normal text-[var(--text4)]">
+            جميع الحقوق محفوظة لدى <span className="text-[var(--gold3)]">وثق</span> © {new Date().getFullYear()}
+          </p>
+        </footer>
       </main>
 
       {/* FAB Speed Dial — Mobile only */}

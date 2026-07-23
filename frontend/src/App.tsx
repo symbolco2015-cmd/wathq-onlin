@@ -54,6 +54,8 @@ export default function App() {
     shareEnabled,
     updateShareEnabled,
     setAiSuggestConsent,
+    aiSummary,
+    aiTopAchievementEvidenceId,
   } = useAppStore();
 
   const {
@@ -798,7 +800,14 @@ export default function App() {
           />
         )}
 
-        {currentPage === 'public' && <Public state={state} sections={SECS} continuity={ownContinuity} evidence={supabaseEv.evidence} />}
+        {currentPage === 'public' && (
+          <Public
+            state={{ ...state, ai_summary: aiSummary, ai_top_achievement_evidence_id: aiTopAchievementEvidenceId }}
+            sections={SECS}
+            continuity={ownContinuity}
+            evidence={supabaseEv.evidence}
+          />
+        )}
         
         {currentPage === 'admin' && isAdmin && (
           <AdminDashboard

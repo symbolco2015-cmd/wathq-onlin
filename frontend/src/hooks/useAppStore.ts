@@ -46,6 +46,12 @@ export function useAppStore() {
   // share_enabled يعيش في عمود مستقل بجدول portfolios (وليس داخل state JSONB) —
   // الافتراضي معطّل دائماً؛ المعلم وحده من يفعّله من إعدادات حسابه.
   const [shareEnabled, setShareEnabled] = useState(false);
+  // ai_summary / ai_top_achievement_evidence_id: عمودان مستقلان بجدول portfolios
+  // (وليسا داخل state JSONB) — لا يجب دمجهما في AppState لأن ذلك يجعلهما يُكتَبان
+  // خطأً داخل عمود state عند أي saveState لاحق. تُحفظان هنا بمعزل تام، ويُبنى منهما
+  // كائن مركَّب عند التمرير لمكوّن Public.tsx فقط في معاينة المالك لملفه الخاص.
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiTopAchievementEvidenceId, setAiTopAchievementEvidenceId] = useState<string | null>(null);
 
   // 1. Listen to Auth State
   useEffect(() => {
@@ -70,6 +76,8 @@ export function useAppStore() {
         // Reset state on logout
         setState(defaultState);
         setShareEnabled(false);
+        setAiSummary(null);
+        setAiTopAchievementEvidenceId(null);
       }
     });
 
@@ -164,7 +172,7 @@ export function useAppStore() {
         try {
           const { data, error } = await supabase
             .from('portfolios')
-            .select('state, share_enabled')
+            .select('state, share_enabled, ai_summary, ai_top_achievement_evidence_id')
             .eq('id', user.id)
             .single();
 
@@ -182,6 +190,8 @@ export function useAppStore() {
               }
             });
             setShareEnabled(!!data.share_enabled);
+            setAiSummary(data.ai_summary ?? null);
+            setAiTopAchievementEvidenceId(data.ai_top_achievement_evidence_id ?? null);
             setLoading(false);
             return;
           } else {
@@ -197,6 +207,8 @@ export function useAppStore() {
             };
             setState(initialStateWithProfile);
             setShareEnabled(false); // ملف جديد دائماً غير مفعّل للمشاركة العامة افتراضياً
+            setAiSummary(null);
+            setAiTopAchievementEvidenceId(null);
 
             // Save newly seeded state to DB
             const { error: insertError } = await supabase
@@ -233,6 +245,8 @@ export function useAppStore() {
           });
         }
       } catch (e) {}
+      setAiSummary(null);
+      setAiTopAchievementEvidenceId(null);
       setLoading(false);
     }
 
@@ -426,6 +440,8 @@ export function useAppStore() {
     shareEnabled,
     updateShareEnabled,
     setAiSuggestConsent,
+    aiSummary,
+    aiTopAchievementEvidenceId,
   };
 }
 

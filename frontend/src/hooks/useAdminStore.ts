@@ -335,7 +335,10 @@ export function useAdminStore(isAdmin: boolean) {
 
   // Get the public share URL for a user
   const getShareUrl = (userId: string): string => {
-    return `${window.location.origin}${window.location.pathname}?share=${userId}`;
+    // Hardcoded "/" — not window.location.pathname, which inherits whatever
+    // path the admin happened to be on and produces a broken share link
+    // (e.g. https://wathq.online/robots.txt?share=...).
+    return `${window.location.origin}/?share=${userId}`;
   };
 
   // Create a new announcement (admin only)

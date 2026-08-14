@@ -9,6 +9,16 @@ type SupabaseEvidenceHook = ReturnType<typeof import('./useSupabaseEvidence').us
 // نفس حد الصور في EvidenceForm (TYPE_CONFIG['image'].maxSizeMB)
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
+// إيقاف مؤقت لميزة "تسجيل صوتي سريع" (2026-08-14) — شاهد صوتي بلا دليل
+// بصري لا يخدم غرض التوثيق جيداً، إضافة لمشكلة تصنيف تلقائي معروفة بالذكاء
+// الاصطناعي (section_id قد يُحفَظ null فلا يظهر الشاهد في القسم المتوقَّع).
+// ستُعاد الميزة لاحقاً بتصميم أفضل. لا يمسّ هذا التبديل EvidenceForm (له
+// ميزة توثيق صوتي منفصلة عبر useVoiceRecording مباشرة، لا تمر من هنا).
+// لإعادة التفعيل: أعد القيمة إلى true فقط. مُصدَّرة لأن Dashboard.tsx يعرض
+// محتوى بديلاً ثابتاً داخل الـBottom Sheet نفسه بدل التدفّق المعتاد.
+export const VOICE_CAPTURE_ENABLED = false;
+export const VOICE_CAPTURE_DISABLED_MESSAGE = 'هذه الميزة قيد التطوير حالياً وستعود قريباً بشكل أفضل';
+
 const base64ToBlob = (base64: string, mimeType: string): Blob => {
   const byteChars = atob(base64);
   const byteNumbers = new Array(byteChars.length);
@@ -126,6 +136,9 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
   const [voiceSaving, setVoiceSaving] = useState(false);
 
   const startVoiceCapture = () => {
+    // معطَّلة مؤقتاً — يُفتح الشيت ليعرض رسالة "قيد التطوير" فقط، دون طلب
+    // إذن الميكروفون أو استدعاء getUserMedia بأي شكل (انظر VOICE_CAPTURE_ENABLED أعلاه)
+    if (!VOICE_CAPTURE_ENABLED) { setVoiceSheetOpen(true); return; }
     if (!aiConsentGiven) { setVoiceConsentPromptOpen(true); return; }
     setVoiceSheetOpen(true);
     voiceRecording.startRecording();

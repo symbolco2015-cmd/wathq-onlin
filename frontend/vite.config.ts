@@ -39,6 +39,14 @@ export default defineConfig(() => {
           // never touched by the service worker — they always hit the
           // network, same as without a PWA.
           globPatterns: ['**/*.{js,css,html,woff,woff2,png,svg,ico}'],
+          // injectRegister: 'script' (CSP-driven, see above) means
+          // vite-plugin-pwa does NOT auto-enable these for registerType:
+          // 'autoUpdate' (it only does so for injectRegister 'auto'/null).
+          // Without them, a new SW installs but stays stuck in 'waiting'
+          // forever since registerSW.js never posts SKIP_WAITING — set
+          // explicitly so the new SW activates and takes control immediately.
+          skipWaiting: true,
+          clientsClaim: true,
         },
       }),
     ],

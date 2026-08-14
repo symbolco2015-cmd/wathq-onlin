@@ -8,7 +8,7 @@ import EvidenceForm from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
 import { calculateEvaluation, calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
-import { useQuickCapture } from '../hooks/useQuickCapture';
+import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import { supabase } from '../supabaseClient';
 import BulkImportPicker from './BulkImportPicker';
@@ -1810,7 +1810,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             </div>
             <div className="text-[16px] font-black text-white flex items-center gap-2">
               تسجيل صوتي سريع
-              <span className="text-[9.5px] font-black text-[var(--gold)] bg-[var(--gold)]/10 border border-[var(--gold)]/30 rounded-full px-2 py-0.5">Beta</span>
+              <span className="text-[9.5px] font-black text-[var(--gold)] bg-[var(--gold)]/10 border border-[var(--gold)]/30 rounded-full px-2 py-0.5">قيد التطوير</span>
             </div>
           </div>
           <button
@@ -1821,7 +1821,21 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           </button>
         </div>
         <div className="overflow-y-auto flex-1 p-6 space-y-4">
-          {quickCapture.voiceConsentPromptOpen ? (
+          {!VOICE_CAPTURE_ENABLED ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-[var(--gold)]/10 border border-[var(--gold)]/25 flex items-center justify-center text-[26px] text-[var(--gold3)]">
+                <i className="ti ti-tools" />
+              </div>
+              <p className="text-[13.5px] text-[var(--text3)] font-bold leading-relaxed max-w-[260px]">{VOICE_CAPTURE_DISABLED_MESSAGE}</p>
+              <button
+                type="button"
+                onClick={quickCapture.cancelVoiceCapture}
+                className="py-2 px-5 rounded-lg border border-[var(--line2)] text-[var(--text3)] text-[12.5px] font-bold cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          ) : quickCapture.voiceConsentPromptOpen ? (
             <div className="bg-black/20 border border-[var(--gold)]/25 rounded-xl p-3.5 space-y-3">
               <p className="text-[12.5px] text-[var(--text3)] leading-relaxed">{AI_CONSENT_TEXT}</p>
               <div className="flex items-center gap-2">

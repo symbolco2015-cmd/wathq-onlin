@@ -566,14 +566,22 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     if (supabase) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.id) {
-        const url = `${window.location.origin}${window.location.pathname}?share=${user.id}`;
+        // Hardcoded "/" — not window.location.pathname, which inherits
+        // whatever path the user happened to be on and produces a broken
+        // share link (e.g. https://wathq.online/robots.txt?share=...).
+        const url = `${window.location.origin}/?share=${user.id}`;
         setShareUrl(url);
         return url;
       }
     }
 
-    // Fallback: current URL (e.g. if already in shared view)
-    return window.location.href;
+    // Fallback: current URL (e.g. if already in shared view — the page was
+    // already loaded at .../?share=xxx, so location.href is correct here).
+    // Cached in state too, so the QR modal (which reads shareUrl directly,
+    // no inline fallback) always has a value once this resolves.
+    const fallbackUrl = window.location.href;
+    setShareUrl(fallbackUrl);
+    return fallbackUrl;
   };
 
   const handleOpenShare = async () => {
@@ -906,7 +914,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             <div className="p-6 flex flex-col items-center">
               <div className="bg-white p-4 rounded-2xl mb-5 shadow-[0_8px_30px_rgba(0,0,0,.3)]">
                 <QRCodeSVG
-                  value={shareUrl || window.location.href}
+                  value={shareUrl}
                   size={180}
                   level="H"
                   fgColor="#000000"
@@ -930,7 +938,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                   {copied ? <i className="ti ti-check text-[16px]"></i> : <i className="ti ti-copy text-[16px]"></i>}
                 </button>
                 <div className="flex-1 px-4 py-3 text-[12px] text-[var(--text4)] overflow-hidden text-ellipsis whitespace-nowrap bg-[var(--surf0)] text-left" dir="ltr">
-                  {shareUrl || window.location.href}
+                  {shareUrl}
                 </div>
               </div>
             </div>

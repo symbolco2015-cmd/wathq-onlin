@@ -2,6 +2,7 @@ import { useState } from 'react';
 import EvidenceModal from '../EvidenceModal';
 import type { EvidenceFormProps } from '../EvidenceForm';
 import ResultsBarChart from './ResultsBarChart';
+import ConvertToEvidenceFlow from './ConvertToEvidenceFlow';
 import type { SmartCheckResult } from './useResultsAnalysis';
 import type { GradeBand, ResultsAnalysisRow } from './types';
 import type { SectionData } from '../../types';
@@ -30,8 +31,9 @@ type SmartCheckKind = 'remedial' | 'honor';
 interface SmartCheckState { loading: boolean; result: SmartCheckResult | null; }
 
 export default function AnalysisDetailSheet({
-  analysis, bands, userId, supabaseEv, onAddEv, onToast, runSmartCheck, onClose,
+  analysis, bands, sections, userId, supabaseEv, onAddEv, onToast, runSmartCheck, onClose,
 }: AnalysisDetailSheetProps) {
+  const [convertOpen, setConvertOpen] = useState(false);
   const [addEvidenceTarget, setAddEvidenceTarget] = useState<{ open: boolean; sub: string }>({ open: false, sub: '' });
   const [checks, setChecks] = useState<Record<SmartCheckKind, SmartCheckState>>({
     remedial: { loading: false, result: null },
@@ -75,6 +77,12 @@ export default function AnalysisDetailSheet({
           <div className="bg-white/3 border border-[var(--line2)] rounded-2xl p-4">
             <ResultsBarChart summary={analysis.summary} bands={bands} />
           </div>
+          <button
+            onClick={() => setConvertOpen(true)}
+            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--gold)]/10 border border-[var(--gold)]/25 text-[var(--gold3)] text-[12.5px] font-bold cursor-pointer hover:bg-[var(--gold)]/15 transition-colors"
+          >
+            <i className="ti ti-photo-share" /> تحويل لشاهد
+          </button>
         </section>
 
         {/* جدول الطلاب — الأسماء ظاهرة كاملة دائماً في هذا التدفق */}
@@ -141,6 +149,19 @@ export default function AnalysisDetailSheet({
           )}
         </section>
       </div>
+
+      {convertOpen && (
+        <ConvertToEvidenceFlow
+          analysis={analysis}
+          bands={bands}
+          sections={sections}
+          userId={userId}
+          supabaseEv={supabaseEv}
+          onAddEv={onAddEv}
+          onToast={onToast}
+          onClose={() => setConvertOpen(false)}
+        />
+      )}
 
       {addEvidenceTarget.open && (
         <EvidenceModal

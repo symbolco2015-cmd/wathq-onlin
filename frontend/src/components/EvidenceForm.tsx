@@ -37,6 +37,10 @@ export interface EvidenceFormProps {
   createdAt?: string;
   aiConsentGiven?: boolean;
   onGiveAiConsent?: () => void;
+  /** يُمرَّر فقط من تدفق "تحويل لشاهد" في أداة تحليل نتائج المتعلمين — الملف
+   *  مرفوع مسبقاً لـ bucket evidence، فيُفتح النموذج بنوع "صورة" وعنوان
+   *  وملف جاهزَين بدل حقول فارغة، مع بقاء كل الحقول قابلة للتعديل. */
+  prefill?: { title: string; fileUrl: string; fileName: string };
 }
 
 const readFileAsBase64 = (file: File): Promise<string> =>
@@ -103,7 +107,7 @@ const toLocalType = (t: EvidenceType): 'pdf' | 'img' | 'doc' | 'vid' => {
  */
 export default function EvidenceForm({
   isOpen, onClose, sectionId, sub, userId, supabaseEv, onAddEv, onToast, createdAt,
-  aiConsentGiven, onGiveAiConsent,
+  aiConsentGiven, onGiveAiConsent, prefill,
 }: EvidenceFormProps) {
   // ── Form state ──────────────────────────────────────────────
   const [title,          setTitle]          = useState('');
@@ -157,13 +161,14 @@ export default function EvidenceForm({
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Reset form whenever modal opens
+  // Reset form whenever modal opens — أو ابدأ من قيم prefill لو مُمرَّرة
+  // (تدفق "تحويل لشاهد": الملف مرفوع مسبقاً، لا حاجة لإعادة رفعه)
   useEffect(() => {
     if (!isOpen) return;
-    setTitle(''); setIndicatorId(''); setEvidenceType('file');
+    setTitle(prefill?.title ?? ''); setIndicatorId(''); setEvidenceType(prefill ? 'image' : 'file');
     setDescription(''); setImpact(''); setContextGrade('');
     setAcademicTerm(''); setSelfReflection(''); setLinkUrl('');
-    setFileUrl(''); setFileName(''); setUploadSuccess(false);
+    setFileUrl(prefill?.fileUrl ?? ''); setFileName(prefill?.fileName ?? ''); setUploadSuccess(!!prefill);
     setStratDate(''); setStratStage(''); setStratGrade(''); setStratPeriod(''); setStratSubject('');
     setAiSelectedFile(null); setAiConsentPromptOpen(false); setAiLoading(false);
     setAiTitleSuggestion(''); setAiIndicatorSuggestion(null); setAiDescriptionSuggestion(''); setAiSuggestionAttempted(false);

@@ -14,6 +14,7 @@ import { supabase } from '../supabaseClient';
 import BulkImportPicker from './BulkImportPicker';
 import BulkImportReview from './BulkImportReview';
 import HarvestReportSheet from './HarvestReportSheet';
+import ResultsAnalysisCard from './ResultsAnalysis/ResultsAnalysisCard';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -880,6 +881,15 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             </div>
           </div>
         )}
+
+        {/* أداة تحليل وتحسين نتائج المتعلمين — مستقلة تماماً عن شبكة الأقسام الـ11 */}
+        <ResultsAnalysisCard
+          userId={userId}
+          sections={sections}
+          supabaseEv={supabaseEv}
+          onAddEv={onAddEv}
+          onToast={onToast}
+        />
 
         {/* NEXT STEP CARD */}
         {nextSectionData && (

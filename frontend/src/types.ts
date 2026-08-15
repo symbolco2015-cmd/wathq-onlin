@@ -1,3 +1,5 @@
+import type { SupabaseEvidence } from './hooks/useSupabaseEvidence';
+
 export type PageType = 'auth' | 'dashboard' | 'public' | 'admin';
 
 export interface Evidence {
@@ -54,6 +56,13 @@ export interface AcademicDate {
   hijri_label?: string;
   created_at: string;
   created_by?: string;
+  /** طرف الفصل الدراسي الذي يمثله هذا الموعد (بداية/نهاية) — يُستخدم لبناء
+   * أزواج المدى الزمني لتقرير الحصاد الفصلي. اختياري بالكامل؛ المواعيد
+   * القديمة بلا هذا الحقل لا تظهر في قائمة "الفصول المتاحة" بالتقرير فقط. */
+  semester_boundary?: 'start' | 'end' | null;
+  /** رقم الفصل الدراسي (١/٢/٣) المقابل — يُطابَق بين موعدي البداية/النهاية
+   * لنفس الفصل عند بناء أزواج المدى. */
+  semester_number?: 1 | 2 | 3 | null;
 }
 
 export interface AppState {
@@ -94,5 +103,49 @@ export interface ContinuityData {
    * عن القسم) — اختياري لأن الاستمرارية القديمة لا تحتاجه، يُستخدم فقط من
    * calculatePointsLevel في Public.tsx لحساب نقاط/مستوى الملف العام. */
   activeMonths: { year: number; month: number; evidenceCount?: number }[];
+}
+
+/** نسخة مجمَّدة من PointsLevelInfo (utils.ts) وقت توليد تقرير الحصاد الفصلي —
+ * مكرَّرة هنا عمداً (بدل استيراد النوع من utils.ts) لتفادي أي اعتماد دائري
+ * بين types.ts وutils.ts؛ الحقول مطابقة تماماً لما يُرجعه calculatePointsLevel. */
+export interface FrozenPointsLevel {
+  points: number;
+  levelId: 'steady' | 'confident' | 'exemplary';
+  levelLabel: string;
+  levelIcon: string;
+}
+
+/** لقطة ثابتة لتقرير حصاد فصلي — تُبنى مرة واحدة وقت التوليد في Dashboard.tsx
+ * وتُحفظ كما هي في عمود harvest_reports.snapshot؛ Public.tsx يعرضها مباشرة
+ * بلا أي إعادة حساب حي (خلافاً لمسار ?share=). */
+export interface HarvestSnapshot {
+  /** نفس شكل PublicPortfolioState الذي يستهلكه Public.tsx حالياً — ev/csubs
+   * هنا مبنيان فقط من شواهد الفترة المختارة (وليس كامل الملف)، انظر التعليق
+   * في Dashboard.tsx لتفاصيل بناء مفاتيح ev الاصطناعية من section_indicators. */
+  state: PublicPortfolioState;
+  /** مؤشر الاستمرارية، محسوب من monthly_progress ضمن المدى المختار فقط. */
+  continuity: ContinuityData;
+  /** شواهد جدول evidence الغني ضمن المدى المختار — impact/self_reflection
+   * مُفرَّغة دائماً (null) بنفس منطق الخصوصية في get_shared_evidence، لأن هذا
+   * التقرير قابل للقراءة العامة عبر id (انظر RLS على harvest_reports). */
+  evidence: SupabaseEvidence[];
+  /** شارة اللقب/النقاط محسوبة مرة واحدة وقت التوليد من شواهد المدى المختار
+   * فقط (وليس نافذة آخر 3 أشهر التقويمية المعتادة) — Public.tsx يعرضها كما
+   * هي في وضع التقرير بدل إعادة حسابها حياً من continuity. */
+  pointsLevel: FrozenPointsLevel;
+  periodLabel: string;
+  periodFrom: string;
+  periodTo: string;
+  generatedAt: string;
+}
+
+export interface HarvestReport {
+  id: string;
+  portfolio_id: string;
+  period_label: string;
+  period_from: string;
+  period_to: string;
+  snapshot: HarvestSnapshot;
+  generated_at: string;
 }
 

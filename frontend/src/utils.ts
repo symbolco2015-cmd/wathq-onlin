@@ -1,4 +1,5 @@
 import type { AcademicDate, AppState, SectionData, UserProfile } from './types';
+import type { EvidenceType } from './hooks/useSupabaseEvidence';
 
 // القيمة الافتراضية التي يضعها trigger قاعدة البيانات (handle_new_user) للحسابات
 // الجديدة التي لم تُكمّل بياناتها بعد — تُستخدم لتمييز الملف "الناقص" عن "المكتمل".
@@ -86,18 +87,10 @@ const POINTS_LEVELS: { id: PointsLevelId; min: number; label: string; icon: stri
   { id: 'exemplary', min: 200, label: 'قدوة متميزة', icon: 'ti-crown' },
 ];
 
-/** نقاط ومستوى الملف — نافذة متحركة لآخر 3 أشهر تقويمية (الحالي + السابقين).
- * الأشهر التي لا صفوف لها (معلم جديد لم يكمل 3 أشهر بعد) تساهم بصفر تلقائياً
- * دون أي حالة خاصة — الجمع يعمل فقط على ما هو متاح فعلياً في monthlyEntries. */
-export function calculatePointsLevel(monthlyEntries: MonthlyPointsEntry[]): PointsLevelInfo {
-  const now = new Date();
-  const currentFlat = now.getFullYear() * 12 + (now.getMonth() + 1);
-  const windowFlats = new Set([currentFlat, currentFlat - 1, currentFlat - 2]);
-
-  const points = monthlyEntries
-    .filter(e => windowFlats.has(e.year * 12 + e.month))
-    .reduce((sum, e) => sum + (e.evidenceCount || 0), 0);
-
+/** يحسب اللقب/العتبة التالية لعدد نقاط جاهز مسبقاً — مستخرجة من
+ * calculatePointsLevel لإعادة استخدامها في calculatePointsLevelFromTotal
+ * (تقرير الحصاد الفصلي) بلا أي تكرار لجدول العتبات نفسه. */
+function levelForPoints(points: number): Omit<PointsLevelInfo, 'points'> {
   let current = POINTS_LEVELS[0];
   let next: typeof POINTS_LEVELS[number] | null = null;
   for (let i = POINTS_LEVELS.length - 1; i >= 0; i--) {
@@ -114,7 +107,6 @@ export function calculatePointsLevel(monthlyEntries: MonthlyPointsEntry[]): Poin
     : null;
 
   return {
-    points,
     levelId: current.id,
     levelLabel: current.label,
     levelIcon: current.icon,
@@ -122,6 +114,39 @@ export function calculatePointsLevel(monthlyEntries: MonthlyPointsEntry[]): Poin
     pointsToNext,
     progressToNext,
   };
+}
+
+/** نقاط ومستوى الملف — نافذة متحركة لآخر 3 أشهر تقويمية (الحالي + السابقين).
+ * الأشهر التي لا صفوف لها (معلم جديد لم يكمل 3 أشهر بعد) تساهم بصفر تلقائياً
+ * دون أي حالة خاصة — الجمع يعمل فقط على ما هو متاح فعلياً في monthlyEntries. */
+export function calculatePointsLevel(monthlyEntries: MonthlyPointsEntry[]): PointsLevelInfo {
+  const now = new Date();
+  const currentFlat = now.getFullYear() * 12 + (now.getMonth() + 1);
+  const windowFlats = new Set([currentFlat, currentFlat - 1, currentFlat - 2]);
+
+  const points = monthlyEntries
+    .filter(e => windowFlats.has(e.year * 12 + e.month))
+    .reduce((sum, e) => sum + (e.evidenceCount || 0), 0);
+
+  return { points, ...levelForPoints(points) };
+}
+
+/** نفس جدول عتبات calculatePointsLevel، لكن على مجموع نقاط جاهز مسبقاً بدل
+ * نافذة "آخر 3 أشهر تقويمية" — تُستخدم حصرياً لتقرير الحصاد الفصلي (Dashboard.tsx)
+ * حيث تُحسب النقاط من شواهد المدى المختار فقط، لا مِن الشهر الحالي. لا تُستخدم
+ * في أي مسار حي آخر، وبالتالي لا تغيّر سلوك calculatePointsLevel القائم. */
+export function calculatePointsLevelFromTotal(points: number): PointsLevelInfo {
+  return { points, ...levelForPoints(points) };
+}
+
+/** يحوّل نوع شاهد جدول evidence الغني إلى نوع Evidence القديم الأربعة الأنواع
+ * — نسخة طبق الأصل من toLocalType المحلية في EvidenceForm.tsx (غير مصدَّرة من
+ * هناك)، مُصدَّرة هنا لإعادة استخدامها عند بناء لقطة تقرير الحصاد الفصلي. */
+export function supabaseEvidenceTypeToLocal(t: EvidenceType): 'pdf' | 'img' | 'doc' | 'vid' {
+  if (t === 'image') return 'img';
+  if (t === 'video') return 'vid';
+  if (t === 'file') return 'pdf';
+  return 'doc';
 }
 
 export function calculateEvaluation(state: Pick<AppState, 'ev' | 'strats' | 'csubs'>, sections: SectionData[]) {

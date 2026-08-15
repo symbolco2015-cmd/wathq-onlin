@@ -4,6 +4,7 @@ import { useAppStore } from './hooks/useAppStore';
 import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
 import { usePublicEvidence } from './hooks/usePublicEvidence';
+import { useHarvestReport } from './hooks/useHarvestReport';
 
 import Background from './components/Background';
 import Nav from './components/Nav';
@@ -26,9 +27,12 @@ const SECS_REMOVED = true;
 export default function App() {
   // Read ?share=USER_ID from URL — if present, show that user's public profile directly
   const shareUserId = new URLSearchParams(window.location.search).get('share');
+  // Read ?report=REPORT_ID — مسار منفصل تماماً عن ?share=: يعرض لقطة ثابتة من
+  // harvest_reports بدل الملف الحي (انظر useHarvestReport وblock الرندر أدناه).
+  const reportId = new URLSearchParams(window.location.search).get('report');
 
   const [currentPage, setCurrentPage] = useState<PageType>(
-    shareUserId ? 'public' : 'dashboard'
+    shareUserId || reportId ? 'public' : 'dashboard'
   );
   const [toastData, setToastData] = useState({ msg: '', icon: '✓', show: false });
   const { 
@@ -121,6 +125,10 @@ export default function App() {
   // (RLS تمنع قراءة evidence مباشرة لغير المالك، انظر usePublicEvidence).
   const sharedEvidence = usePublicEvidence(shareUserId ?? null);
 
+  // تقرير حصاد فصلي (?report=) — قراءة مباشرة (ليست RPC) على harvest_reports،
+  // السماح بها عبر RLS "قراءة عامة بمعرفة id" فقط (انظر useHarvestReport).
+  const { report: harvestReport, loading: harvestReportLoading, error: harvestReportError } = useHarvestReport(reportId ?? null);
+
   // نفس البيانات لمعاينة المالك لملفه الخاص (صفحة 'public' داخل التطبيق) —
   // تُبنى مباشرة من monthlyProgress.rows المحمّلة أصلاً بلا أي طلب إضافي.
   // evidenceCount هنا هو مجموع evidence_count عبر كل الأقسام لنفس الشهر
@@ -139,7 +147,7 @@ export default function App() {
 
   // Redirect users dynamically based on auth status — but not when in shared-profile view
   useEffect(() => {
-    if (shareUserId) return; // Don't redirect if viewing a shared profile
+    if (shareUserId || reportId) return; // Don't redirect if viewing a shared profile or a harvest report
     if (passwordRecovery) {
       // Keep the user on the auth screen to set a new password, even though a
       // temporary recovery session makes them "logged in".
@@ -158,7 +166,7 @@ export default function App() {
         }
       }
     }
-  }, [user, loading, currentPage, shareUserId, passwordRecovery]);
+  }, [user, loading, currentPage, shareUserId, reportId, passwordRecovery]);
 
   // ── visibilitychange: تحديث خلفي عند العودة بعد 5 دقائق + حفظ موقع التمرير ──
   const lastRefreshRef = useRef<number>(Date.now());
@@ -689,6 +697,44 @@ export default function App() {
     );
   }
 
+  // Show loading screen for a harvest report (?report=)
+  if (reportId && harvestReportLoading) {
+    return (
+      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
+        <Background />
+        <div className="relative z-10 text-center flex flex-col items-center" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
+          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[40px] text-[var(--em0)] flex items-center justify-center shadow-[0_0_0_1px_rgba(201,162,39,.3),0_16px_48px_rgba(201,162,39,.4)] mb-6 animate-pulse">
+            <i className="ti ti-file-report animate-spin" style={{ animationDuration: '3s' }}></i>
+          </div>
+          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">جاري تحميل التقرير...</div>
+          <div className="text-[13px] text-[var(--text4)] flex items-center gap-1.5 justify-center font-[var(--font2)]">
+            <i className="ti ti-lock text-[16px] text-[var(--em8)] animate-pulse"></i>
+            عرض عام — لا يتطلب تسجيل دخول
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error screen if the harvest report was not found
+  if (reportId && !harvestReportLoading && (harvestReportError || !harvestReport)) {
+    return (
+      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
+        <Background />
+        <div className="relative z-10 text-center flex flex-col items-center px-6" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
+          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-red-900/60 to-red-700/40 text-[40px] text-red-400 flex items-center justify-center shadow-[0_0_0_1px_rgba(239,68,68,.3),0_16px_48px_rgba(239,68,68,.2)] mb-6">
+            <i className="ti ti-mood-sad"></i>
+          </div>
+          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">لم يُعثر على التقرير</div>
+          <div className="text-[14px] text-[var(--text4)] max-w-sm">{harvestReportError || 'الرابط غير صحيح أو لم يعد متاحاً.'}</div>
+          <a href="/" className="mt-8 py-3 px-8 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white text-[14px] font-bold no-underline hover:opacity-90 transition-opacity">
+            <i className="ti ti-home ml-2"></i>العودة للرئيسية
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
@@ -730,6 +776,47 @@ export default function App() {
         </nav>
         <main>
           <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} />
+        </main>
+      </>
+    );
+  }
+
+  // If viewing a harvest report via ?report= — لقطة ثابتة، بلا أي RPC حية
+  if (reportId && harvestReport) {
+    const snapshot = harvestReport.snapshot;
+    return (
+      <>
+        <Background />
+        {/* شريط تنقل مصغّر مطابق لمسار ?share= — فقط شارة "عرض عام" تصبح "تقرير حصاد" */}
+        <nav className="sticky top-0 z-[300] h-[72px] bg-[#060f0a]/85 backdrop-blur-[28px] border-b border-[var(--line)] flex items-center justify-between px-4 sm:px-9">
+          <a href="/" className="flex items-center gap-3.5 no-underline">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] flex items-center justify-center text-[22px] text-white shadow-[0_0_0_1px_rgba(82,196,120,.3),0_8px_24px_rgba(42,122,68,.5)]">
+              <i className="ti ti-certificate"></i>
+            </div>
+            <div className="hidden sm:block">
+              <div className="text-[22px] font-black tracking-tight text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em8),var(--gold3))]">وثّق</div>
+              <div className="text-[11px] text-[var(--text4)] tracking-wide mt-px">ملف الإنجاز الرقمي</div>
+            </div>
+          </a>
+          <div className="flex items-center gap-2 py-1.5 px-3 rounded-xl bg-[var(--gold)]/10 border border-[var(--gold)]/20">
+            <i className="ti ti-file-report text-[var(--gold3)] text-[16px]"></i>
+            <span className="text-[13px] font-bold text-[var(--gold3)] hidden sm:inline">تقرير حصاد فصلي</span>
+          </div>
+        </nav>
+        <main>
+          <Public
+            state={snapshot.state}
+            sections={SECS}
+            isSharedView
+            continuity={snapshot.continuity}
+            evidence={snapshot.evidence}
+            reportMeta={{
+              periodLabel: snapshot.periodLabel,
+              periodFrom: snapshot.periodFrom,
+              generatedAt: snapshot.generatedAt,
+              pointsLevel: snapshot.pointsLevel,
+            }}
+          />
         </main>
       </>
     );

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { ContinuityData, Evidence, PublicPortfolioState, SectionData } from '../types';
+import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData } from '../types';
 import { calculateEvaluation, calculatePointsLevel, getCompletionColor, getCompletionLabel } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
@@ -28,6 +28,16 @@ interface PublicProps {
   /** شواهد جدول evidence الجديد (الغني) — غائبة أثناء التحميل، وفي هذه الحالة
    * القسم الإضافي في نافذة تفاصيل البند لا يُعرض إطلاقاً (نفس منطق continuity). */
   evidence?: SupabaseEvidence[] | null;
+  /** وضع "تقرير حصاد فصلي" الثابت (?report=) — يستبدل حساب شارة النقاط الحي
+   * (نافذة آخر 3 أشهر تقويمية، مرتبطة بـ"اليوم") بقيمة مجمَّدة وقت التوليد،
+   * ويضيف سطر عنوان الفترة/تاريخ التوليد في الهيرو وترويسة الطباعة. غائب في
+   * مسار ?share= العادي — لا فرق هناك إطلاقاً. */
+  reportMeta?: {
+    periodLabel: string;
+    periodFrom: string;
+    generatedAt: string;
+    pointsLevel: FrozenPointsLevel;
+  };
 }
 
 /** يستخرج معرّف فيديو يوتيوب من أي صيغة رابط شائعة (watch؟v=, youtu.be/, embed/, shorts/)،
@@ -128,14 +138,16 @@ const MONTH_FULL: Record<number, string> = {
   7: 'يوليو', 8: 'أغسطس', 9: 'سبتمبر', 10: 'أكتوبر', 11: 'نوفمبر', 12: 'ديسمبر',
 };
 
-/** يبني 12 شهراً بالترتيب بدءاً من yearStartMonth للسنة الدراسية الحالية —
+/** يبني 12 شهراً بالترتيب بدءاً من yearStartMonth للسنة الدراسية المرجعية —
  * نفس منطق academicStartYear في useMonthlyProgress.ts، معاد محلياً هنا لأن
  * تلك النسخة مرتبطة بحالة قابلة للتعديل خاصة بلوحة التحكم (recordEvidence/
- * removeEvidence) لا حاجة لها في العرض العام للقراءة فقط. */
-function buildAcademicMonths(yearStartMonth: number): { year: number; month: number }[] {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
+ * removeEvidence) لا حاجة لها في العرض العام للقراءة فقط.
+ * referenceDate: افتراضياً "اليوم" (مسار ?share= الحي، بلا أي تغيير)؛ في وضع
+ * تقرير الحصاد الفصلي (?report=) يُمرَّر بداية الفترة نفسها بدل "اليوم"، حتى
+ * لا تُبنى شبكة سنة دراسية غير متعلقة بالتقرير عند فتح رابط قديم لاحقاً. */
+function buildAcademicMonths(yearStartMonth: number, referenceDate: Date = new Date()): { year: number; month: number }[] {
+  const currentYear = referenceDate.getFullYear();
+  const currentMonth = referenceDate.getMonth() + 1;
   const startYear = currentMonth >= yearStartMonth ? currentYear : currentYear - 1;
   const startFlat = startYear * 12 + (yearStartMonth - 1);
 
@@ -147,13 +159,14 @@ function buildAcademicMonths(yearStartMonth: number): { year: number; month: num
 
 /** شبكة "الاستمرارية عبر العام الدراسي" — 12 مربعاً بترتيب السنة الدراسية،
  * بثلاث حالات بصرية: نشط (توثيق فعلي)، مضى بلا توثيق، ومستقبلي لم يحن بعد
- * (منقّط بلا خلفية) حتى لا يُقرأ كإخفاق. */
-function ContinuityGrid({ continuity }: { continuity: ContinuityData }) {
-  const months = buildAcademicMonths(continuity.yearStartMonth);
+ * (منقّط بلا خلفية) حتى لا يُقرأ كإخفاق.
+ * referenceDate: انظر تعليق buildAcademicMonths — نفس المرجع يُستخدم هنا
+ * لتحديد الخلايا "المستقبلية" بالنسبة لفترة التقرير، لا بالنسبة لتاريخ فتح الرابط. */
+function ContinuityGrid({ continuity, referenceDate = new Date() }: { continuity: ContinuityData; referenceDate?: Date }) {
+  const months = buildAcademicMonths(continuity.yearStartMonth, referenceDate);
   const activeSet = new Set(continuity.activeMonths.map(m => `${m.year}-${m.month}`));
 
-  const now = new Date();
-  const currentFlat = now.getFullYear() * 12 + (now.getMonth() + 1);
+  const currentFlat = referenceDate.getFullYear() * 12 + (referenceDate.getMonth() + 1);
 
   let activeCount = 0;
   const cells = months.map(m => {
@@ -194,13 +207,15 @@ function ContinuityGrid({ continuity }: { continuity: ContinuityData }) {
 }
 
 /** شارة لقب المستوى (خطوة ثابتة / مسيرة واثقة / قدوة متميزة) — بجانب اسم المعلم
- * أعلى صفحة المشاركة، بنفس تصميم الشارة الذهبية المستخدمة في بطاقات الأقسام. */
-function LevelBadge({ pointsLevel }: { pointsLevel: ReturnType<typeof calculatePointsLevel> }) {
+ * أعلى صفحة المشاركة، بنفس تصميم الشارة الذهبية المستخدمة في بطاقات الأقسام.
+ * pointsSubtitle: نص التلميح خلف عدد النقاط — "آخر 3 أشهر" في المسار الحي،
+ * أو نص مخصص لفترة التقرير في وضع ?report= (النقاط ليست نافذة 3 أشهر هناك). */
+function LevelBadge({ pointsLevel, pointsSubtitle = 'خلال آخر 3 أشهر' }: { pointsLevel: Pick<ReturnType<typeof calculatePointsLevel>, 'points' | 'levelIcon' | 'levelLabel'>; pointsSubtitle?: string }) {
   return (
     <span
       className="inline-flex items-center gap-1.5 text-[12px] sm:text-[13px] font-black text-[var(--gold3)] bg-[var(--gold)]/12 border border-[var(--gold)]/35 py-1.5 px-3 rounded-full leading-none relative z-10"
       style={{ animation: 'scaleIn .35s var(--sp) both' }}
-      title={`${pointsLevel.points} نقطة خلال آخر 3 أشهر`}
+      title={`${pointsLevel.points} نقطة ${pointsSubtitle}`}
     >
       <i className={`ti ${pointsLevel.levelIcon} text-[13px]`} /> {pointsLevel.levelLabel}
     </span>
@@ -218,6 +233,22 @@ function BadgesRow({ stats, justify }: { stats: ReturnType<typeof calculateEvalu
       </div>
       <div className="inline-flex items-center gap-1.5 py-1.5 px-4 bg-white/5 border border-white/10 rounded-full text-[12.5px] text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/25 hover:-translate-y-0.5">
         <i className="ti ti-map-pin text-[var(--gold)]"></i> المملكة العربية السعودية
+      </div>
+    </div>
+  );
+}
+
+/** سطر عنوان فترة التقرير + تاريخ التوليد — يظهر فقط في وضع ?report=، أعلى
+ * اسم المعلم في الهيرو (كل من تخطيطي الجوال والديسكتوب). */
+function ReportPeriodBanner({ periodLabel, generatedAt, justify }: { periodLabel: string; generatedAt: string; justify: string }) {
+  const generatedLabel = new Date(generatedAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
+  return (
+    <div className={`flex ${justify} relative z-10 mb-3`}>
+      <div className="inline-flex flex-col items-center sm:items-start gap-0.5 py-2 px-4 rounded-2xl bg-white/5 border border-[var(--gold)]/25 backdrop-blur-md">
+        <span className="text-[13px] font-black text-[var(--gold3)] flex items-center gap-1.5">
+          <i className="ti ti-file-report text-[13px]" /> {periodLabel}
+        </span>
+        <span className="text-[11px] text-[var(--text4)]">تقرير مُولَّد بتاريخ {generatedLabel}</span>
       </div>
     </div>
   );
@@ -440,7 +471,7 @@ function StrategyLightbox({ item, onClose }: { item: { name: string; url: string
   );
 }
 
-export default function Public({ state, sections, isSharedView, continuity, evidence }: PublicProps) {
+export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta }: PublicProps) {
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
@@ -497,14 +528,22 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     return { evidence: matched, sectionName: section.ttl };
   }, [state.ai_top_achievement_evidence_id, evidence, sections]);
 
-  // نقاط ومستوى الملف العام (نافذة متحركة لآخر 3 أشهر) — تُبنى من
-  // continuity.activeMonths (evidenceCount لكل شهر، بصرف النظر عن القسم)؛
-  // غائبة فقط أثناء تحميل continuity أو تعذّر جلبه، فلا تُعرض الشارة حينها.
-  const pointsLevel = continuity
+  // نقاط ومستوى الملف العام: في وضع التقرير (?report=) قيمة مجمَّدة وقت
+  // التوليد (reportMeta.pointsLevel) — لأن حساب "آخر 3 أشهر تقويمية" الحي
+  // يعتمد على "اليوم" فيصبح خاطئاً لأي تقرير قديم يُفتح لاحقاً. في المسار
+  // الحي (?share=) يبقى الحساب كما هو تماماً من continuity.activeMonths.
+  const pointsLevel = reportMeta
+    ? reportMeta.pointsLevel
+    : continuity
     ? calculatePointsLevel(
         continuity.activeMonths.map(m => ({ year: m.year, month: m.month, evidenceCount: m.evidenceCount ?? 0 }))
       )
     : null;
+
+  // مرجع "اليوم" لشبكة الاستمرارية — بداية فترة التقرير في وضع ?report=، وإلا
+  // اليوم الفعلي (بلا أي تغيير عن المسار الحي — undefined يجعل ContinuityGrid
+  // يستخدم افتراضيها الخاص new Date())
+  const continuityReferenceDate = reportMeta ? new Date(`${reportMeta.periodFrom}T12:00:00`) : undefined;
 
   // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب (المستويات
   // 1-2-3 أدناه) — له بطاقة طولية مستقلة بلا أي رقم نسبة (انظر أسفل الصفحة).
@@ -562,6 +601,16 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     // If we already have a share URL cached, return it
     if (shareUrl) return shareUrl;
 
+    // وضع التقرير الثابت (?report=): الرابط الصحيح الوحيد هو رابط الصفحة
+    // الحالية نفسها — لا نبني أبداً رابط ?share=${user.id} حتى لو كان صاحب
+    // الملف مسجَّلاً دخوله (مثلاً يعاين تقريره الخاص)، لأن ذاك رابط مختلف
+    // تماماً (حي وليس لقطة ثابتة).
+    if (reportMeta) {
+      const url = window.location.href;
+      setShareUrl(url);
+      return url;
+    }
+
     // Try to get current user ID from Supabase
     if (supabase) {
       const { data: { user } } = await supabase.auth.getUser();
@@ -609,8 +658,14 @@ export default function Public({ state, sections, isSharedView, continuity, evid
               <div className="print-header-meta">{state.profile.role} — {state.profile.school}</div>
             </div>
             <div className="print-header-brand">
-              <div className="print-header-title">وثّق — ملف الإنجاز الرقمي</div>
-              <div className="print-header-date">{printDate}</div>
+              <div className="print-header-title">
+                {reportMeta ? `وثّق — ${reportMeta.periodLabel}` : 'وثّق — ملف الإنجاز الرقمي'}
+              </div>
+              <div className="print-header-date">
+                {reportMeta
+                  ? `مُولَّد بتاريخ ${new Date(reportMeta.generatedAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}`
+                  : printDate}
+              </div>
               <div className="print-header-url">wathq.online</div>
             </div>
           </div>
@@ -641,13 +696,15 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
           {/* تخطيط الجوال (الحالي والمستقر) — يبقى دون أي تغيير، مخفي من lg فصاعداً */}
           <div className="lg:hidden">
+            {reportMeta && <ReportPeriodBanner periodLabel={reportMeta.periodLabel} generatedAt={reportMeta.generatedAt} justify="justify-center" />}
+
             <div className="mb-7">
               <Avatar profile={state.profile} size={112} />
             </div>
 
             <div className="flex items-center justify-center gap-3 flex-wrap mb-2">
               <h1 className="text-[34px] font-black text-white tracking-tight relative z-10">{state.profile.name}</h1>
-              {pointsLevel && <LevelBadge pointsLevel={pointsLevel} />}
+              {pointsLevel && <LevelBadge pointsLevel={pointsLevel} pointsSubtitle={reportMeta ? 'خلال هذه الفترة' : undefined} />}
             </div>
             <p className="text-[15px] text-[var(--text3)] mb-5 relative z-10">{state.profile.role} — {state.profile.school}</p>
 
@@ -674,9 +731,10 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
             <div className="flex-1 flex flex-col gap-5 items-end">
               <div>
+                {reportMeta && <ReportPeriodBanner periodLabel={reportMeta.periodLabel} generatedAt={reportMeta.generatedAt} justify="justify-end" />}
                 <div className="flex items-center justify-end gap-3 flex-wrap mb-2">
                   <h1 className="text-[34px] font-black text-white tracking-tight relative z-10">{state.profile.name}</h1>
-                  {pointsLevel && <LevelBadge pointsLevel={pointsLevel} />}
+                  {pointsLevel && <LevelBadge pointsLevel={pointsLevel} pointsSubtitle={reportMeta ? 'خلال هذه الفترة' : undefined} />}
                 </div>
                 <p className="text-[15px] text-[var(--text3)] relative z-10">{state.profile.role} — {state.profile.school}</p>
               </div>
@@ -762,7 +820,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             </div>
           )}
 
-          {continuity && <ContinuityGrid continuity={continuity} />}
+          {continuity && <ContinuityGrid continuity={continuity} referenceDate={continuityReferenceDate} />}
 
           <div className="mb-6 flex justify-between items-end flex-wrap gap-4">
             <div>

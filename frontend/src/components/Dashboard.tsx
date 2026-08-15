@@ -13,6 +13,7 @@ import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import { supabase } from '../supabaseClient';
 import BulkImportPicker from './BulkImportPicker';
 import BulkImportReview from './BulkImportReview';
+import HarvestReportSheet from './HarvestReportSheet';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -319,6 +320,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImportReviewOpen, setIsBulkImportReviewOpen] = useState(false);
   const [bulkImportReadyCount, setBulkImportReadyCount] = useState(0);
+
+  // تقرير حصاد فصلي — مستقل تماماً عن الاستيراد الجماعي أعلاه (مصدر البيانات:
+  // evidence/monthly_progress ضمن مدى زمني مختار، وليس bulk_import_queue)
+  const [isHarvestReportOpen, setIsHarvestReportOpen] = useState(false);
 
   const quickCapture = useQuickCapture({
     userId,
@@ -841,6 +846,36 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 ) : (
                   <><i className="ti ti-refresh text-[15px]" /> تحديث الملخص الآن</>
                 )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* بانر: تقرير حصاد فصلي — مستقل تماماً عن بانر ملخص الملف أعلاه (مصدر
+            البيانات: evidence/monthly_progress ضمن مدى زمني مختار، لقطة ثابتة
+            وليست حية) */}
+        {userId && (
+          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold)]/10 via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
+            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
+            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[22px] text-[var(--gold3)]">
+                  <i className="ti ti-chart-bar-popular" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-[var(--gold3)] tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
+                    <i className="ti ti-file-report text-[12px]" /> تقرير حصاد فصلي
+                  </div>
+                  <div className="text-[15px] font-extrabold text-white leading-snug">
+                    رابط ثابت يعرض شواهد فصل دراسي محدد فقط — لا يتأثر بأي تعديل لاحق
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsHarvestReportOpen(true)}
+                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
+              >
+                <i className="ti ti-file-report text-[15px]" /> توليد تقرير
               </button>
             </div>
           </div>
@@ -1949,6 +1984,15 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         sections={sections}
         supabaseEv={supabaseEv}
         onAddEv={onAddEv}
+        onToast={onToast}
+      />
+
+      <HarvestReportSheet
+        isOpen={isHarvestReportOpen}
+        onClose={() => setIsHarvestReportOpen(false)}
+        userId={userId}
+        state={state}
+        academicDates={academicDates}
         onToast={onToast}
       />
 

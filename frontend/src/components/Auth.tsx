@@ -228,13 +228,32 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
     }
   };
 
+  const isReg = mode === 'reg';
+  // Only flips between 'login' and 'reg' colors — forgot/update stay on the green (login) accent,
+  // so the blade-sweep (keyed on this) doesn't replay when navigating into/out of those sub-flows.
+  const accentKey = isReg ? 'gold' : 'green';
+
+  const inputFocusClasses = isReg
+    ? 'focus:bg-[var(--gold)]/5 focus:border-[var(--gold)]/40 focus:shadow-[0_0_0_4px_rgba(201,162,39,.15),inset_0_1px_0_rgba(255,255,255,.05)]'
+    : 'focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15),inset_0_1px_0_rgba(255,255,255,.05)]';
+
+  const underlineClasses = isReg
+    ? 'from-[var(--gold)] via-[var(--gold3)] to-[var(--gold)]'
+    : 'from-[var(--em7)] via-[var(--gold)] to-[var(--em7)]';
+
+  const features = [
+    { icon: 'ti-report-analytics', title: 'نظام تقييم تلقائي', desc: 'أكثر من 33 مؤشراً فرعياً موزعة على 11 قسماً، مع احتساب نقاطك فور إضافة كل شاهد.' },
+    { icon: 'ti-bulb', title: 'أدوات مصممة للمعلم', desc: 'توثيق سريع بالصورة أو الصوت، اقتراحات ذكية بالذكاء الاصطناعي، وتذكير موسمي بمواعيد التوثيق.' },
+    { icon: 'ti-share', title: 'صفحة عرض لمدراء المدارس', desc: 'رابط مشاركة عام لملفك يطّلع عليه المدير أو المشرف دون الحاجة لإنشاء حساب دخول.' },
+  ];
+
   return (
-    <div className="min-h-[calc(100vh-72px)] flex items-center justify-center p-5 relative overflow-hidden">
+    <div dir="rtl" className="min-h-[calc(100vh-72px)] flex flex-col lg:flex-row relative overflow-hidden">
       {/* Scan line effect */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden opacity-5">
         <div className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[var(--em7)] to-transparent" style={{ animation: 'scanLine 8s linear infinite' }}></div>
       </div>
-      
+
       {/* Geometric shapes */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute border border-[var(--em7)]/10 rounded-[20%] w-[300px] h-[300px] -top-20 -right-[60px] rotate-[20deg]" style={{ animation: 'float 8s ease-in-out infinite' }}></div>
@@ -243,47 +262,48 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
         <div className="absolute border border-[var(--em7)]/10 rounded-full w-[80px] h-[80px] top-[15%] right-[8%] bg-[var(--gold)]/5" style={{ animation: 'floatR 5s ease-in-out infinite' }}></div>
       </div>
 
-      <div className="relative z-10 bg-[#0c1c12]/80 backdrop-blur-[40px] saturate-150 border border-[var(--em7)]/15 rounded-[28px] py-[52px] px-12 w-full max-w-[480px] shadow-[0_0_0_1px_rgba(82,196,120,.05),0_40px_100px_rgba(0,0,0,.7),inset_0_1px_0_rgba(255,255,255,.05)] overflow-hidden" style={{ animation: 'scaleIn .8s var(--sp) both' }}>
-        <div className="absolute -top-px right-[15%] left-[15%] h-px bg-gradient-to-r from-transparent via-[var(--em7)] via-[var(--gold)] via-[var(--em7)] to-transparent opacity-60"></div>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_40%_at_50%_0%,rgba(42,122,68,.12),transparent_70%)] pointer-events-none z-0"></div>
+      {/* Right side (first in DOM → right in RTL): login/register form card */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-5 sm:p-8 relative z-10">
+        <div className="relative bg-[#0c1c12]/80 backdrop-blur-[40px] saturate-150 border border-[var(--em7)]/15 rounded-[28px] py-[52px] px-12 w-full max-w-[480px] shadow-[0_0_0_1px_rgba(82,196,120,.05),0_40px_100px_rgba(0,0,0,.7),inset_0_1px_0_rgba(255,255,255,.05)] overflow-hidden" style={{ animation: 'scaleIn .8s var(--sp) both' }}>
+          <div className="absolute -top-px right-[15%] left-[15%] h-px pointer-events-none overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--em7)] via-[var(--gold)] via-[var(--em7)] to-transparent transition-opacity duration-700" style={{ opacity: isReg ? 0 : 0.6 }}></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--gold)] via-[var(--gold3)] via-[var(--gold)] to-transparent transition-opacity duration-700" style={{ opacity: isReg ? 0.6 : 0 }}></div>
+          </div>
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_40%_at_50%_0%,rgba(42,122,68,.12),transparent_70%)] pointer-events-none z-0"></div>
 
-        <div className="text-center mb-10 relative z-10">
-          <div className="inline-flex items-center justify-center w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--em3)] to-[var(--em6)] text-[40px] text-white mb-5 shadow-[0_0_0_1px_rgba(82,196,120,.3),0_16px_48px_rgba(42,122,68,.6)] relative overflow-hidden" style={{ animation: 'float 4s ease-in-out infinite' }}>
-            <div className="absolute -top-1/2 -right-1/2 w-[70%] h-[70%] bg-white/15 rounded-full blur-[10px]"></div>
-            <i className="ti ti-certificate"></i>
+          <div className="text-center mb-10 relative z-10">
+            <div className="inline-flex items-center justify-center w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--em3)] to-[var(--em6)] text-[40px] text-white mb-5 shadow-[0_0_0_1px_rgba(82,196,120,.3),0_16px_48px_rgba(42,122,68,.6)] relative overflow-hidden" style={{ animation: 'float 4s ease-in-out infinite' }}>
+              <div className="absolute -top-1/2 -right-1/2 w-[70%] h-[70%] bg-white/15 rounded-full blur-[10px]"></div>
+              <i className="ti ti-certificate"></i>
+            </div>
+            <div className="text-[30px] font-black tracking-[-.5px] mb-2 text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em8)_0%,var(--gold3)_50%,var(--em9)_100%)] bg-[length:200%_auto]" style={{ animation: 'goldShimmer 4s linear infinite' }}>
+              منصة وثّق
+            </div>
+            <div className="font-[var(--font2)] text-[14px] text-[var(--text3)] tracking-wide leading-relaxed">
+              ملف الإنجاز الرقمي للمعلم السعودي
+            </div>
           </div>
-          <div className="text-[30px] font-black tracking-[-.5px] mb-2 text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em8)_0%,var(--gold3)_50%,var(--em9)_100%)] bg-[length:200%_auto]" style={{ animation: 'goldShimmer 4s linear infinite' }}>
-            منصة وثّق
-          </div>
-          <div className="font-[var(--font2)] text-[14px] text-[var(--text3)] tracking-wide leading-relaxed">
-            ملف الإنجاز الرقمي للمعلم السعودي
-          </div>
-          
-          <p className="mt-4 text-[13.5px] text-[var(--text2)] leading-relaxed bg-[var(--em7)]/5 border border-[var(--em7)]/10 p-4 rounded-xl text-right font-[var(--font)]">
-            🎯 <strong>ابنِ ملف إنجازك المهني بذكاء:</strong> نظّم شواهدك وأنشطتك التعليمية في 11 قسماً مبرمجاً، واحسب نقاط تقييمك تلقائياً، وصدر ملفك كـ PDF منسق وجاهز للطباعة والمشاركة بنقرة واحدة.
-          </p>
-        </div>
 
-        {(mode === 'login' || mode === 'reg') && (
-          <div className="flex bg-white/5 border border-[var(--line)] rounded-xl p-1 mb-9 gap-[3px] relative z-10">
-            <button
-              type="button"
-              className={`flex-1 py-2.5 rounded-[11px] cursor-pointer text-[14px] font-bold transition-all duration-300 font-[var(--font)] border-none ${mode === 'login' ? 'bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white shadow-[0_4px_16px_rgba(42,122,68,.5)]' : 'bg-transparent text-[var(--text3)] hover:text-white'}`}
-              onClick={() => setMode('login')}
-              disabled={loading}
-            >
-              تسجيل الدخول
-            </button>
-            <button
-              type="button"
-              className={`flex-1 py-2.5 rounded-[11px] cursor-pointer text-[14px] font-bold transition-all duration-300 font-[var(--font)] border-none ${mode === 'reg' ? 'bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white shadow-[0_4px_16px_rgba(42,122,68,.5)]' : 'bg-transparent text-[var(--text3)] hover:text-white'}`}
-              onClick={() => setMode('reg')}
-              disabled={loading}
-            >
-              حساب جديد
-            </button>
-          </div>
-        )}
+          {(mode === 'login' || mode === 'reg') && (
+            <div className="flex bg-white/5 border border-[var(--line)] rounded-xl p-1 mb-9 gap-[3px] relative z-10">
+              <button
+                type="button"
+                className={`flex-1 py-2.5 rounded-[11px] cursor-pointer text-[14px] font-bold transition-all duration-700 font-[var(--font)] border-none ${mode === 'login' ? 'bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white shadow-[0_4px_16px_rgba(42,122,68,.5)]' : 'bg-transparent text-[var(--text3)] hover:text-white'}`}
+                onClick={() => setMode('login')}
+                disabled={loading}
+              >
+                تسجيل الدخول
+              </button>
+              <button
+                type="button"
+                className={`flex-1 py-2.5 rounded-[11px] cursor-pointer text-[14px] font-bold transition-all duration-700 font-[var(--font)] border-none ${mode === 'reg' ? 'bg-gradient-to-br from-[var(--gold)] to-[var(--gold3)] text-[var(--surf0)] shadow-[0_4px_16px_rgba(201,162,39,.5)]' : 'bg-transparent text-[var(--text3)] hover:text-white'}`}
+                onClick={() => setMode('reg')}
+                disabled={loading}
+              >
+                حساب جديد
+              </button>
+            </div>
+          )}
 
         {(mode === 'forgot' || mode === 'update') && (
           <div className="mb-9 relative z-10 text-center bg-[var(--em7)]/5 border border-[var(--em7)]/15 rounded-xl py-4 px-5">
@@ -310,12 +330,12 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
                   type="text" 
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-300 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15),inset_0_1px_0_rgba(255,255,255,.05)] peer" 
+                  className={`w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-700 placeholder-[var(--text4)] ${inputFocusClasses} peer`}
                   placeholder="الاسم الثلاثي"
                   required
                   disabled={loading}
                 />
-                <div className="absolute bottom-0 right-0 left-0 h-[2px] bg-gradient-to-r from-[var(--em7)] via-[var(--gold)] to-[var(--em7)] rounded-b-xl scale-x-0 origin-right transition-transform duration-400 peer-focus:scale-x-100"></div>
+                <div className={`absolute bottom-0 right-0 left-0 h-[2px] bg-gradient-to-r ${underlineClasses} rounded-b-xl scale-x-0 origin-right transition-transform duration-400 peer-focus:scale-x-100`}></div>
               </div>
             </div>
           )}
@@ -330,12 +350,12 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-300 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15),inset_0_1px_0_rgba(255,255,255,.05)] peer"
+                  className={`w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-700 placeholder-[var(--text4)] ${inputFocusClasses} peer`}
                   placeholder="example@edu.sa"
                   required
                   disabled={loading}
                 />
-                <div className="absolute bottom-0 right-0 left-0 h-[2px] bg-gradient-to-r from-[var(--em7)] via-[var(--gold)] to-[var(--em7)] rounded-b-xl scale-x-0 origin-right transition-transform duration-400 peer-focus:scale-x-100"></div>
+                <div className={`absolute bottom-0 right-0 left-0 h-[2px] bg-gradient-to-r ${underlineClasses} rounded-b-xl scale-x-0 origin-right transition-transform duration-400 peer-focus:scale-x-100`}></div>
               </div>
             </div>
           )}
@@ -362,12 +382,12 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-300 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15),inset_0_1px_0_rgba(255,255,255,.05)] peer"
+                  className={`w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-700 placeholder-[var(--text4)] ${inputFocusClasses} peer`}
                   placeholder="••••••••"
                   required
                   disabled={loading}
                 />
-                <div className="absolute bottom-0 right-0 left-0 h-[2px] bg-gradient-to-r from-[var(--em7)] via-[var(--gold)] to-[var(--em7)] rounded-b-xl scale-x-0 origin-right transition-transform duration-400 peer-focus:scale-x-100"></div>
+                <div className={`absolute bottom-0 right-0 left-0 h-[2px] bg-gradient-to-r ${underlineClasses} rounded-b-xl scale-x-0 origin-right transition-transform duration-400 peer-focus:scale-x-100`}></div>
               </div>
             </div>
           )}
@@ -382,25 +402,32 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-300 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15),inset_0_1px_0_rgba(255,255,255,.05)] peer"
+                  className={`w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-700 placeholder-[var(--text4)] ${inputFocusClasses} peer`}
                   placeholder="••••••••"
                   required
                   disabled={loading}
                 />
-                <div className="absolute bottom-0 right-0 left-0 h-[2px] bg-gradient-to-r from-[var(--em7)] via-[var(--gold)] to-[var(--em7)] rounded-b-xl scale-x-0 origin-right transition-transform duration-400 peer-focus:scale-x-100"></div>
+                <div className={`absolute bottom-0 right-0 left-0 h-[2px] bg-gradient-to-r ${underlineClasses} rounded-b-xl scale-x-0 origin-right transition-transform duration-400 peer-focus:scale-x-100`}></div>
               </div>
             </div>
           )}
 
           <button
             type="submit"
-            className="w-full p-4 mt-3 rounded-xl text-[16px] font-black font-[var(--font)] cursor-pointer bg-gradient-to-br from-[var(--em3)] via-[var(--em6)] to-[var(--em4)] bg-[length:200%_auto] text-white relative overflow-hidden shadow-[0_0_0_1px_rgba(82,196,120,.3),0_8px_28px_rgba(42,122,68,.6)] transition-all duration-300 flex items-center justify-center gap-2.5 hover:-translate-y-[3px] hover:shadow-[0_0_0_1px_rgba(82,196,120,.5),0_16px_40px_rgba(42,122,68,.7)] active:translate-y-0 active:scale-95 border-none disabled:opacity-50 disabled:cursor-wait"
-            style={{ animation: 'gradientFlow 3s linear infinite' }}
+            className="w-full p-4 mt-3 rounded-xl text-[16px] font-black font-[var(--font)] cursor-pointer relative overflow-hidden flex items-center justify-center gap-2.5 hover:-translate-y-[3px] active:translate-y-0 active:scale-95 border-none transition-transform duration-300 disabled:opacity-50 disabled:cursor-wait"
             onClick={mode === 'forgot' ? handleForgot : mode === 'update' ? handleUpdatePassword : handleAuth}
             disabled={loading}
           >
-            <i className={`ti ${loading ? 'ti-loader animate-spin' : (mode === 'login' ? 'ti-login' : mode === 'reg' ? 'ti-user-plus' : mode === 'forgot' ? 'ti-send' : 'ti-device-floppy')} relative z-10`}></i>
-            <span className="relative z-10">{loading ? 'جاري التحميل...' : (mode === 'login' ? 'دخول إلى الحساب' : mode === 'reg' ? 'إنشاء الحساب' : mode === 'forgot' ? 'إرسال رابط الاستعادة' : 'حفظ كلمة المرور الجديدة')}</span>
+            <span
+              className="absolute inset-0 bg-gradient-to-br from-[var(--em3)] via-[var(--em6)] to-[var(--em4)] bg-[length:200%_auto] shadow-[0_0_0_1px_rgba(82,196,120,.3),0_8px_28px_rgba(42,122,68,.6)] transition-opacity duration-700"
+              style={{ opacity: isReg ? 0 : 1, animation: 'gradientFlow 3s linear infinite' }}
+            ></span>
+            <span
+              className="absolute inset-0 bg-gradient-to-br from-[var(--gold)] via-[var(--gold3)] to-[var(--gold2)] bg-[length:200%_auto] shadow-[0_0_0_1px_rgba(201,162,39,.4),0_8px_28px_rgba(201,162,39,.55)] transition-opacity duration-700"
+              style={{ opacity: isReg ? 1 : 0, animation: 'gradientFlow 3s linear infinite' }}
+            ></span>
+            <i className={`ti ${loading ? 'ti-loader animate-spin' : (mode === 'login' ? 'ti-login' : mode === 'reg' ? 'ti-user-plus' : mode === 'forgot' ? 'ti-send' : 'ti-device-floppy')} relative z-10 transition-colors duration-700 ${isReg ? 'text-[var(--surf0)]' : 'text-white'}`}></i>
+            <span className={`relative z-10 transition-colors duration-700 ${isReg ? 'text-[var(--surf0)]' : 'text-white'}`}>{loading ? 'جاري التحميل...' : (mode === 'login' ? 'دخول إلى الحساب' : mode === 'reg' ? 'إنشاء الحساب' : mode === 'forgot' ? 'إرسال رابط الاستعادة' : 'حفظ كلمة المرور الجديدة')}</span>
           </button>
 
           {(mode === 'forgot' || mode === 'update') && (
@@ -446,7 +473,57 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
           </>
           )}
         </form>
+        </div>
       </div>
+
+      {/* Left side (second in DOM → left in RTL): platform info panel, desktop only */}
+      <div className="hidden lg:flex lg:w-1/2 items-center justify-center p-12 relative z-10">
+        <div className="max-w-[440px]">
+          <div className="inline-flex items-center gap-2 py-1.5 px-4 rounded-full border border-[var(--line2)] bg-white/5 text-[12px] font-bold text-[var(--text3)] tracking-wide mb-8">
+            <i className="ti ti-certificate text-[var(--em7)]"></i>
+            منصة وثّق
+          </div>
+          <h2 className="text-[38px] font-black leading-[1.15] text-white mb-2">
+            ملف إنجازك المهني
+            <br />
+            <span className={`transition-colors duration-700 ${isReg ? 'text-[var(--gold3)]' : 'text-[var(--em8)]'}`}>
+              {isReg ? 'يبدأ من هنا' : 'بانتظارك'}
+            </span>
+          </h2>
+          <p className="text-[14.5px] text-[var(--text3)] leading-relaxed font-[var(--font2)] mb-10">
+            ابنِ ملف إنجازك المهني بذكاء: نظّم شواهدك وأنشطتك التعليمية في 11 قسماً مبرمجاً، واحسب نقاط تقييمك تلقائياً، وصدر ملفك كـ PDF منسق وجاهز للطباعة والمشاركة بنقرة واحدة.
+          </p>
+          <div className="flex flex-col gap-4">
+            {features.map((f) => (
+              <div key={f.title} className="flex items-start gap-4 bg-white/[.03] border border-[var(--line)] rounded-2xl p-4">
+                <div className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-[20px] transition-colors duration-700 ${isReg ? 'bg-[var(--gold)]/10 text-[var(--gold3)]' : 'bg-[var(--em7)]/10 text-[var(--em8)]'}`}>
+                  <i className={`ti ${f.icon}`}></i>
+                </div>
+                <div>
+                  <div className="text-[14.5px] font-bold text-white mb-1">{f.title}</div>
+                  <div className="text-[12.5px] text-[var(--text3)] leading-relaxed">{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Blade sweep — replays on every login↔register accent switch */}
+      <div
+        key={accentKey}
+        aria-hidden="true"
+        className="hidden lg:block absolute inset-y-0 w-[140px] pointer-events-none z-20"
+        style={{
+          left: '50%',
+          marginLeft: '-70px',
+          filter: 'blur(18px)',
+          background: isReg
+            ? 'linear-gradient(90deg, transparent, rgba(245,216,120,.35), rgba(201,162,39,.55), rgba(245,216,120,.35), transparent)'
+            : 'linear-gradient(90deg, transparent, rgba(125,217,155,.35), rgba(82,196,120,.55), rgba(125,217,155,.35), transparent)',
+          animation: 'sweepBlade 1s var(--sp) both',
+        }}
+      ></div>
     </div>
   );
 }

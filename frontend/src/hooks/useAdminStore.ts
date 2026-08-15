@@ -415,7 +415,9 @@ export function useAdminStore(isAdmin: boolean) {
   const createAcademicDate = async (
     title: string,
     date: string,
-    hijriLabel?: string
+    hijriLabel?: string,
+    semesterBoundary?: 'start' | 'end' | null,
+    semesterNumber?: 1 | 2 | 3 | null
   ): Promise<boolean> => {
     if (!isAdmin || !supabase) return false;
     try {
@@ -426,6 +428,8 @@ export function useAdminStore(isAdmin: boolean) {
           title,
           date,
           hijri_label: hijriLabel || null,
+          semester_boundary: semesterBoundary || null,
+          semester_number: semesterNumber || null,
           created_by: currentUser?.id || null
         });
       if (insertError) throw insertError;
@@ -441,7 +445,9 @@ export function useAdminStore(isAdmin: boolean) {
     id: string,
     title: string,
     date: string,
-    hijriLabel?: string
+    hijriLabel?: string,
+    semesterBoundary?: 'start' | 'end' | null,
+    semesterNumber?: 1 | 2 | 3 | null
   ): Promise<boolean> => {
     if (!isAdmin || !supabase) return false;
     try {
@@ -450,7 +456,9 @@ export function useAdminStore(isAdmin: boolean) {
         .update({
           title,
           date,
-          hijri_label: hijriLabel || null
+          hijri_label: hijriLabel || null,
+          semester_boundary: semesterBoundary || null,
+          semester_number: semesterNumber || null
         })
         .eq('id', id);
       if (error) throw error;

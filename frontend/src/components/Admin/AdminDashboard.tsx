@@ -2,7 +2,18 @@ import React, { useState, useMemo } from 'react';
 import type { AdminUser, PlatformStats, PortfolioFeatureOverride } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
 import { getCompletionColor } from '../../utils';
+import { SelectDropdown } from '../UI';
 import UserCard from './UserCard';
+
+const SEMESTER_BOUNDARY_OPTIONS = [
+  { value: 'start', label: 'بداية الفصل' },
+  { value: 'end', label: 'نهاية الفصل' },
+];
+const SEMESTER_NUMBER_OPTIONS = [
+  { value: '1', label: 'الفصل الأول' },
+  { value: '2', label: 'الفصل الثاني' },
+  { value: '3', label: 'الفصل الثالث' },
+];
 
 // مفتاح الميزة التجريبية الوحيدة المُدارة حالياً من تبويب "الميزات التجريبية".
 // أضف مفاتيح أخرى هنا مستقبلاً إذا احتاجت المنصة ميزات تجريبية إضافية بنفس النمط.
@@ -419,8 +430,8 @@ interface AdminDashboardProps {
   onUpdateAnnouncement?: (id: string, title: string, content: string, category: 'tech' | 'admin' | 'urgent', attachmentUrl?: string) => Promise<boolean>;
   onDeleteAnnouncement?: (id: string) => Promise<boolean>;
   announcements?: Announcement[];
-  onPublishAcademicDate?: (title: string, date: string, hijriLabel?: string) => Promise<boolean>;
-  onUpdateAcademicDate?: (id: string, title: string, date: string, hijriLabel?: string) => Promise<boolean>;
+  onPublishAcademicDate?: (title: string, date: string, hijriLabel?: string, semesterBoundary?: 'start' | 'end' | null, semesterNumber?: 1 | 2 | 3 | null) => Promise<boolean>;
+  onUpdateAcademicDate?: (id: string, title: string, date: string, hijriLabel?: string, semesterBoundary?: 'start' | 'end' | null, semesterNumber?: 1 | 2 | 3 | null) => Promise<boolean>;
   onDeleteAcademicDate?: (id: string) => Promise<boolean>;
   academicDates?: AcademicDate[];
   featureFlags?: Record<string, boolean>;
@@ -540,6 +551,11 @@ export default function AdminDashboard({
   const [adTitle, setAdTitle] = useState('');
   const [adDate, setAdDate] = useState('');
   const [adHijriLabel, setAdHijriLabel] = useState('');
+  // حقلا "طرف الفصل" و"رقم الفصل" — اختياريان بالكامل، يُستخدمان فقط لبناء
+  // قائمة "الفصول المتاحة" في تقرير الحصاد الفصلي (Dashboard.tsx)، لا أثر لهما
+  // على عرض المواعيد الدراسية العادي في لوحة المعلم.
+  const [adSemesterBoundary, setAdSemesterBoundary] = useState('');
+  const [adSemesterNumber, setAdSemesterNumber] = useState('');
   const [publishingAd, setPublishingAd] = useState(false);
   const [editingAdId, setEditingAdId] = useState<string | null>(null);
 
@@ -574,6 +590,8 @@ export default function AdminDashboard({
     setAdTitle('');
     setAdDate('');
     setAdHijriLabel('');
+    setAdSemesterBoundary('');
+    setAdSemesterNumber('');
     setEditingAdId(null);
   };
 
@@ -582,6 +600,8 @@ export default function AdminDashboard({
     setAdTitle(ad.title);
     setAdDate(ad.date);
     setAdHijriLabel(ad.hijri_label || '');
+    setAdSemesterBoundary(ad.semester_boundary || '');
+    setAdSemesterNumber(ad.semester_number ? String(ad.semester_number) : '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -616,9 +636,11 @@ export default function AdminDashboard({
 
     setPublishingAd(true);
     try {
+      const semesterBoundary = adSemesterBoundary ? (adSemesterBoundary as 'start' | 'end') : null;
+      const semesterNumber = adSemesterNumber ? (Number(adSemesterNumber) as 1 | 2 | 3) : null;
       if (editingAdId) {
         if (onUpdateAcademicDate) {
-          const ok = await onUpdateAcademicDate(editingAdId, adTitle.trim(), adDate, adHijriLabel.trim());
+          const ok = await onUpdateAcademicDate(editingAdId, adTitle.trim(), adDate, adHijriLabel.trim(), semesterBoundary, semesterNumber);
           if (ok) {
             onToast('تم تحديث الموعد بنجاح ✏️', '✏️');
             resetAdForm();
@@ -630,7 +652,7 @@ export default function AdminDashboard({
         }
       } else {
         if (onPublishAcademicDate) {
-          const ok = await onPublishAcademicDate(adTitle.trim(), adDate, adHijriLabel.trim());
+          const ok = await onPublishAcademicDate(adTitle.trim(), adDate, adHijriLabel.trim(), semesterBoundary, semesterNumber);
           if (ok) {
             onToast('تمت إضافة الموعد الدراسي بنجاح 🚀', '🚀');
             resetAdForm();
@@ -1164,6 +1186,34 @@ export default function AdminDashboard({
                 </div>
               </div>
 
+              <div className="form-row">
+                <div className="form-group flex-1">
+                  <label>طرف الفصل الدراسي (اختياري)</label>
+                  <SelectDropdown
+                    options={SEMESTER_BOUNDARY_OPTIONS}
+                    value={adSemesterBoundary}
+                    onChange={setAdSemesterBoundary}
+                    placeholder="بلا"
+                    allowClear
+                    triggerClassName="form-input"
+                  />
+                </div>
+                <div className="form-group flex-1">
+                  <label>رقم الفصل الدراسي (اختياري)</label>
+                  <SelectDropdown
+                    options={SEMESTER_NUMBER_OPTIONS}
+                    value={adSemesterNumber}
+                    onChange={setAdSemesterNumber}
+                    placeholder="بلا"
+                    allowClear
+                    triggerClassName="form-input"
+                  />
+                </div>
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--text4)', margin: '-8px 0 4px' }}>
+                يُستخدم هذان الحقلان فقط لبناء قائمة "الفصول المتاحة" في تقرير الحصاد الفصلي — أضِف موعدي بداية ونهاية بنفس رقم الفصل ليظهر كخيار جاهز للمعلمين.
+              </p>
+
               <div className="ann-form-actions">
                 <button
                   type="submit"
@@ -1229,6 +1279,11 @@ export default function AdminDashboard({
                         </span>
                         {ad.hijri_label && (
                           <span style={{ fontSize: '11px', color: 'var(--text4)' }}>{ad.hijri_label}</span>
+                        )}
+                        {ad.semester_number && (
+                          <span className="inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border bg-[var(--gold)]/10 text-[var(--gold3)] border-[var(--gold)]/20">
+                            الفصل {ad.semester_number}{ad.semester_boundary === 'start' ? ' — بداية' : ad.semester_boundary === 'end' ? ' — نهاية' : ''}
+                          </span>
                         )}
                       </div>
                       <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ad.title}</h4>

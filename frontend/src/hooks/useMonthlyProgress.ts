@@ -14,7 +14,9 @@ interface UseMonthlyProgressOptions {
   yearStartMonth: number; // 1–12, default 9
 }
 
-// قسم الاستراتيجيات مُستبعد كلياً من عداد الشهر الإجمالي (نفس استثناء overallPct في Dashboard.tsx)
+// قسم الاستراتيجيات مُستبعد كلياً من كل العدادات الإجمالية أدناه (currentMonthTotal،
+// yearTotal، وبالتبعية monthlyAvg) — نفس استثناء overallPct في Dashboard.tsx. له
+// عداد مستقل خاص به عبر getSectionMonthCount/getSectionYearTotal بدلاً من ذلك.
 const STRAT_SECTION_ID = SECS.find(s => s.isStrat)?.id;
 
 const ARABIC_MONTHS = [
@@ -158,8 +160,11 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
     .filter(r => r.year === currentYear && r.month === currentMonth && r.section_id !== STRAT_SECTION_ID)
     .reduce((sum, r) => sum + Math.min(3, r.evidence_count), 0);
 
-  /** إجمالي الشواهد منذ بداية السنة الدراسية */
-  const yearTotal = rows.filter(isInAcademicYear).reduce((sum, r) => sum + r.evidence_count, 0);
+  /** إجمالي الشواهد منذ بداية السنة الدراسية (بلا الاستراتيجيات — نفس استثناء
+   * currentMonthTotal أعلاه، مطبَّق هنا أيضاً لاتساق يرفّق منه monthlyAvg تلقائياً) */
+  const yearTotal = rows
+    .filter(r => isInAcademicYear(r) && r.section_id !== STRAT_SECTION_ID)
+    .reduce((sum, r) => sum + r.evidence_count, 0);
 
   /** عدد الأشهر المنقضية من بداية السنة (بما فيها الشهر الحالي) */
   const monthsElapsed = Math.max(

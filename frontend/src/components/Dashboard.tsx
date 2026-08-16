@@ -499,20 +499,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? incompleteSections.reduce((min, s) => getMonthlyPct(s.id) < getMonthlyPct(min.id) ? s : min)
     : null;
 
-  // عدد الاستراتيجيات المضافة خلال الشهر التقويمي الحالي (نفس منطق التصفية الزمنية لـ useMonthlyProgress)
-  const now = new Date();
-  const curYear = now.getFullYear();
-  const curMonth = now.getMonth() + 1;
-  const stratsUsedThisMonth = state.strats.filter(name => {
-    const iso = state.stratDates?.[name];
-    if (!iso) return false;
-    const d = new Date(iso);
-    return d.getFullYear() === curYear && (d.getMonth() + 1) === curMonth;
-  }).length;
-  const stratEvCount = stratSection
-    ? state.strats.reduce((acc, name) => acc + (state.ev[`${stratSection.id}|strat:${name}`] || []).length, 0)
-    : 0;
-
   // رسالة تشجيعية حسب نسبة الجاهزية
   const readinessMsg =
     overallPct === 100 ? 'أحسنت! ملفك مكتمل' :
@@ -652,7 +638,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       <Sidebar
         state={state}
         sections={sections}
-        filledCount={evStats.filledSectionCount}
+        totalCount={nonStratSections.length}
+        filledCount={filledSecs}
         overallPct={overallPct}
         monthlyProgress={monthlyProgress}
       />
@@ -1532,8 +1519,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           })}
 
           {/* بطاقة الاستراتيجيات — مثبّتة دائماً في آخر القائمة، خارج نظام
-              النسب/الترتيب/التلوين بالكامل (لا borderColor دلالي، لا شريط
-              تقدم، لا "نشاط الشهر/تراكمي") — فقط عداد استخدام هذا الشهر. */}
+              النسب/الترتيب/التلوين بالكامل (لا borderColor دلالي، لا شريط تقدم،
+              لا نسبة مئوية) — فقط عدادا نشاط (شهري + تراكمي) من monthly_progress،
+              نفس مصدر البيانات المستخدم لكل الأقسام الأخرى. */}
           {stratSection && (
             <div key={stratSection.id} id={`sc-${stratSection.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', borderRight: '4px solid var(--gold)' }}>
               <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => toggleSec(stratSection.id)}>
@@ -1545,18 +1533,26 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
                  <div className="flex-1 min-w-0">
                    <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{stratSection.ttl}</div>
-                   <div className="flex items-center gap-1.5 mt-1.5 text-[11.5px] sm:text-[12.5px] font-bold text-[var(--gold)]">
-                     <i className="ti ti-bulb text-[12px]"></i>
-                     {stratsUsedThisMonth} استراتيجية مستخدمة هذا الشهر
-                   </div>
+                   {/* عداد مستقل لقسم الاستراتيجيات — بلا شريط تقدم ولا نسبة (لا
+                       "هدف" هنا)، فقط رقمان: نشاط الشهر والإجمالي، بنفس بنية
+                       عداد الأقسام العادية أعلاه لكن بلون ذهبي بدل الأخضر. */}
+                   {monthlyProgress && (
+                     <div className="flex items-center gap-1.5 sm:gap-3 mt-1 sm:mt-1.5 flex-wrap">
+                       <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
+                         <i className="ti ti-calendar text-[9px] sm:text-[10px]" />
+                         {monthlyProgress.currentMonthName}:{' '}
+                         <span className={monthlyProgress.getSectionMonthCount(stratSection.id) > 0 ? 'text-[var(--gold)] font-bold' : ''}>
+                           {monthlyProgress.getSectionMonthCount(stratSection.id)}
+                         </span>
+                       </span>
+                       <span className="text-[var(--text4)] opacity-40 text-[9px]">·</span>
+                       <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
+                         <i className="ti ti-trending-up text-[9px] sm:text-[10px]" />
+                         {monthlyProgress.getSectionYearTotal(stratSection.id)} هذا العام
+                       </span>
+                     </div>
+                   )}
                  </div>
-
-                 {stratEvCount > 0 && (
-                   <div className="hidden sm:flex items-center gap-1 text-[12px] font-bold py-1.5 px-3.5 rounded-full bg-[var(--gold)]/10 text-[var(--gold)] border border-[var(--gold)]/15 shrink-0">
-                     <i className="ti ti-files text-[13px]"></i>
-                     {stratEvCount}
-                   </div>
-                 )}
 
                  <i className={`ti ti-chevron-down text-[22px] shrink-0 transition-all duration-400 ${openSecs[stratSection.id] ? 'rotate-180 text-[var(--gold)]' : 'text-[var(--text4)]'}`}></i>
               </div>

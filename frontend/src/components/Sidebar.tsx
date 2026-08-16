@@ -24,12 +24,16 @@ function getStatusBadge(pct: number): StatusBadge {
 interface SidebarProps {
   state: AppState;
   sections: any[];
+  /** مقام النص "المكتمل: X من Y" — يجب أن يطابق المقام الذي حُسِب منه overallPct
+   * تماماً (عدد الأقسام غير المستثناة)، وليس بالضرورة sections.length (الذي
+   * يشمل قسم الاستراتيجيات المعروض في القائمة أدناه رغم استبعاده من الحساب). */
+  totalCount: number;
   filledCount: number;
   overallPct: number;
   monthlyProgress?: { getSectionMonthCount: (sectionId: number) => number };
 }
 
-export default function Sidebar({ state, sections, filledCount, overallPct, monthlyProgress }: SidebarProps) {
+export default function Sidebar({ state, sections, totalCount, filledCount, overallPct, monthlyProgress }: SidebarProps) {
   const scrollToSection = (id: number) => {
     document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -54,7 +58,7 @@ export default function Sidebar({ state, sections, filledCount, overallPct, mont
           <span className="text-[11.5px] text-white/70 tracking-wide uppercase">التقدم العام</span>
           <span className="text-[28px] font-black text-white font-[var(--font)]">{overallPct}%</span>
         </div>
-        <div className="relative z-10 text-[12px] text-white/50 mb-2.5">المكتمل: {filledCount} من {sections.length}</div>
+        <div className="relative z-10 text-[12px] text-white/50 mb-2.5">المكتمل: {filledCount} من {totalCount}</div>
         <div className="relative z-10 h-[5px] bg-white/15 rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-[var(--em8)] to-white/90 rounded-full transition-all duration-[1400ms] ease-out relative" style={{ width: `${overallPct}%` }}>
             <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent)] bg-[length:200%_auto] z-10" style={{ animation: 'goldShimmer 2s linear infinite' }}></div>

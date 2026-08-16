@@ -22,8 +22,6 @@ import { useMonthlyProgress } from './hooks/useMonthlyProgress';
 import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
 import type { ContinuityData } from './types';
 
-const SECS_REMOVED = true;
-
 export default function App() {
   // Read ?share=USER_ID from URL — if present, show that user's public profile directly
   const shareUserId = new URLSearchParams(window.location.search).get('share');

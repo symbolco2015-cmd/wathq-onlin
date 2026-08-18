@@ -287,6 +287,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? new Date(archiveMonth.year, archiveMonth.month - 1, 1, 12, 0, 0).toISOString()
     : undefined;
 
+  // طي/فتح بطاقة "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي ضمن
+  // القسم الهجين (استراتيجيات)، مستقل تماماً عن openSecs (ذاك مفتاح أرقام أقسام
+  // كاملة، وهذا المؤشر لا يملك section id خاصاً به إذ يتشارك id مع stratSection).
+  const [indivDiffOpen, setIndivDiffOpen] = useState(false);
+
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [fabExpanded, setFabExpanded] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<{ open: boolean; sectionId: number; sub: string }>({
@@ -473,6 +478,38 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // التلوين — له بطاقة مخصّصة مثبّتة دائماً في آخر قائمة الأقسام (انظر أسفل).
   const stratSection = sections.find(s => s.isStrat) ?? null;
   const nonStratSections = sections.filter(s => !s.isStrat);
+
+  // عدّاد بطاقة الاستراتيجيات (شهري + تراكمي) — القسم هجين (استراتيجيات +
+  // مؤشر فرعي عادي "مراعاة الفروق الفردية بين المتعلمين")، وmonthlyProgress
+  // .getSectionMonthCount/getSectionYearTotal تحسبان section_id بالكامل من
+  // monthly_progress بلا أي تمييز بين الاثنين، فتُقحمان أدلة مراعاة الفروق
+  // الفردية ضمن رقم الاستراتيجيات خطأً (مثال: 6 فروق فردية + 2 استراتيجيات
+  // تظهر كـ8). لذلك نعيد منطق العداد القديم: فلترة مفاتيح "strat:" في
+  // state.ev مباشرة بدل الدالتين العامتين هنا تحديداً.
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  const stratsUsedThisMonth = state.strats.filter(name => {
+    const iso = state.stratDates?.[name];
+    if (!iso) return false;
+    const d = new Date(iso);
+    return d.getFullYear() === curYear && (d.getMonth() + 1) === curMonth;
+  }).length;
+  const stratEvCount = stratSection
+    ? state.strats.reduce((acc, name) => acc + (state.ev[`${stratSection.id}|strat:${name}`] || []).length, 0)
+    : 0;
+
+  // "مراعاة الفروق الفردية بين المتعلمين" — أول مؤشر فرعي عادي في القسم
+  // الهجين، منفصل كلياً عن الاستراتيجيات أعلاه. بطاقة الاستراتيجيات تعرض فقط
+  // stratSection.strats/مفاتيح "strat:"، فهذا المؤشر لا يظهر هناك إطلاقاً رغم
+  // كونه جزءاً طبيعياً من subs — له بطاقة حالة مستقلة أدناه بنفس نمط أي مؤشر
+  // فرعي عادي (state.ev[sectionId|subName]).
+  // ⚠️ تنبيه: زر الحذف في هذه البطاقة يمرّ عبر onDeleteEv (App.tsx handleDeleteEv)،
+  // الذي يطابق السجل المقابل في جدول evidence الحقيقي بالعنوان النصي فقط
+  // (section_id + title)، لا بمعرّف مرتبط — عناوين متطابقة قد تحذف السجل
+  // الخطأ من الجدول الحقيقي، وأدلة بلا نظير حقيقي تُحذف من state.ev بصمت.
+  const indivDiffSub = stratSection?.subs[0];
+  const indivDiffEvs = (stratSection && indivDiffSub) ? (state.ev[`${stratSection.id}|${indivDiffSub}`] || []) : [];
 
   // نسبة اكتمال البند بناءً على monthly_progress (عداد الشهر الحالي ÷ 3)
   const getMonthlyPct = (sectionId: number): number =>
@@ -1518,10 +1555,21 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             );
           })}
 
+          {/* بطاقتا الاستراتيجيات ومراعاة الفروق الفردية — متجاورتان جنباً إلى
+              جنب على الشاشات الواسعة (sm+)، تكديس عمودي طبيعي على الجوال. لا
+              تغيير على منطق أي منهما، فقط حاوية grid تلفّهما بدل عنصرين
+              متتاليين بالتدفق الافتراضي (نفس نمط sm:grid-cols-2 المستخدم أعلاه
+              لبطاقتَي عداد الشهر الحالي). items-start إلزامي هنا: افتراضي
+              CSS Grid هو align-items:stretch، فتفتح إحدى البطاقتين (max-h
+              كبير) يمدّد حاوية البطاقة المغلقة المجاورة لنفس ارتفاع الصف —
+              مساحة فارغة تحتها تبدو وكأنها "فُتحت" أيضاً رغم أن حالتها الداخلية
+              (indivDiffOpen/openSecs) لم تتغيّر إطلاقاً. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
           {/* بطاقة الاستراتيجيات — مثبّتة دائماً في آخر القائمة، خارج نظام
               النسب/الترتيب/التلوين بالكامل (لا borderColor دلالي، لا شريط تقدم،
-              لا نسبة مئوية) — فقط عدادا نشاط (شهري + تراكمي) من monthly_progress،
-              نفس مصدر البيانات المستخدم لكل الأقسام الأخرى. */}
+              لا نسبة مئوية) — فقط عدادا نشاط (شهري + تراكمي) من stratsUsedThisMonth/
+              stratEvCount أعلاه (فلترة مفاتيح "strat:" في state.ev، لا monthly_progress
+              — انظر التعليق عند تعريفهما لسبب ذلك). */}
           {stratSection && (
             <div key={stratSection.id} id={`sc-${stratSection.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', borderRight: '4px solid var(--gold)' }}>
               <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => toggleSec(stratSection.id)}>
@@ -1541,14 +1589,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                        <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
                          <i className="ti ti-calendar text-[9px] sm:text-[10px]" />
                          {monthlyProgress.currentMonthName}:{' '}
-                         <span className={monthlyProgress.getSectionMonthCount(stratSection.id) > 0 ? 'text-[var(--gold)] font-bold' : ''}>
-                           {monthlyProgress.getSectionMonthCount(stratSection.id)}
+                         <span className={stratsUsedThisMonth > 0 ? 'text-[var(--gold)] font-bold' : ''}>
+                           {stratsUsedThisMonth}
                          </span>
                        </span>
                        <span className="text-[var(--text4)] opacity-40 text-[9px]">·</span>
                        <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
                          <i className="ti ti-trending-up text-[9px] sm:text-[10px]" />
-                         {monthlyProgress.getSectionYearTotal(stratSection.id)} هذا العام
+                         {stratEvCount} هذا العام
                        </span>
                      </div>
                    )}
@@ -1653,6 +1701,72 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               </div>
             </div>
           )}
+
+          {/* بطاقة مستقلة لـ"مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي
+              عادي ضمن القسم الهجين (استراتيجيات)، لكنه غير معروض إطلاقاً داخل
+              بطاقة الاستراتيجيات أعلاه (تلك تعرض فقط state.strats/مفاتيح
+              "strat:"). أدلة موثّقة فعلياً لهذا المؤشر عبر مسارات أخرى (تحويل
+              رسم بياني، التقاط سريع) كانت غير مرئية هنا رغم وجودها في state.ev
+              — بطاقة حالة بسيطة بلا عداد/شريط تقدم، قابلة للفتح لعرض الأدلة
+              بنفس نمط أي مؤشر فرعي عادي مع تعديل/حذف طبيعي. */}
+          {stratSection && indivDiffSub && (
+            <div className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]">
+              <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => setIndivDiffOpen(v => !v)}>
+                <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border transition-all duration-350 ${indivDiffEvs.length > 0 ? 'bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20' : 'bg-white/5 text-[var(--text4)] border-[var(--line2)]'}`}>
+                  <i className="ti ti-users"></i>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{indivDiffSub}</div>
+                  <div className={`flex items-center gap-1.5 mt-1 sm:mt-1.5 text-[10.5px] sm:text-[11.5px] font-bold ${indivDiffEvs.length > 0 ? 'text-[var(--em8)]' : 'text-[var(--text4)]'}`}>
+                    <i className={`ti ${indivDiffEvs.length > 0 ? 'ti-circle-check' : 'ti-circle-dashed'} text-[11px]`}></i>
+                    {indivDiffEvs.length > 0 ? `موثّق ✓ (${indivDiffEvs.length})` : 'غير موثّق بعد'}
+                  </div>
+                </div>
+
+                <i className={`ti ti-chevron-down text-[22px] shrink-0 transition-all duration-400 ${indivDiffOpen ? 'rotate-180 text-[var(--em7)]' : 'text-[var(--text4)]'}`}></i>
+              </div>
+
+              <div className={`overflow-hidden transition-all duration-500 ease-[var(--ease)] ${indivDiffOpen ? 'max-h-[9999px] opacity-100 border-t border-[var(--line)]' : 'max-h-0 opacity-0 border-t-0'}`}>
+                <div className="py-5 px-6">
+                  {indivDiffEvs.length > 0 && (
+                    <div className="flex flex-col gap-2 mb-3">
+                      {indivDiffEvs.map((ev, ei) => {
+                        const t = EVT_CONFIG[ev.type] || EVT_CONFIG.doc;
+                        return (
+                          <div key={ei} className="flex items-center gap-3.5 py-3 px-4 bg-white/5 rounded-xl border border-[var(--line)] transition-all duration-250 hover:bg-white/10 hover:border-[var(--line2)] hover:-translate-x-1 hover:shadow-[0_4px_20px_rgba(0,0,0,.3)] group" style={{ animation: 'slideR .3s var(--sp) both' }}>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[20px] shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg] ${t.cls}`}>
+                              <i className={`ti ${t.icon}`}></i>
+                            </div>
+                            <div
+                              className={`flex-1 min-w-0 ${ev.url ? 'cursor-pointer hover:opacity-80 transition-all' : ''}`}
+                              onClick={() => ev.url && window.open(ev.url, '_blank')}
+                              title={ev.url ? 'اضغط لعرض الملف' : ''}
+                            >
+                              <div className="text-[13.5px] font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis group-hover:text-[var(--em8)] transition-colors" dir="ltr" style={{unicodeBidi:'isolate'}}>{ev.name}</div>
+                              <div className="text-[11px] text-[var(--text4)] mt-1 flex items-center gap-1.5">
+                                <i className="ti ti-calendar"></i>{ev.date} · <i className="ti ti-tag"></i>{t.label}
+                                {ev.url && <span className="text-[var(--em8)] flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</span>}
+                              </div>
+                            </div>
+                            <button className="bg-transparent border-none text-[var(--text4)] cursor-pointer p-2 rounded-lg text-[16px] shrink-0 transition-all duration-200 hover:text-red-400 hover:bg-red-400/10 hover:scale-115" onClick={() => onDeleteEv(stratSection.id, indivDiffSub, ei)} title="حذف">
+                              <i className="ti ti-trash"></i>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <button className="flex items-center gap-2.5 w-full py-3 px-4 border-[1.5px] border-dashed border-[var(--em7)]/20 rounded-xl cursor-pointer bg-transparent font-[var(--font)] text-[var(--text4)] text-[13.5px] transition-all duration-250 group overflow-hidden relative hover:border-[var(--em7)]/40 hover:text-[var(--em7)] hover:bg-[var(--em7)]/5" onClick={() => onAddEvClick(stratSection.id, indivDiffSub)}>
+                    <i className="ti ti-paperclip text-[20px] transition-transform duration-350 group-hover:rotate-90 group-hover:scale-110"></i>
+                    <span className="relative z-10">إرفاق ملف أو دليل...</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          </div>
         </div>
         </>}
 

@@ -35,7 +35,11 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
   const [prefill, setPrefill] = useState<{ title: string; fileUrl: string; fileName: string } | null>(null);
   const captureRef = useRef<HTMLDivElement>(null);
 
-  const chosenSection = sections.find(s => s.id === Number(sectionId));
+  // قسم الاستراتيجيات مُستبعد من وجهات التحويل — رسم تحليل نتائج لا علاقة له
+  // منطقياً بـ"استراتيجية تدريس" ولا بـ"مراعاة الفروق الفردية" (subs[0] الخاص
+  // بذلك القسم الهجين)، نفس نمط nonStratSections الشائع بالمشروع.
+  const nonStratSections = sections.filter(s => !s.isStrat);
+  const chosenSection = nonStratSections.find(s => s.id === Number(sectionId));
   const subOptions = chosenSection ? chosenSection.subs : [];
   const effectiveSub = sub || subOptions[0] || 'عام';
 
@@ -117,7 +121,7 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
             <div>
               <div className="text-[11.5px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5">القسم <span className="text-red-400">*</span></div>
               <SelectDropdown
-                options={sections.map(s => ({ value: String(s.id), label: s.ttl }))}
+                options={nonStratSections.map(s => ({ value: String(s.id), label: s.ttl }))}
                 value={sectionId}
                 onChange={v => { setSectionId(v); setSub(''); }}
                 placeholder="اختر القسم"

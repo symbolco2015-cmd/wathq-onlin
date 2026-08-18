@@ -490,6 +490,10 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   const [stratCollapsed, setStratCollapsed] = useState(true);
   const [closedStrats, setClosedStrats] = useState<Set<string>>(new Set());
   const [stratPreview, setStratPreview] = useState<{ name: string; url: string; type: Evidence['type'] } | null>(null);
+
+  // بطاقة "مراعاة الفروق الفردية بين المتعلمين" — طي/فتح مستقل عن بطاقة
+  // الاستراتيجيات أعلاه (مطوية افتراضياً، نفس مبدأ stratCollapsed).
+  const [indivDiffCollapsed, setIndivDiffCollapsed] = useState(true);
   const toggleStratRow = (name: string) => {
     setClosedStrats(prev => {
       const next = new Set(prev);
@@ -549,6 +553,18 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // 1-2-3 أدناه) — له بطاقة طولية مستقلة بلا أي رقم نسبة (انظر أسفل الصفحة).
   const stratSection = sections.find(s => s.isStrat) ?? null;
   const nonStratSections = sections.filter(s => !s.isStrat);
+
+  // "مراعاة الفروق الفردية بين المتعلمين" — أول مؤشر فرعي عادي بالقسم الهجين،
+  // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط
+  // state.strats/مفاتيح "strat:"، فهذا المؤشر لا يظهر هناك رغم كونه جزءاً
+  // طبيعياً من subs — عرض مبسّط مستقل له (بلا أزرار تعديل، مطابق لباقي
+  // شواهد صفحة المشاركة).
+  // ⚠️ تنبيه: لا حذف هنا (عرض فقط)، لكن الحذف المقابل بلوحة التحكم (Dashboard.tsx
+  // onDeleteEv) يطابق السجل في جدول evidence الحقيقي بالعنوان النصي فقط
+  // (section_id + title)، لا بمعرّف مرتبط — عناوين متطابقة قد تحذف السجل
+  // الخطأ من الجدول الحقيقي، فقد يسبب تبايناً صامتاً بين ما يظهر هنا وهناك.
+  const indivDiffSub = stratSection?.subs[0];
+  const indivDiffEvs = (stratSection && indivDiffSub) ? (state.ev[`${stratSection.id}|${indivDiffSub}`] || []) : [];
 
   const chartData = nonStratSections.map(sec => {
     const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
@@ -875,11 +891,20 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             </div>
           )}
 
+          {/* بطاقتا الاستراتيجيات ومراعاة الفروق الفردية — متجاورتان جنباً إلى
+              جنب على الشاشات الواسعة (sm+)، تكديس عمودي طبيعي على الجوال. لا
+              تغيير على منطق أي منهما؛ mt-8 انتقل من بطاقة الاستراتيجيات نفسها
+              إلى الحاوية حتى يتساوى الهامش العلوي للبطاقتين ضمن صف الـgrid.
+              items-start إلزامي: افتراضي CSS Grid هو align-items:stretch،
+              فتمدّد حاوية البطاقة المغلقة لارتفاع الصف عند فتح المجاورة —
+              مساحة فارغة تحتها تبدو "مفتوحة" رغم أن stratCollapsed/
+              indivDiffCollapsed الداخليين لم يتغيّرا. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 items-start">
           {/* بطاقة استراتيجيات التدريس — مستقلة كلياً عن نظام النسب أعلاه، بدون أي رقم نسبة.
               مطوية بالكامل افتراضياً؛ نسخة الطباعة (print:) تُجبَر دائماً على الفتح الكامل
               بصرف النظر عن حالة الطي على الشاشة، حفاظاً على سلوك تصدير PDF السابق. */}
           {stratSection && (
-            <div className="print-card mt-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--gold)]/20 shadow-lg p-6 sm:p-8">
+            <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--gold)]/20 shadow-lg p-6 sm:p-8">
               <div
                 className="flex items-center justify-between gap-3 cursor-pointer select-none print:pointer-events-none"
                 onClick={() => setStratCollapsed(v => !v)}
@@ -944,6 +969,50 @@ export default function Public({ state, sections, isSharedView, continuity, evid
               </div>
             </div>
           )}
+
+          {/* بطاقة مستقلة لـ"مراعاة الفروق الفردية بين المتعلمين" — عرض مبسّط
+              (بلا أزرار تعديل)، بنفس مبدأ بطاقة الاستراتيجيات أعلاه لكن بدون
+              رقم نسبة/عدّاد، فقط حالة موثّق/غير موثّق قابلة للفتح. */}
+          {stratSection && indivDiffSub && (
+            <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--em7)]/20 shadow-lg p-6 sm:p-8">
+              <div
+                className="flex items-center justify-between gap-3 cursor-pointer select-none print:pointer-events-none"
+                onClick={() => setIndivDiffCollapsed(v => !v)}
+              >
+                <div className="flex items-center gap-2">
+                  <i className="ti ti-users text-[var(--em8)] text-[20px]"></i>
+                  <h2 className="text-[18px] font-black text-white">{indivDiffSub}</h2>
+                </div>
+                <div className="flex items-center gap-2.5 print:hidden">
+                  <span className={`text-[11px] font-black px-2.5 py-1 rounded-full whitespace-nowrap ${indivDiffEvs.length > 0 ? 'text-[#0a1f13] bg-[var(--em7)]' : 'text-[var(--text4)] bg-white/5 border border-[var(--line2)]'}`}>
+                    {indivDiffEvs.length > 0 ? `موثّق ✓ (${indivDiffEvs.length})` : 'غير موثّق بعد'}
+                  </span>
+                  <i className={`ti ti-chevron-down text-[var(--text3)] text-[18px] transition-transform duration-300 ${indivDiffCollapsed ? '' : 'rotate-180'}`}></i>
+                </div>
+              </div>
+
+              <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 print:!mt-6 ${indivDiffCollapsed ? 'max-h-0 opacity-0' : 'max-h-[10000px] opacity-100 mt-6'}`}>
+                {indivDiffEvs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
+                      <i className="ti ti-ghost"></i>
+                    </div>
+                    <p className="text-[var(--text3)] text-[13.5px]">لا توجد شواهد موثّقة بعد لهذا المؤشر</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {indivDiffEvs.map((e, idx) => (
+                      <div key={idx}>
+                        <EvidenceThumb e={e} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
+                        <EvidenceContextTags e={e} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          </div>
 
           <footer className="mt-12 pt-6 border-t border-[var(--line)] text-center">
             <p className="text-[12px] font-normal text-[var(--text4)]">

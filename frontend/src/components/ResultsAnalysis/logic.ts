@@ -1,4 +1,4 @@
-import type { GradeBand, AnalysisSummary, StudentResult, ColumnDetectionResult, ParsedFile, ResultsAnalysisRow } from './types';
+import type { GradeBand, AnalysisSummary, StudentResult, ColumnDetectionResult, ParsedFile, ResultsAnalysisRow, PublicResultsAnalysisRow } from './types';
 
 /** هامش "منطقة الخطر" حول حد النجاح (60) — طالب بدرجة ضمن [55,65] يُعتبر في
  *  منطقة خطر. ثابت الآن، قابل للتعديل لاحقاً دون تغيير منطق الحساب. */
@@ -231,4 +231,53 @@ export function groupAnalysesBySubject(analyses: ResultsAnalysisRow[]): Map<stri
     map.set(a.subject, list);
   }
   return map;
+}
+
+/** يحوّل صفاً داخلياً كاملاً (يحوي أسماء الطلاب عبر summary.students) إلى
+ *  الشكل المبسَّط الآمن للعرض العام — لمعاينة المالك لصفحته فقط (state.ev
+ *  محلي أصلاً، لا يعبر الشبكة بشكل مختلف). أدنى/أعلى درجة تُحسبان هنا بنفس
+ *  الطريقة التي تحسبها get_shared_results_analysis() داخل SQL لنمط ?share=،
+ *  حتى يتطابق العرض بين النمطين. */
+export function toPublicResultsAnalysisRow(row: ResultsAnalysisRow): PublicResultsAnalysisRow {
+  const scores = row.summary.students.map(s => s.score);
+  return {
+    id: row.id,
+    subject: row.subject,
+    stage: row.stage,
+    class_section: row.class_section,
+    created_at: row.created_at,
+    total_students: row.summary.totalStudents,
+    average: row.summary.average,
+    min_score: scores.length > 0 ? Math.min(...scores) : 0,
+    max_score: scores.length > 0 ? Math.max(...scores) : 0,
+  };
+}
+
+/** نسخة عامة من groupAnalysesBySubject تعمل على الشكل المبسَّط — الشكلان غير
+ *  متوافقين بنيوياً (average مباشر هنا، summary.average هناك) فتعذّر إعادة
+ *  استخدام الدالة الأصلية مباشرة دون تحويل وسيط. */
+export function groupPublicAnalysesBySubject(rows: PublicResultsAnalysisRow[]): Map<string, PublicResultsAnalysisRow[]> {
+  const map = new Map<string, PublicResultsAnalysisRow[]>();
+  for (const r of rows) {
+    const list = map.get(r.subject) ?? [];
+    list.push(r);
+    map.set(r.subject, list);
+  }
+  return map;
+}
+
+/** نسخة عامة من buildComparisonSeries تعمل على الشكل المبسَّط — تُنتج نفس
+ *  ComparisonPoint[] فتبقى comparisonDelta أعلاه قابلة لإعادة الاستخدام
+ *  حرفياً بلا أي تكرار (هي أصلاً عامة، لا تعتمد على ResultsAnalysisRow). */
+export function buildPublicComparisonSeries(rows: PublicResultsAnalysisRow[], subject: string): ComparisonPoint[] {
+  return rows
+    .filter(r => r.subject === subject)
+    .slice()
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .map(r => ({
+      id: r.id,
+      label: new Date(r.created_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }),
+      average: r.average,
+      createdAt: r.created_at,
+    }));
 }

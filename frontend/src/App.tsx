@@ -1,10 +1,13 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Evidence, PageType, SectionData, UserProfile } from './types';
 import { useAppStore } from './hooks/useAppStore';
 import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
 import { usePublicEvidence } from './hooks/usePublicEvidence';
+import { usePublicResultsAnalysis } from './hooks/usePublicResultsAnalysis';
 import { useHarvestReport } from './hooks/useHarvestReport';
+import { useResultsAnalysis } from './components/ResultsAnalysis/useResultsAnalysis';
+import { toPublicResultsAnalysisRow } from './components/ResultsAnalysis/logic';
 
 import Background from './components/Background';
 import Nav from './components/Nav';
@@ -123,6 +126,11 @@ export default function App() {
   // (RLS تمنع قراءة evidence مباشرة لغير المالك، انظر usePublicEvidence).
   const sharedEvidence = usePublicEvidence(shareUserId ?? null);
 
+  // بند 10 (تحليل نتائج المتعلمين) للعرض العام — جلب منفصل عبر RPC آمنة بنفس
+  // نمط sharedEvidence (RLS تمنع قراءة results_analysis مباشرة لغير المالك،
+  // انظر usePublicResultsAnalysis)؛ الشكل المُرجَع مبسَّط أصلاً بلا أي اسم طالب.
+  const sharedResultsAnalysis = usePublicResultsAnalysis(shareUserId ?? null);
+
   // تقرير حصاد فصلي (?report=) — قراءة مباشرة (ليست RPC) على harvest_reports،
   // السماح بها عبر RLS "قراءة عامة بمعرفة id" فقط (انظر useHarvestReport).
   const { report: harvestReport, loading: harvestReportLoading, error: harvestReportError } = useHarvestReport(reportId ?? null);
@@ -142,6 +150,23 @@ export default function App() {
     yearStartMonth: state.yearStartMonth ?? 9,
     activeMonths: Array.from(ownMonthTotals.values()).filter(m => m.evidenceCount > 0),
   };
+
+  // بند 10 لمعاينة المالك لملفه الخاص — لا حاجة RPC هنا إطلاقاً (المالك يملك
+  // صلاحية RLS مباشرة على results_analysis عبر useResultsAnalysis نفسه، نفس
+  // الهوك المستخدَم داخل Dashboard.tsx). نسخة مستقلة هنا لأن Dashboard.tsx غير
+  // مركَّب أصلاً أثناء عرض صفحة 'public' — لكن userId يُمرَّر فقط أثناء عرض
+  // هذه المعاينة تحديداً (isOwnPreview)، لا في كل جلسة مسجَّلة، فلا يتكرر جلب
+  // results_analysis كاملاً بلا داعٍ لمجرد فتح لوحة التحكم العادية. تُحوَّل
+  // لنفس الشكل المبسَّط الآمن (toPublicResultsAnalysisRow) قبل التمرير
+  // لـPublic.tsx، بدل تمرير الصفوف الكاملة التي تحمل أسماء الطلاب — القسم لا
+  // يحتاجها، وPublic.tsx يعامل هذا النمط ونمط ?share= بنفس الشكل تماماً بلا
+  // فرع خاص.
+  const isOwnPreview = currentPage === 'public' && !shareUserId && !reportId;
+  const ownResultsAnalysis = useResultsAnalysis(isOwnPreview ? user?.id : undefined);
+  const ownResultsAnalysisPublic = useMemo(
+    () => ownResultsAnalysis.analyses.map(toPublicResultsAnalysisRow),
+    [ownResultsAnalysis.analyses]
+  );
 
   // Redirect users dynamically based on auth status — but not when in shared-profile view
   useEffect(() => {
@@ -773,7 +798,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} />
+          <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} />
         </main>
       </>
     );
@@ -891,6 +916,7 @@ export default function App() {
             sections={SECS}
             continuity={ownContinuity}
             evidence={supabaseEv.evidence}
+            resultsAnalysis={ownResultsAnalysisPublic}
           />
         )}
         

@@ -53,6 +53,22 @@ export interface ParsedFile {
   rows: Record<string, string>[];
 }
 
+/** الشكل المبسَّط الآمن للعرض العام (بند 10 على ?share=) — يطابق حرفياً ما
+ *  تُرجعه get_shared_results_analysis()، ويطابق أيضاً ما يُبنى محلياً لمعاينة
+ *  المالك عبر toPublicResultsAnalysisRow في logic.ts. عمداً بلا summary/
+ *  students: لا اسم طالب واحد يصل لهذا الشكل بأي مسار. */
+export interface PublicResultsAnalysisRow {
+  id: string;
+  subject: string;
+  stage: string | null;
+  class_section: string | null;
+  created_at: string;
+  total_students: number;
+  average: number;
+  min_score: number;
+  max_score: number;
+}
+
 export interface ColumnDetectionResult {
   /** إلزامي — بدونه لا يمكن حساب أي تحليل */
   scoreCol: string | null;

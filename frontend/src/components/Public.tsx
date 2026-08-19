@@ -5,6 +5,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import EvidenceList from './EvidenceList';
+import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
+import type { ComparisonPoint } from './ResultsAnalysis/logic';
+import { groupPublicAnalysesBySubject, buildPublicComparisonSeries, comparisonDelta } from './ResultsAnalysis/logic';
 import './Public.print.css';
 
 /** تدرج رمادي واحد فقط لوضع الطباعة، تتحكم النسبة بدرجته — لا يُستخدم على
@@ -28,6 +31,11 @@ interface PublicProps {
   /** شواهد جدول evidence الجديد (الغني) — غائبة أثناء التحميل، وفي هذه الحالة
    * القسم الإضافي في نافذة تفاصيل البند لا يُعرض إطلاقاً (نفس منطق continuity). */
   evidence?: SupabaseEvidence[] | null;
+  /** بند 10 (تحليل نتائج المتعلمين) — شكل مبسَّط آمن فقط (id, subject, stage,
+   * class_section, created_at, total_students, average, min_score, max_score)،
+   * بلا summary/students إطلاقاً. غائب أثناء التحميل أو في وضع ?report=
+   * (لا يزال مؤجَّلاً هناك)، وفي هذه الحالة البطاقة لا تُعرض إطلاقاً. */
+  resultsAnalysis?: PublicResultsAnalysisRow[] | null;
   /** وضع "تقرير حصاد فصلي" الثابت (?report=) — يستبدل حساب شارة النقاط الحي
    * (نافذة آخر 3 أشهر تقويمية، مرتبطة بـ"اليوم") بقيمة مجمَّدة وقت التوليد،
    * ويضيف سطر عنوان الفترة/تاريخ التوليد في الهيرو وترويسة الطباعة. غائب في
@@ -471,7 +479,93 @@ function StrategyLightbox({ item, onClose }: { item: { name: string; url: string
   );
 }
 
-export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta }: PublicProps) {
+/** سطر تحليل واحد ببطاقة بند 10 العامة — بلا أي رسم توزيع فئات أو قائمة طلاب
+ *  (بيانات داخلية فقط)، فقط شريط مدى (0-100) يوضّح موقع الأدنى/الأعلى، وعلامة
+ *  بيضاء لموقع المتوسط. dir="ltr" مقصود ومعزول عن اتجاه الصفحة: شريط رقمي
+ *  كهذا يحتاج تموضعاً مطلقاً (left: min%→max%) لا يصح تركه لموضع RTL افتراضي
+ *  غامض، وقيم الدرجات تُقرأ تقليدياً من اليسار لليمين بصرف النظر عن اتجاه
+ *  النص المحيط بها. */
+function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
+  const clamp = (n: number) => Math.min(100, Math.max(0, n));
+  const minPct = clamp(row.min_score);
+  const maxPct = clamp(row.max_score);
+  const avgPct = clamp(row.average);
+  const metaParts = [row.stage, row.class_section].filter(Boolean) as string[];
+
+  return (
+    <div className="bg-white/5 rounded-2xl p-4 border border-[var(--violet)]/10">
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <div className="min-w-0">
+          <span className="text-[14px] font-bold text-white">{row.subject}</span>
+          {metaParts.length > 0 && (
+            <span className="text-[12px] text-[var(--text4)] mr-2">{metaParts.join(' · ')}</span>
+          )}
+        </div>
+        <span className="text-[11px] font-black text-[var(--violet2)] bg-[var(--violet)]/10 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+          {row.total_students} طالب
+        </span>
+      </div>
+
+      <div dir="ltr">
+        <div className="relative h-2 rounded-full bg-white/10">
+          <div
+            className="absolute top-0 h-2 rounded-full bg-[var(--violet)]"
+            style={{ left: `${minPct}%`, width: `${Math.max(1, maxPct - minPct)}%` }}
+          ></div>
+          <div
+            className="absolute top-1/2 w-[3px] h-3.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,.7)] -translate-y-1/2"
+            style={{ left: `${avgPct}%`, marginLeft: '-1.5px' }}
+            title={`المتوسط ${row.average.toFixed(1)}`}
+          ></div>
+        </div>
+        <div className="flex items-center justify-between text-[11px] text-[var(--text4)] font-bold mt-2">
+          <span>أدنى {row.min_score}</span>
+          <span className="text-[var(--violet2)]">متوسط {row.average.toFixed(1)}</span>
+          <span>أعلى {row.max_score}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** عنصر مقارنة تلقائي مصغّر لمادة بها تحليلان فأكثر — Sparkline بآخر نقطتين
+ *  فقط (لا رسم زمني كامل، ذاك في لوحة التحكم) + نص الفرق (comparisonDelta،
+ *  نفس المنطق ونفس صياغة النص المستخدَمة في ComparisonChart.tsx بلوحة
+ *  التحكم). لا يُعرض إطلاقاً لو أقل من نقطتين (comparisonDelta يُرجع null). */
+function ResultComparisonMini({ subject, series }: { subject: string; series: ComparisonPoint[] }) {
+  const delta = comparisonDelta(series);
+  if (!delta) return null;
+
+  const last2 = series.slice(-2);
+  const values = last2.map(p => p.average);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const norm = (v: number) => (hi === lo ? 0.5 : (v - lo) / (hi - lo));
+  const w = 60, h = 24, pad = 4;
+  const y1 = pad + (1 - norm(values[0])) * (h - pad * 2);
+  const y2 = pad + (1 - norm(values[1])) * (h - pad * 2);
+
+  return (
+    <div className="bg-[var(--violet)]/8 border border-[var(--violet)]/20 rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center gap-2 min-w-0">
+        <i className="ti ti-chart-line text-[var(--violet2)] text-[16px] shrink-0"></i>
+        <span className="text-[13px] font-bold text-white truncate">مقارنة — {subject}</span>
+      </div>
+      <div className="flex items-center gap-3 shrink-0" dir="ltr">
+        <svg width={w} height={h}>
+          <line x1={pad} y1={y1} x2={w - pad} y2={y2} stroke="var(--violet2)" strokeWidth={2} strokeLinecap="round" />
+          <circle cx={pad} cy={y1} r={2.5} fill="var(--violet2)" />
+          <circle cx={w - pad} cy={y2} r={2.5} fill="#fff" />
+        </svg>
+        <span className={`text-[12px] font-black whitespace-nowrap ${delta.improved ? 'text-[var(--em8)]' : 'text-red-400'}`}>
+          {delta.improved ? 'تحسّن' : 'تراجع'} {delta.improved ? '+' : ''}{delta.diff}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis }: PublicProps) {
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
@@ -553,14 +647,26 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // 1-2-3 أدناه) — له بطاقة طولية مستقلة بلا أي رقم نسبة (انظر أسفل الصفحة).
   // نفس الاستبعاد يشمل بندي 5/10 (isResultsSection) — لا مؤشرات فرعية عادية
   // تُحتسب ضمن هذا النظام. بند 5 له بطاقة عرض شواهد فعلية أدناه؛ بند 10
-  // (تحليل نتائج المتعلمين) مؤجَّل من صفحة العرض العام حالياً — عرضه القابل
-  // للقراءة (تبويبات + مقارنة) يحتاج جدول results_analysis نفسه، وهو محمي
-  // بـRLS لمالك الحساب فقط بلا RPC مكافئ لـget_shared_evidence/get_shared_portfolio
-  // بعد؛ قرار مقصود بانتظار مراجعة تصميم الوصول العام له لاحقاً.
+  // (تحليل نتائج المتعلمين) له الآن بطاقة عرض مبسَّطة أدناه أيضاً عبر
+  // get_shared_results_analysis() (resultsAnalysis prop) — لا summary/students
+  // إطلاقاً بهذا الشكل، فقط متوسط/مدى/عدد طلاب لكل تحليل.
   const stratSection = sections.find(s => s.isStrat) ?? null;
   const resultsSections = sections.filter(s => s.isResultsSection);
   const improvementSection = resultsSections.find(s => s.id === 5) ?? null;
+  const analysisSection = resultsSections.find(s => s.id === 10) ?? null;
   const nonStratSections = sections.filter(s => !s.isStrat && !s.isResultsSection);
+
+  // عناصر المقارنة التلقائية لبطاقة بند 10 — مادة واحدة لكل مجموعة subject
+  // بها تحليلان فأكثر (نفس شرط تبويب "مقارنة" بلوحة التحكم)، بالشكل المبسَّط
+  // العام (groupPublicAnalysesBySubject/buildPublicComparisonSeries، انظر
+  // logic.ts) لا الداخلي الكامل — resultsAnalysis هنا مبسَّط أصلاً بلا أسماء.
+  const resultsComparisons = useMemo(() => {
+    if (!resultsAnalysis || resultsAnalysis.length === 0) return [];
+    const groups = groupPublicAnalysesBySubject(resultsAnalysis);
+    return Array.from(groups.entries())
+      .filter(([, rows]) => rows.length >= 2)
+      .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(resultsAnalysis, subject) }));
+  }, [resultsAnalysis]);
 
   // "مراعاة الفروق الفردية بين المتعلمين" — أول مؤشر فرعي عادي بالقسم الهجين،
   // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط
@@ -1022,17 +1128,59 @@ export default function Public({ state, sections, isSharedView, continuity, evid
           )}
           </div>
 
+          {/* بطاقتا بند 10 (تحليل) وبند 5 (تحسين) — متجاورتان جنباً إلى جنب على
+              الشاشات الواسعة (نفس نمط grid sm:grid-cols-2 items-start المستخدَم
+              بلوحة التحكم لهذا الزوج ولزوج الاستراتيجيات/الفروق الفردية أعلاه).
+              items-start إلزامي هنا للسبب نفسه دائماً: بند 10 غالباً أطول محتوى
+              من بند 5 (عناصر المقارنة قد تضيف صفوفاً)، فبلا items-start يمدّد
+              افتراضي CSS Grid (align-items:stretch) بطاقة بند 5 لنفس ارتفاع
+              بند 10 فارغاً من تحت. mt-8 انتقل من كل بطاقة على حدة إلى الحاوية،
+              نفس تقنية زوج الاستراتيجيات/الفروق الفردية. ترتيب العرض: التحليل
+              أولاً ثم التحسين — نفس ترتيب لوحة التحكم. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 items-start">
+          {analysisSection && resultsAnalysis && (
+            <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8" style={{ borderRight: '4px solid var(--violet)' }}>
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <div className="flex items-center gap-2">
+                  <i className={`ti ${analysisSection.icon} text-[var(--violet2)] text-[20px]`}></i>
+                  <h2 className="text-[18px] font-black text-white">{analysisSection.ttl}</h2>
+                </div>
+                {resultsAnalysis.length > 0 && (
+                  <span className="text-[11px] font-black text-[var(--violet2)] bg-[var(--violet)]/10 px-2.5 py-1 rounded-full whitespace-nowrap">
+                    {resultsAnalysis.length} تحليل
+                  </span>
+                )}
+              </div>
+
+              {resultsAnalysis.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
+                    <i className="ti ti-ghost"></i>
+                  </div>
+                  <p className="text-[var(--text3)] text-[13.5px]">لا توجد تحليلات نتائج موثّقة بعد لهذا البند</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {resultsAnalysis.map(row => (
+                    <ResultRangeRow key={row.id} row={row} />
+                  ))}
+                  {resultsComparisons.map(c => (
+                    <ResultComparisonMini key={c.subject} subject={c.subject} series={c.series} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* بطاقة بند 5 "تحسين نتائج المتعلمين" — عرض قراءة فقط لشواهد فعلية
               موثّقة (state.ev بمفتاحي REMEDIAL_SUB/HONOR_SUB)، بلا أي تنبيهات
               خام إطلاقاً (تلك أداة تخطيط داخلية للمعلم وحده، ليست محتوى عرض
               لمشرف خارجي). فارغ بشكل محايد تماماً كأي قسم فارغ آخر لو صفر شواهد.
               شريط اللون البنفسجي (--violet) يطابق بطاقتَي التحليل/التحسين في
-              Dashboard.tsx، لكن بلا حاوية grid sm:grid-cols-2: بند 10 (تحليل
-              نتائج المتعلمين) مؤجَّل عمداً من صفحة العرض العام (انظر تعليق
-              resultsSections أعلاه) فلا بطاقة مجاورة لتشكيل صف بها هنا —
-              البطاقة تبقى بعرض كامل بصف مستقل كما كانت. */}
+              Dashboard.tsx — الآن ضمن نفس حاوية grid المجاورة لبطاقة بند 10
+              أعلاه (انظر تعليقها). */}
           {improvementSection && (
-            <div className="print-card mt-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8" style={{ borderRight: '4px solid var(--violet)' }}>
+            <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8" style={{ borderRight: '4px solid var(--violet)' }}>
               <div className="flex items-center gap-2 mb-6">
                 <i className={`ti ${improvementSection.icon} text-[var(--em8)] text-[20px]`}></i>
                 <h2 className="text-[18px] font-black text-white">{improvementSection.ttl}</h2>
@@ -1080,6 +1228,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
               })()}
             </div>
           )}
+          </div>
 
           <footer className="mt-12 pt-6 border-t border-[var(--line)] text-center">
             <p className="text-[12px] font-normal text-[var(--text4)]">

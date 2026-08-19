@@ -14,10 +14,14 @@ interface UseMonthlyProgressOptions {
   yearStartMonth: number; // 1–12, default 9
 }
 
-// قسم الاستراتيجيات مُستبعد كلياً من كل العدادات الإجمالية أدناه (currentMonthTotal،
-// yearTotal، وبالتبعية monthlyAvg) — نفس استثناء overallPct في Dashboard.tsx. له
-// عداد مستقل خاص به عبر getSectionMonthCount/getSectionYearTotal بدلاً من ذلك.
-const STRAT_SECTION_ID = SECS.find(s => s.isStrat)?.id;
+// قسم الاستراتيجيات وبندا 5/10 (تحسين/تحليل نتائج المتعلمين) مُستبعدون كلياً
+// من كل العدادات الإجمالية أدناه (currentMonthTotal، yearTotal، وبالتبعية
+// monthlyAvg) — نفس استثناء overallPct/nonStratSections في Dashboard.tsx.
+// لقسم الاستراتيجيات عداد مستقل عبر getSectionMonthCount/getSectionYearTotal؛
+// بندا 5/10 محتواهما بالكامل واجهة أداة تحليل النتائج، لا مؤشرات فرعية عادية.
+const EXCLUDED_SECTION_IDS = new Set(
+  SECS.filter(s => s.isStrat || s.isResultsSection).map(s => s.id)
+);
 
 const ARABIC_MONTHS = [
   'يناير','فبراير','مارس','أبريل','مايو','يونيو',
@@ -157,13 +161,13 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
 
   /** إجمالي الشواهد للشهر الحالي عبر البنود الأساسية فقط (بلا الاستراتيجيات) — كل بند يساهم بحد أقصى 3 (نفس سقف getMonthlyPct لكل بند) */
   const currentMonthTotal = rows
-    .filter(r => r.year === currentYear && r.month === currentMonth && r.section_id !== STRAT_SECTION_ID)
+    .filter(r => r.year === currentYear && r.month === currentMonth && !EXCLUDED_SECTION_IDS.has(r.section_id))
     .reduce((sum, r) => sum + Math.min(3, r.evidence_count), 0);
 
-  /** إجمالي الشواهد منذ بداية السنة الدراسية (بلا الاستراتيجيات — نفس استثناء
-   * currentMonthTotal أعلاه، مطبَّق هنا أيضاً لاتساق يرفّق منه monthlyAvg تلقائياً) */
+  /** إجمالي الشواهد منذ بداية السنة الدراسية (بلا الاستراتيجيات/بندي 5و10 — نفس
+   * استثناء currentMonthTotal أعلاه، مطبَّق هنا أيضاً لاتساق يرفّق منه monthlyAvg تلقائياً) */
   const yearTotal = rows
-    .filter(r => isInAcademicYear(r) && r.section_id !== STRAT_SECTION_ID)
+    .filter(r => isInAcademicYear(r) && !EXCLUDED_SECTION_IDS.has(r.section_id))
     .reduce((sum, r) => sum + r.evidence_count, 0);
 
   /** عدد الأشهر المنقضية من بداية السنة (بما فيها الشهر الحالي) */

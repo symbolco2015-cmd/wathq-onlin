@@ -14,7 +14,9 @@ import { supabase } from '../supabaseClient';
 import BulkImportPicker from './BulkImportPicker';
 import BulkImportReview from './BulkImportReview';
 import HarvestReportSheet from './HarvestReportSheet';
-import ResultsAnalysisCard from './ResultsAnalysis/ResultsAnalysisCard';
+import AnalysisSectionCard from './ResultsAnalysis/AnalysisSectionCard';
+import ImprovementActionsCard from './ResultsAnalysis/ImprovementActionsCard';
+import { useResultsAnalysis } from './ResultsAnalysis/useResultsAnalysis';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -224,6 +226,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     open: false, sectionId: 0, sub: '',
   });
 
+  // أقسام قابلة للاختيار من أي منتقي قسم عام (BottomSheet إضافة شاهد، التقاط
+  // سريع، إعادة تصنيف شاهد غير مصنّف، أرشيف الأشهر) — تشمل قسم الاستراتيجيات
+  // (له مؤشر فرعي عادي "مراعاة الفروق الفردية" يصح إضافة شاهد له من هنا)
+  // لكن تستبعد بندي 5/10 (isResultsSection): لا مؤشرات فرعية عادية متبقية
+  // فيهما يمكن الكتابة إليها بلا سياق — لهما مسارات إضافة شاهد مخصّصة بدلاً من ذلك.
+  const pickableSections = sections.filter(s => !s.isResultsSection);
+
   // كل الأشهر التي بها شواهد فعلية في جدول evidence، عدا الشهر الحالي (معروض
   // طبيعياً بدون حاجة للأرشيف) — المصدر هو created_at الحقيقي لكل شاهد، لا
   // الحقل النصي المحلي state.ev[].date غير القابل للفرز بثقة.
@@ -277,8 +286,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // كان بلا شواهد بعد). الشهر المقفل (read-only): تُعرض فقط الأقسام التي بها
   // شواهد فعلية — لا فائدة من عرض بطاقات قسم فارغة لا يمكن التفاعل معها.
   const archiveSectionsToShow = isArchiveEditable
-    ? sections
-    : sections.filter(sec => (archiveEvidenceBySection[sec.id]?.length ?? 0) > 0);
+    ? pickableSections
+    : pickableSections.filter(sec => (archiveEvidenceBySection[sec.id]?.length ?? 0) > 0);
 
   // تاريخ ISO ثابت (اليوم الأول من الشهر المؤرشَف، الساعة 12 ظهراً لتفادي
   // انزلاق التاريخ بفعل المنطقة الزمنية) — يُستخدم لربط أي شاهد جديد يُضاف
@@ -291,6 +300,22 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // القسم الهجين (استراتيجيات)، مستقل تماماً عن openSecs (ذاك مفتاح أرقام أقسام
   // كاملة، وهذا المؤشر لا يملك section id خاصاً به إذ يتشارك id مع stratSection).
   const [indivDiffOpen, setIndivDiffOpen] = useState(false);
+
+  // أداة تحليل نتائج المتعلمين — مصدر بيانات مشترك واحد لبطاقتَي بند 10
+  // (تحليل) وبند 5 (تحسين)، بدل نسختين مستقلتين من useResultsAnalysis؛ رفع
+  // تحليل جديد من بطاقة 10 يظهر فوراً في قائمة إجراءات بطاقة 5 بلا حاجة لإعادة
+  // جلب منفصلة. focusAnalysisId يحمل طلب تنقّل "اعرض السياق الكامل" من بطاقة
+  // 5 إلى تبويب تحليل محدد في بطاقة 10 — بروتوكول استهلاك مرة واحدة (تُصفَّر
+  // فوراً بعد أن تستهلكها بطاقة 10 عبر onFocusHandled).
+  const resultsAnalysis = useResultsAnalysis(userId);
+  const [focusAnalysisId, setFocusAnalysisId] = useState<string | null>(null);
+  const handleViewInAnalysis = (analysisId: string) => {
+    setFocusAnalysisId(analysisId);
+    setOpenSecs(prev => ({ ...prev, 10: true }));
+    requestAnimationFrame(() => {
+      document.getElementById('sc-10')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [fabExpanded, setFabExpanded] = useState(false);
@@ -466,18 +491,28 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     }
   };
 
-  // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية
+  // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية — pickableSections
+  // (لا sections الكاملة) حتى يستبعد stats.bySections/filledSectionCount بندي
+  // 5/10 مثل بقية النظام؛ قسم الاستراتيجيات يبقى مشمولاً عمداً (سلوكه الحالي
+  // غير مطلوب تغييره اليوم) — evStats.byType/total نفسه يبقى شاملاً لكل الأقسام
+  // الـ11 فعلياً لأن totalEvs (مساره الأساسي عبر supabaseEv) يحسب كل الأقسام
+  // بلا استثناء أصلاً، فهذا يطابقه بدل تعارضه.
   const { stats: evStats, getSectionStat } = useEvidenceStore({
     ev: state.ev,
-    sections,
+    sections: pickableSections,
     csubs: state.csubs,
     strats: state.strats,
   });
 
   // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب/الترتيب/
   // التلوين — له بطاقة مخصّصة مثبّتة دائماً في آخر قائمة الأقسام (انظر أسفل).
+  // نفس الاستبعاد يشمل الآن بندي 5 و10 (isResultsSection) — محتواهما بالكامل
+  // واجهة أداة تحليل النتائج، لا مؤشرات فرعية عادية تُحتسب ضمن هذا النظام.
   const stratSection = sections.find(s => s.isStrat) ?? null;
-  const nonStratSections = sections.filter(s => !s.isStrat);
+  const resultsSections = sections.filter(s => s.isResultsSection);
+  const improvementSection = resultsSections.find(s => s.id === 5) ?? null;
+  const analysisSection = resultsSections.find(s => s.id === 10) ?? null;
+  const nonStratSections = sections.filter(s => !s.isStrat && !s.isResultsSection);
 
   // عدّاد بطاقة الاستراتيجيات (شهري + تراكمي) — القسم هجين (استراتيجيات +
   // مؤشر فرعي عادي "مراعاة الفروق الفردية بين المتعلمين")، وmonthlyProgress
@@ -906,15 +941,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           </div>
         )}
 
-        {/* أداة تحليل وتحسين نتائج المتعلمين — مستقلة تماماً عن شبكة الأقسام الـ11 */}
-        <ResultsAnalysisCard
-          userId={userId}
-          sections={sections}
-          supabaseEv={supabaseEv}
-          onAddEv={onAddEv}
-          onToast={onToast}
-        />
-
         {/* NEXT STEP CARD */}
         {nextSectionData && (
           <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-amber-500/25 bg-gradient-to-br from-amber-950/40 via-amber-900/20 to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .55s var(--sp) both 0.05s' }}>
@@ -996,7 +1022,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             {/* البطاقة 1 — عداد الشهر الحالي */}
             {(() => {
               const total = monthlyProgress.currentMonthTotal;
-              const goal  = 30; // 10 بند × 3 (بلا قسم الاستراتيجيات)
+              const goal  = 24; // 8 بند × 3 (بلا قسم الاستراتيجيات وبندي تحليل/تحسين نتائج المتعلمين)
               const pct   = Math.min(100, Math.round((total / goal) * 100));
               const msg   =
                 total === 0  ? 'لم تبدأ بعد هذا الشهر' :
@@ -1767,6 +1793,47 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             </div>
           )}
           </div>
+
+          {/* بطاقتا بند 10 (تحليل نتائج المتعلمين) وبند 5 (تحسين نتائج المتعلمين) —
+              مثبّتتان دائماً هنا خارج شبكة الأقسام، نفس معاملة قسم الاستراتيجيات
+              أعلاه (isResultsSection مُستبعد من nonStratSections/sortedFilteredSections).
+              ترتيب العرض: التحليل أولاً (مصدر البيانات) ثم قائمة الإجراءات
+              المُولَّدة منه — بلا ترابط في الحسابات، فقط تسلسل منطقي للقراءة. */}
+          {analysisSection && (
+            <AnalysisSectionCard
+              section={analysisSection}
+              sections={sections}
+              userId={userId}
+              supabaseEv={supabaseEv}
+              gradeBands={resultsAnalysis.gradeBands}
+              analyses={resultsAnalysis.analyses}
+              loading={resultsAnalysis.loading}
+              saveAnalysis={resultsAnalysis.saveAnalysis}
+              onAddEv={onAddEv}
+              onToast={onToast}
+              isOpen={!!openSecs[analysisSection.id]}
+              onToggle={() => toggleSec(analysisSection.id)}
+              focusAnalysisId={focusAnalysisId}
+              onFocusHandled={() => setFocusAnalysisId(null)}
+            />
+          )}
+
+          {improvementSection && (
+            <ImprovementActionsCard
+              section={improvementSection}
+              userId={userId}
+              supabaseEv={supabaseEv}
+              gradeBands={resultsAnalysis.gradeBands}
+              analyses={resultsAnalysis.analyses}
+              loading={resultsAnalysis.loading}
+              runSmartCheck={resultsAnalysis.runSmartCheck}
+              onAddEv={onAddEv}
+              onToast={onToast}
+              isOpen={!!openSecs[improvementSection.id]}
+              onToggle={() => toggleSec(improvementSection.id)}
+              onViewInAnalysis={handleViewInAnalysis}
+            />
+          )}
         </div>
         </>}
 
@@ -1897,7 +1964,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
         <div className="overflow-y-auto flex-1 p-5">
           <div className="grid grid-cols-2 gap-3">
-            {sections.map(sec => (
+            {pickableSections.map(sec => (
               <button
                 key={sec.id}
                 type="button"
@@ -1939,7 +2006,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             />
           )}
           <div className="flex flex-col gap-1.5">
-            {sections.map(sec => (
+            {pickableSections.map(sec => (
               <button
                 key={sec.id}
                 type="button"
@@ -2072,7 +2139,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                     </div>
                   </div>
                   <SectionReclassifyDropdown
-                    sections={sections}
+                    sections={pickableSections}
                     isOpen={openDropdownId === ev.id}
                     isBusy={isBusy}
                     onOpen={() => setOpenDropdownId(ev.id)}

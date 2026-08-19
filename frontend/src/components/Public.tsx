@@ -551,8 +551,16 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
   // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب (المستويات
   // 1-2-3 أدناه) — له بطاقة طولية مستقلة بلا أي رقم نسبة (انظر أسفل الصفحة).
+  // نفس الاستبعاد يشمل بندي 5/10 (isResultsSection) — لا مؤشرات فرعية عادية
+  // تُحتسب ضمن هذا النظام. بند 5 له بطاقة عرض شواهد فعلية أدناه؛ بند 10
+  // (تحليل نتائج المتعلمين) مؤجَّل من صفحة العرض العام حالياً — عرضه القابل
+  // للقراءة (تبويبات + مقارنة) يحتاج جدول results_analysis نفسه، وهو محمي
+  // بـRLS لمالك الحساب فقط بلا RPC مكافئ لـget_shared_evidence/get_shared_portfolio
+  // بعد؛ قرار مقصود بانتظار مراجعة تصميم الوصول العام له لاحقاً.
   const stratSection = sections.find(s => s.isStrat) ?? null;
-  const nonStratSections = sections.filter(s => !s.isStrat);
+  const resultsSections = sections.filter(s => s.isResultsSection);
+  const improvementSection = resultsSections.find(s => s.id === 5) ?? null;
+  const nonStratSections = sections.filter(s => !s.isStrat && !s.isResultsSection);
 
   // "مراعاة الفروق الفردية بين المتعلمين" — أول مؤشر فرعي عادي بالقسم الهجين،
   // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط
@@ -1013,6 +1021,60 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             </div>
           )}
           </div>
+
+          {/* بطاقة بند 5 "تحسين نتائج المتعلمين" — عرض قراءة فقط لشواهد فعلية
+              موثّقة (state.ev بمفتاحي REMEDIAL_SUB/HONOR_SUB)، بلا أي تنبيهات
+              خام إطلاقاً (تلك أداة تخطيط داخلية للمعلم وحده، ليست محتوى عرض
+              لمشرف خارجي). فارغ بشكل محايد تماماً كأي قسم فارغ آخر لو صفر شواهد. */}
+          {improvementSection && (
+            <div className="print-card mt-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8">
+              <div className="flex items-center gap-2 mb-6">
+                <i className={`ti ${improvementSection.icon} text-[var(--em8)] text-[20px]`}></i>
+                <h2 className="text-[18px] font-black text-white">{improvementSection.ttl}</h2>
+              </div>
+              {(() => {
+                const remedialEvs = state.ev[`${improvementSection.id}|خطط علاجية وإثرائية`] || [];
+                const honorEvs = state.ev[`${improvementSection.id}|تكريم المتميزين`] || [];
+                const groups = [
+                  { label: 'خطط علاجية وإثرائية', evs: remedialEvs },
+                  { label: 'تكريم المتميزين', evs: honorEvs },
+                ].filter(g => g.evs.length > 0);
+
+                if (groups.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                      <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
+                        <i className="ti ti-ghost"></i>
+                      </div>
+                      <p className="text-[var(--text3)] text-[13.5px]">لا توجد شواهد موثّقة بعد لهذا البند</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="flex flex-col gap-5">
+                    {groups.map(g => (
+                      <div key={g.label} className="bg-white/5 rounded-2xl p-4 border border-[var(--em7)]/10">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-2 h-2 rounded-full bg-[var(--em7)] shrink-0"></div>
+                          <span className="text-[14px] font-bold text-white flex-1">{g.label}</span>
+                          <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{g.evs.length} شواهد</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                          {g.evs.map((e, idx) => (
+                            <div key={idx}>
+                              <EvidenceThumb e={e} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
+                              <EvidenceContextTags e={e} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           <footer className="mt-12 pt-6 border-t border-[var(--line)] text-center">
             <p className="text-[12px] font-normal text-[var(--text4)]">

@@ -24,6 +24,11 @@ export interface SectionData {
   subs: string[];
   isStrat?: boolean;
   strats?: string[];
+  /** بند 5 (تحسين نتائج المتعلمين) أو بند 10 (تحليل نتائج المتعلمين) — محتواهما
+   * بالكامل واجهة أداة تحليل النتائج المخصّصة (ResultsAnalysis)، لا مؤشرات
+   * فرعية عادية. نفس معاملة isStrat: مُستبعدان من شبكة الأقسام/النسب/منتقيات
+   * القسم العامة، ولهما بطاقتان مثبّتتان دائماً بدلاً من ذلك. */
+  isResultsSection?: boolean;
 }
 
 export interface UserProfile {

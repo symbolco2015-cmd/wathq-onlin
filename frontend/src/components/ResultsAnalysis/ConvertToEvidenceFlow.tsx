@@ -37,8 +37,10 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
 
   // قسم الاستراتيجيات مُستبعد من وجهات التحويل — رسم تحليل نتائج لا علاقة له
   // منطقياً بـ"استراتيجية تدريس" ولا بـ"مراعاة الفروق الفردية" (subs[0] الخاص
-  // بذلك القسم الهجين)، نفس نمط nonStratSections الشائع بالمشروع.
-  const nonStratSections = sections.filter(s => !s.isStrat);
+  // بذلك القسم الهجين)، نفس نمط nonStratSections الشائع بالمشروع. بندا 5/10
+  // (isResultsSection) مُستبعدان أيضاً: محتواهما بالكامل واجهة هذه الأداة نفسها
+  // الآن، فلا مؤشرات فرعية عادية متبقية فيهما لتحويل الرسم إليها.
+  const nonStratSections = sections.filter(s => !s.isStrat && !s.isResultsSection);
   const chosenSection = nonStratSections.find(s => s.id === Number(sectionId));
   const subOptions = chosenSection ? chosenSection.subs : [];
   const effectiveSub = sub || subOptions[0] || 'عام';

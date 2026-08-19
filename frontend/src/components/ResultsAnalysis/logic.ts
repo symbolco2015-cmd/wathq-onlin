@@ -1,4 +1,4 @@
-import type { GradeBand, AnalysisSummary, StudentResult, ColumnDetectionResult, ParsedFile } from './types';
+import type { GradeBand, AnalysisSummary, StudentResult, ColumnDetectionResult, ParsedFile, ResultsAnalysisRow } from './types';
 
 /** هامش "منطقة الخطر" حول حد النجاح (60) — طالب بدرجة ضمن [55,65] يُعتبر في
  *  منطقة خطر. ثابت الآن، قابل للتعديل لاحقاً دون تغيير منطق الحساب. */
@@ -153,4 +153,82 @@ export function deriveUniformSubject(parsed: ParsedFile, subjectCol: string | nu
   if (!subjectCol) return '';
   const values = new Set(parsed.rows.map(r => r[subjectCol]?.trim()).filter(Boolean));
   return values.size === 1 ? Array.from(values)[0]! : '';
+}
+
+/** عتبة "القرب من النجاح" ضمن التجميع العلاجي — طالب بدرجة [50, 60) يُعتبر
+ *  "قريباً من النجاح"، وأقل من 50 "فجوة أكبر". ثابت تقريبي قابل للتعديل لاحقاً
+ *  دون تغيير منطق الحساب (نفس روح DANGER_ZONE_MARGIN أعلاه). */
+export const REMEDIAL_NEAR_SUCCESS_THRESHOLD = 50;
+
+export interface RemedialGroups {
+  /** درجة ضمن [50, 60) — قريبون من حد النجاح */
+  nearSuccess: StudentResult[];
+  /** درجة أقل من 50 — فجوة أكبر تحتاج خطة أكثر تكثيفاً */
+  largerGap: StudentResult[];
+}
+
+/** يجمّع الطلاب "الأحوج لعلاج" (فئة "ضعيف" الأدنى، أو ضمن منطقة الخطر) إلى
+ *  مجموعتين حسب مسافتهم عن حد النجاح (60). طالب ضمن منطقة الخطر لكن بدرجة
+ *  ≥60 (أي نجح فعلاً) لا يقع في أي من المجموعتين عمداً — التجميع العلاجي
+ *  لطلاب لم ينجحوا بعد فقط، وليس تنبيه منطقة الخطر العام (مؤشر منفصل). */
+export function groupRemedialStudents(students: StudentResult[], weakBandId: string | undefined): RemedialGroups {
+  const relevant = students.filter(s => s.bandId === weakBandId || s.inDangerZone);
+  return {
+    nearSuccess: relevant.filter(s => s.score >= REMEDIAL_NEAR_SUCCESS_THRESHOLD && s.score < DANGER_ZONE_CENTER),
+    largerGap: relevant.filter(s => s.score < REMEDIAL_NEAR_SUCCESS_THRESHOLD),
+  };
+}
+
+/** مؤشر الفجوة: الفرق بين أعلى وأدنى درجة ضمن التحليل (skippedRows مُستبعدة
+ *  أصلاً من summary.students وقت الحساب، فلا حاجة لاستبعاد إضافي هنا). */
+export function computeScoreGap(students: StudentResult[]): number {
+  if (students.length === 0) return 0;
+  const scores = students.map(s => s.score);
+  return Math.max(...scores) - Math.min(...scores);
+}
+
+export interface ComparisonPoint {
+  id: string;
+  label: string;
+  average: number;
+  createdAt: string;
+}
+
+/** يبني سلسلة المقارنة الزمنية لكل التحليلات المشتركة بنفس قيمة subject
+ *  (تطابق نصي تام) — مرتبة تصاعدياً بالتاريخ. لا فائدة من سلسلة بعنصر واحد،
+ *  فالمستدعي (AnalysisSectionCard) هو من يقرر إظهار تبويب المقارنة أصلاً فقط
+ *  عند وجود عنصرين فأكثر؛ هذه الدالة تبني السلسلة بصرف النظر عن طولها. */
+export function buildComparisonSeries(analyses: ResultsAnalysisRow[], subject: string): ComparisonPoint[] {
+  return analyses
+    .filter(a => a.subject === subject)
+    .slice()
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .map(a => ({
+      id: a.id,
+      label: new Date(a.created_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }),
+      average: a.summary.average,
+      createdAt: a.created_at,
+    }));
+}
+
+/** فرق نصي بين آخر نقطتين في سلسلة مقارنة — "تحسّن +X" أو "تراجع -X"، أو null
+ *  لو أقل من نقطتين (لا فرق لحسابه). */
+export function comparisonDelta(series: ComparisonPoint[]): { diff: number; improved: boolean } | null {
+  if (series.length < 2) return null;
+  const last = series[series.length - 1].average;
+  const prev = series[series.length - 2].average;
+  const diff = Math.round((last - prev) * 10) / 10;
+  return { diff, improved: diff >= 0 };
+}
+
+/** يجمّع التحليلات حسب subject (تطابق نصي) — يُستخدم لتحديد أي المواد تستحق
+ *  تبويب "مقارنة" تلقائياً (عنصران فأكثر). */
+export function groupAnalysesBySubject(analyses: ResultsAnalysisRow[]): Map<string, ResultsAnalysisRow[]> {
+  const map = new Map<string, ResultsAnalysisRow[]>();
+  for (const a of analyses) {
+    const list = map.get(a.subject) ?? [];
+    list.push(a);
+    map.set(a.subject, list);
+  }
+  return map;
 }

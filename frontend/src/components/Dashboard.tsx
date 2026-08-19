@@ -1736,7 +1736,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               — بطاقة حالة بسيطة بلا عداد/شريط تقدم، قابلة للفتح لعرض الأدلة
               بنفس نمط أي مؤشر فرعي عادي مع تعديل/حذف طبيعي. */}
           {stratSection && indivDiffSub && (
-            <div className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]">
+            <div className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ borderRight: '4px solid var(--gold)' }}>
               <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => setIndivDiffOpen(v => !v)}>
                 <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border transition-all duration-350 ${indivDiffEvs.length > 0 ? 'bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20' : 'bg-white/5 text-[var(--text4)] border-[var(--line2)]'}`}>
                   <i className="ti ti-users"></i>
@@ -1796,9 +1796,16 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
           {/* بطاقتا بند 10 (تحليل نتائج المتعلمين) وبند 5 (تحسين نتائج المتعلمين) —
               مثبّتتان دائماً هنا خارج شبكة الأقسام، نفس معاملة قسم الاستراتيجيات
-              أعلاه (isResultsSection مُستبعد من nonStratSections/sortedFilteredSections).
-              ترتيب العرض: التحليل أولاً (مصدر البيانات) ثم قائمة الإجراءات
-              المُولَّدة منه — بلا ترابط في الحسابات، فقط تسلسل منطقي للقراءة. */}
+              أعلاه (isResultsSection مُستبعد من nonStratSections/sortedFilteredSections)،
+              وبنفس نمط التجاور جنباً إلى جنب (grid sm:grid-cols-2 items-start).
+              items-start إلزامي هنا للسبب نفسه الموثّق أعلاه عند بطاقتي
+              الاستراتيجيات/الفروق الفردية: بلا هذا، فتح إحدى البطاقتين يمدّد
+              حاوية البطاقة المغلقة المجاورة لنفس ارتفاع الصف (افتراضي CSS Grid
+              align-items:stretch) رغم أن openSecs[analysisSection.id]/
+              openSecs[improvementSection.id] مستقلان تماماً. ترتيب العرض:
+              التحليل أولاً (مصدر البيانات) ثم قائمة الإجراءات المُولَّدة منه —
+              بلا ترابط في الحسابات، فقط تسلسل منطقي للقراءة. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
           {analysisSection && (
             <AnalysisSectionCard
               section={analysisSection}
@@ -1834,6 +1841,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               onViewInAnalysis={handleViewInAnalysis}
             />
           )}
+          </div>
         </div>
         </>}
 

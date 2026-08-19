@@ -1025,9 +1025,14 @@ export default function Public({ state, sections, isSharedView, continuity, evid
           {/* بطاقة بند 5 "تحسين نتائج المتعلمين" — عرض قراءة فقط لشواهد فعلية
               موثّقة (state.ev بمفتاحي REMEDIAL_SUB/HONOR_SUB)، بلا أي تنبيهات
               خام إطلاقاً (تلك أداة تخطيط داخلية للمعلم وحده، ليست محتوى عرض
-              لمشرف خارجي). فارغ بشكل محايد تماماً كأي قسم فارغ آخر لو صفر شواهد. */}
+              لمشرف خارجي). فارغ بشكل محايد تماماً كأي قسم فارغ آخر لو صفر شواهد.
+              شريط اللون البنفسجي (--violet) يطابق بطاقتَي التحليل/التحسين في
+              Dashboard.tsx، لكن بلا حاوية grid sm:grid-cols-2: بند 10 (تحليل
+              نتائج المتعلمين) مؤجَّل عمداً من صفحة العرض العام (انظر تعليق
+              resultsSections أعلاه) فلا بطاقة مجاورة لتشكيل صف بها هنا —
+              البطاقة تبقى بعرض كامل بصف مستقل كما كانت. */}
           {improvementSection && (
-            <div className="print-card mt-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8">
+            <div className="print-card mt-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8" style={{ borderRight: '4px solid var(--violet)' }}>
               <div className="flex items-center gap-2 mb-6">
                 <i className={`ti ${improvementSection.icon} text-[var(--em8)] text-[20px]`}></i>
                 <h2 className="text-[18px] font-black text-white">{improvementSection.ttl}</h2>

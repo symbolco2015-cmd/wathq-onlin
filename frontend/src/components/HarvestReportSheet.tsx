@@ -5,6 +5,8 @@ import { SECS } from '../data';
 import { calculatePointsLevelFromTotal, supabaseEvidenceTypeToLocal } from '../utils';
 import type { AcademicDate, AppState, Evidence, HarvestSnapshot } from '../types';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
+import type { ResultsAnalysisRow } from './ResultsAnalysis/types';
+import { toPublicResultsAnalysisRow, groupPublicAnalysesBySubject, buildPublicComparisonSeries } from './ResultsAnalysis/logic';
 
 interface HarvestReportSheetProps {
   isOpen: boolean;
@@ -209,7 +211,27 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, aca
       });
       const activeMonths = Array.from(monthTotals.values()).filter(m => m.evidenceCount > 0);
 
-      // 5) شارة اللقب/النقاط — من مجموع شواهد الفترة فقط، وليس نافذة "آخر 3
+      // 5) بند 10 (تحليل نتائج المتعلمين) ضمن الفترة — استعلام مالك مباشر على
+      // results_analysis (RLS تسمح، بلا أي RPC)، بنفس شرط المدى الزمني أعلاه.
+      // الصف الخام summary يحوي أسماء الطلاب؛ يُحوَّل فوراً لنفس الشكل المبسَّط
+      // الآمن الذي تُرجعه get_shared_results_analysis عبر toPublicResultsAnalysisRow
+      // (لا اسم طالب واحد يدخل الـsnapshot)، وعناصر المقارنة تُحسب وتُخبَز هنا
+      // أيضاً (نفس منطق groupAnalysesBySubject/comparisonDelta الحي) بدل تأجيل
+      // حسابها لوقت العرض — التقرير لقطة ثابتة لا تتأثر بتعديل/حذف لاحق للمصدر.
+      const { data: analysisRows, error: raErr } = await supabase
+        .from('results_analysis')
+        .select('*')
+        .eq('portfolio_id', userId)
+        .gte('created_at', fromIso)
+        .lte('created_at', toIso);
+      if (raErr) throw raErr;
+      const resultsAnalysis = ((analysisRows || []) as ResultsAnalysisRow[]).map(toPublicResultsAnalysisRow);
+      const resultsComparisonGroups = groupPublicAnalysesBySubject(resultsAnalysis);
+      const resultsComparisons = Array.from(resultsComparisonGroups.entries())
+        .filter(([, rows]) => rows.length >= 2)
+        .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(resultsAnalysis, subject) }));
+
+      // 6) شارة اللقب/النقاط — من مجموع شواهد الفترة فقط، وليس نافذة "آخر 3
       // أشهر تقويمية" المعتادة في calculatePointsLevel (تلك مرتبطة بـ"اليوم"،
       // غير مناسبة لتقرير عن فترة قد تكون منتهية منذ زمن).
       const totalPoints = activeMonths.reduce((sum, m) => sum + m.evidenceCount, 0);
@@ -228,6 +250,8 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, aca
           activeMonths,
         },
         evidence: scrubbedEvidence,
+        resultsAnalysis,
+        resultsComparisons,
         pointsLevel: {
           points: pointsLevel.points,
           levelId: pointsLevel.levelId,

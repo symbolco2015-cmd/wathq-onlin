@@ -33,9 +33,16 @@ interface PublicProps {
   evidence?: SupabaseEvidence[] | null;
   /** بند 10 (تحليل نتائج المتعلمين) — شكل مبسَّط آمن فقط (id, subject, stage,
    * class_section, created_at, total_students, average, min_score, max_score)،
-   * بلا summary/students إطلاقاً. غائب أثناء التحميل أو في وضع ?report=
-   * (لا يزال مؤجَّلاً هناك)، وفي هذه الحالة البطاقة لا تُعرض إطلاقاً. */
+   * بلا summary/students إطلاقاً. غائب فقط أثناء التحميل (مسار ?share= الحي)،
+   * وفي هذه الحالة البطاقة لا تُعرض إطلاقاً. في وضع ?report= يأتي جاهزاً من
+   * snapshot.resultsAnalysis (مخبوز وقت التوليد، انظر HarvestReportSheet.tsx). */
   resultsAnalysis?: PublicResultsAnalysisRow[] | null;
+  /** عناصر مقارنة بند 10 مخبوزة سلفاً — تُمرَّر فقط في وضع ?report=، حيث حُسبت
+   * وقت توليد التقرير من resultsAnalysis أعلاه (انظر HarvestReportSheet.tsx)
+   * ولا يصح إعادة حسابها هنا وقت العرض (لقطة ثابتة، لا تتأثر بتعديل لاحق
+   * للمصدر). غائبة في مسار ?share= الحي ومعاينة المالك — هناك تُحسب محلياً
+   * كما كانت دائماً (انظر resultsComparisons أدناه). */
+  frozenResultsComparisons?: { subject: string; series: ComparisonPoint[] }[];
   /** وضع "تقرير حصاد فصلي" الثابت (?report=) — يستبدل حساب شارة النقاط الحي
    * (نافذة آخر 3 أشهر تقويمية، مرتبطة بـ"اليوم") بقيمة مجمَّدة وقت التوليد،
    * ويضيف سطر عنوان الفترة/تاريخ التوليد في الهيرو وترويسة الطباعة. غائب في
@@ -565,7 +572,7 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
   );
 }
 
-export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis }: PublicProps) {
+export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons }: PublicProps) {
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
@@ -660,13 +667,16 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // بها تحليلان فأكثر (نفس شرط تبويب "مقارنة" بلوحة التحكم)، بالشكل المبسَّط
   // العام (groupPublicAnalysesBySubject/buildPublicComparisonSeries، انظر
   // logic.ts) لا الداخلي الكامل — resultsAnalysis هنا مبسَّط أصلاً بلا أسماء.
+  // في وضع ?report= تُستخدم frozenResultsComparisons كما هي (مخبوزة وقت
+  // التوليد) بدل إعادة الحساب هنا — انظر تعليقها في PublicProps أعلاه.
   const resultsComparisons = useMemo(() => {
+    if (frozenResultsComparisons) return frozenResultsComparisons;
     if (!resultsAnalysis || resultsAnalysis.length === 0) return [];
     const groups = groupPublicAnalysesBySubject(resultsAnalysis);
     return Array.from(groups.entries())
       .filter(([, rows]) => rows.length >= 2)
       .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(resultsAnalysis, subject) }));
-  }, [resultsAnalysis]);
+  }, [frozenResultsComparisons, resultsAnalysis]);
 
   // "مراعاة الفروق الفردية بين المتعلمين" — أول مؤشر فرعي عادي بالقسم الهجين،
   // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط

@@ -833,6 +833,8 @@ export default function App() {
             isSharedView
             continuity={snapshot.continuity}
             evidence={snapshot.evidence}
+            resultsAnalysis={snapshot.resultsAnalysis}
+            frozenResultsComparisons={snapshot.resultsComparisons}
             reportMeta={{
               periodLabel: snapshot.periodLabel,
               periodFrom: snapshot.periodFrom,

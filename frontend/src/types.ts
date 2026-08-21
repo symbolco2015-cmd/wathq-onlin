@@ -1,4 +1,6 @@
 import type { SupabaseEvidence } from './hooks/useSupabaseEvidence';
+import type { PublicResultsAnalysisRow } from './components/ResultsAnalysis/types';
+import type { ComparisonPoint } from './components/ResultsAnalysis/logic';
 
 export type PageType = 'auth' | 'dashboard' | 'public' | 'admin';
 
@@ -138,6 +140,16 @@ export interface HarvestSnapshot {
    * فقط (وليس نافذة آخر 3 أشهر التقويمية المعتادة) — Public.tsx يعرضها كما
    * هي في وضع التقرير بدل إعادة حسابها حياً من continuity. */
   pointsLevel: FrozenPointsLevel;
+  /** بند 10 (تحليل نتائج المتعلمين) ضمن المدى المختار — الشكل المبسَّط الآمن
+   * فقط (مطابق تماماً لما تُرجعه get_shared_results_analysis)، بلا summary/
+   * students إطلاقاً: هذا التقرير قابل للقراءة العامة عبر id، فلا اسم طالب
+   * واحد يصل لهذا الحقل بأي مسار (نفس مبدأ evidence أعلاه). */
+  resultsAnalysis: PublicResultsAnalysisRow[];
+  /** عناصر المقارنة لبند 10 (لكل مادة بتحليلين فأكثر ضمن المدى) — محسوبة
+   * ومخبوزة مرة واحدة وقت التوليد من resultsAnalysis أعلاه (نفس منطق
+   * groupAnalysesBySubject/comparisonDelta المستخدَم بالعرض الحي)، وليست
+   * مُعادة الحساب وقت العرض؛ Public.tsx يعرضها كما هي في وضع التقرير. */
+  resultsComparisons: { subject: string; series: ComparisonPoint[] }[];
   periodLabel: string;
   periodFrom: string;
   periodTo: string;

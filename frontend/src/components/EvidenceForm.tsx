@@ -6,6 +6,7 @@ import type { Evidence } from '../types';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import { AI_CONSENT_TEXT } from '../utils';
 import { SelectDropdown } from './UI';
+import { LESSON_PLAN_SECTION_ID } from '../data';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -13,6 +14,21 @@ interface Indicator {
   id: string;
   name_ar: string;
 }
+
+interface LessonPlanTemplate {
+  id: string;
+  title: string;
+  content: string;
+}
+
+// مؤشر "إعداد خطة فصلية موزعة" ضمن بند 6 (إعداد خطة التعلم) — uuid فعلي
+// تحقّقنا منه مباشرة على قاعدة الإنتاج (section_indicators)، لا افتراضاً.
+// حقلا التكرار وزر "اكتب خطة من الصفر" مقصوران على هذا المؤشر تحديداً،
+// بينما حقل "المادة" يظهر لكل مؤشرات هذا البند (LESSON_PLAN_SECTION_ID،
+// مستورَد من data.ts). لا مصدر مرجعي بالفرونت إند يُشتَق منه هذا الـ uuid
+// (المؤشرات تُجلب ديناميكياً من section_indicators، لا تُكتب بـdata.ts) —
+// يبقى حرفياً هنا، موثَّقاً بمصدره فقط.
+const LESSON_PLAN_DISTRIBUTION_INDICATOR_ID = 'be68ebb3-8742-4619-bbf5-b3d79141e147';
 
 export interface EvidenceFormProps {
   isOpen: boolean;
@@ -120,6 +136,15 @@ export default function EvidenceForm({
   const [selfReflection, setSelfReflection] = useState('');
   const [linkUrl,        setLinkUrl]        = useState('');
 
+  // ── حقول خاصة ببند "إعداد خطة التعلم" (section_id === 6) ───────────────
+  const [contextSubject,   setContextSubject]   = useState('');
+  const [frequency,        setFrequency]        = useState<'weekly' | 'semester' | ''>('');
+  const [writeFromScratch, setWriteFromScratch] = useState(false);
+  const [templates,        setTemplates]        = useState<LessonPlanTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const isLessonPlanSection = sectionId === LESSON_PLAN_SECTION_ID;
+  const isDistributionIndicator = isLessonPlanSection && indicatorId === LESSON_PLAN_DISTRIBUTION_INDICATOR_ID;
+
   // ── حقول سياقية خاصة بأدلة الاستراتيجيات فقط (sub يبدأ بـ "strat:") ─────
   const [stratDate,    setStratDate]    = useState('');
   const [stratStage,   setStratStage]   = useState('');
@@ -170,6 +195,7 @@ export default function EvidenceForm({
     setAcademicTerm(''); setSelfReflection(''); setLinkUrl('');
     setFileUrl(prefill?.fileUrl ?? ''); setFileName(prefill?.fileName ?? ''); setUploadSuccess(!!prefill);
     setStratDate(''); setStratStage(''); setStratGrade(''); setStratPeriod(''); setStratSubject('');
+    setContextSubject(''); setFrequency(''); setWriteFromScratch(false); setSelectedTemplateId('');
     setAiSelectedFile(null); setAiConsentPromptOpen(false); setAiLoading(false);
     setAiTitleSuggestion(''); setAiIndicatorSuggestion(null); setAiDescriptionSuggestion(''); setAiSuggestionAttempted(false);
     setVoiceConsentPromptOpen(false); setVoiceLoading(false); setVoiceTranscript(''); setVoiceSuggestedDesc('');
@@ -200,6 +226,22 @@ export default function EvidenceForm({
       });
     return () => { cancelled = true; };
   }, [isOpen]);
+
+  // قوالب خطة الدرس (عامة من الأدمن + شخصية للمعلم) — تُجلب فقط عند فتح
+  // النموذج لمؤشر "إعداد خطة فصلية موزعة"، حيث يظهر زر "اكتب خطة من الصفر".
+  // فشل الجلب (مثلاً الجدول لم يُنشأ بعد على بيئة ما) لا يُسقط النموذج —
+  // قائمة قوالب فارغة فقط، الكتابة الحرة تبقى متاحة دوماً.
+  useEffect(() => {
+    if (!isOpen || !isDistributionIndicator || !supabase) { setTemplates([]); return; }
+    supabase
+      .from('lesson_plan_templates')
+      .select('id, title, content')
+      .or(`portfolio_id.is.null${userId ? `,portfolio_id.eq.${userId}` : ''}`)
+      .then(({ data, error }) => {
+        if (error) { console.warn('[EvidenceForm] تعذّر تحميل قوالب خطة الدرس:', error.message); setTemplates([]); return; }
+        setTemplates(data ?? []);
+      });
+  }, [isOpen, isDistributionIndicator, userId]);
 
   // بوابة صلاحية ميزة "التوثيق الصوتي" (Beta) — نفس آلية image_suggestion بمفتاح مستقل
   useEffect(() => {
@@ -340,6 +382,12 @@ export default function EvidenceForm({
     voiceRecording.startRecording();
   };
 
+  const applyTemplate = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    const tpl = templates.find(t => t.id === templateId);
+    if (tpl) setDescription(tpl.content);
+  };
+
   const acceptVoiceSuggestion = () => {
     setDescription(voiceSuggestedDesc);
     setVoiceTranscript('');
@@ -417,8 +465,16 @@ export default function EvidenceForm({
   // ── Save ──────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!title.trim()) { onToast('يرجى إدخال عنوان الشاهد', '⚠️'); return; }
-    if (currentTypeConfig.hasFile && !fileUrl) { onToast('يرجى رفع الملف أولاً', '⚠️'); return; }
-    if (currentTypeConfig.hasLink && !linkUrl.trim()) { onToast('يرجى إدخال الرابط', '⚠️'); return; }
+    if (writeFromScratch) {
+      if (!description.trim()) { onToast('يرجى كتابة نص الخطة', '⚠️'); return; }
+    } else {
+      if (currentTypeConfig.hasFile && !fileUrl) { onToast('يرجى رفع الملف أولاً', '⚠️'); return; }
+      if (currentTypeConfig.hasLink && !linkUrl.trim()) { onToast('يرجى إدخال الرابط', '⚠️'); return; }
+    }
+
+    // الكتابة من الصفر تُنتج دائماً دليل "ملاحظة" بلا ملف مرفق، بصرف النظر عن
+    // نوع الشاهد المختار أعلاه (مخفي أصلاً في هذا الوضع)
+    const effectiveEvidenceType: EvidenceType = writeFromScratch ? 'note' : evidenceType;
 
     setSaving(true);
     try {
@@ -429,16 +485,18 @@ export default function EvidenceForm({
         description:     description.trim()    || undefined,
         impact:          impact.trim()         || undefined,
         context_grade:   contextGrade.trim()   || undefined,
+        context_subject: isLessonPlanSection ? (contextSubject.trim() || undefined) : undefined,
         academic_term:   academicTerm          || undefined,
-        evidence_type:   evidenceType,
-        file_url:        fileUrl               || undefined,
-        link_url:        linkUrl.trim()        || undefined,
+        evidence_type:   effectiveEvidenceType,
+        file_url:        writeFromScratch ? undefined : (fileUrl || undefined),
+        link_url:        writeFromScratch ? undefined : (linkUrl.trim() || undefined),
         self_reflection: selfReflection.trim() || undefined,
+        frequency:       isDistributionIndicator ? (frequency || undefined) : undefined,
       }, createdAt);
 
       if (result) {
         // أيضاً احفظ في state.ev المحلي
-        const url = fileUrl || linkUrl.trim() || undefined;
+        const url = writeFromScratch ? undefined : (fileUrl || linkUrl.trim() || undefined);
         const stratFields = isStratEvidence ? {
           stratDate:    stratDate || undefined,
           stratStage:   stratStage ? (stratStage as 'ابتدائي' | 'متوسط' | 'ثانوي') : undefined,
@@ -446,7 +504,7 @@ export default function EvidenceForm({
           stratPeriod:  stratPeriod ? Number(stratPeriod) : undefined,
           stratSubject: stratSubject.trim() || undefined,
         } : undefined;
-        onAddEv(sectionId, sub, toLocalType(evidenceType), title.trim(), url, stratFields, createdAt);
+        onAddEv(sectionId, sub, toLocalType(effectiveEvidenceType), title.trim(), url, stratFields, createdAt);
         onToast('تم إضافة الشاهد بنجاح ✅', '✅');
         onClose();
       } else {
@@ -518,6 +576,48 @@ export default function EvidenceForm({
           </div>
         )}
 
+        {/* المادة — تظهر لكل مؤشرات بند "إعداد خطة التعلم" */}
+        {isLessonPlanSection && (
+          <div>
+            <div className={labelCls}><i className="ti ti-book text-[var(--em7)]" /> المادة</div>
+            <input
+              type="text"
+              className={inputCls}
+              placeholder="مثال: الرياضيات"
+              value={contextSubject}
+              onChange={e => setContextSubject(e.target.value)}
+            />
+          </div>
+        )}
+
+        {/* التكرار + الكتابة من الصفر — مقصوران على مؤشر "إعداد خطة فصلية موزعة" */}
+        {isDistributionIndicator && (
+          <div className="bg-[var(--em7)]/5 border border-[var(--em7)]/15 rounded-2xl p-4 space-y-3.5">
+            <div>
+              <div className={labelCls}><i className="ti ti-repeat text-[var(--em7)]" /> التكرار</div>
+              <SelectDropdown
+                options={[
+                  { value: 'weekly', label: 'أسبوعي' },
+                  { value: 'semester', label: 'فصلي كامل' },
+                ]}
+                value={frequency}
+                onChange={v => setFrequency(v as 'weekly' | 'semester' | '')}
+                placeholder="— اختر —"
+                triggerClassName={inputCls + ' cursor-pointer'}
+                allowClear
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setWriteFromScratch(w => !w)}
+              className="flex items-center gap-2 py-2 px-4 rounded-lg bg-[var(--em6)]/15 border border-[var(--em6)]/30 text-[var(--em8)] text-[12px] font-bold cursor-pointer"
+            >
+              <i className={`ti ${writeFromScratch ? 'ti-file-upload' : 'ti-pencil'}`} />
+              {writeFromScratch ? 'العودة لرفع ملف' : 'اكتب خطة من الصفر'}
+            </button>
+          </div>
+        )}
+
         {/* بيانات تطبيق الاستراتيجية — تظهر فقط عند إضافة دليل لاستراتيجية */}
         {isStratEvidence && (
           <div className="bg-[var(--gold)]/5 border border-[var(--gold)]/15 rounded-2xl p-4 space-y-3.5">
@@ -562,6 +662,8 @@ export default function EvidenceForm({
           </div>
         )}
 
+        {/* الوضع العادي (رفع ملف/رابط) — مخفي بالكامل أثناء "الكتابة من الصفر" */}
+        {!writeFromScratch && <>
         {/* نوع الشاهد */}
         <div>
           <div className={labelCls}><i className="ti ti-category text-[var(--em7)]" /> نوع الشاهد <span className="text-red-400">*</span></div>
@@ -725,6 +827,27 @@ export default function EvidenceForm({
             />
           </div>
         )}
+        </>}
+
+        {/* الكتابة من الصفر — منتقي قوالب + نص الخطة (يُحفظ في نفس حقل الوصف
+            أدناه)، بلا أي رفع ملف أو رابط */}
+        {writeFromScratch && (
+          <div className="bg-[var(--em7)]/5 border border-[var(--em7)]/15 rounded-2xl p-4 space-y-3">
+            <div className={labelCls + ' !mb-0'}><i className="ti ti-template text-[var(--em7)]" /> ابدأ من قالب (اختياري)</div>
+            {templates.length > 0 ? (
+              <SelectDropdown
+                options={templates.map(t => ({ value: t.id, label: t.title }))}
+                value={selectedTemplateId}
+                onChange={applyTemplate}
+                placeholder="— اختر قالباً —"
+                triggerClassName={inputCls + ' cursor-pointer'}
+                allowClear
+              />
+            ) : (
+              <p className="text-[11.5px] text-[var(--text4)]">لا توجد قوالب متاحة حالياً — يمكنك الكتابة الحرة في حقل "نص الخطة" أدناه.</p>
+            )}
+          </div>
+        )}
 
         {/* ── الحقول الاختيارية ── */}
         <div className="border-t border-[var(--line)] pt-4">
@@ -734,7 +857,10 @@ export default function EvidenceForm({
             {/* الوصف */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <div className={labelCls + ' !mb-0'}><i className="ti ti-align-right text-[var(--em7)]" /> وصف الشاهد</div>
+                <div className={labelCls + ' !mb-0'}>
+                  <i className="ti ti-align-right text-[var(--em7)]" />
+                  {writeFromScratch ? <>نص الخطة <span className="text-red-400">*</span></> : 'وصف الشاهد'}
+                </div>
                 {voiceFeatureEnabled && (
                   <button
                     type="button"
@@ -804,8 +930,8 @@ export default function EvidenceForm({
 
               <textarea
                 className={inputCls + ' resize-none'}
-                rows={2}
-                placeholder="صف ما يُثبته هذا الشاهد..."
+                rows={writeFromScratch ? 8 : 2}
+                placeholder={writeFromScratch ? 'اكتب خطة الدرس هنا، أو ابدأ من قالب أعلاه...' : 'صف ما يُثبته هذا الشاهد...'}
                 value={description}
                 onChange={e => setDescription(e.target.value)}
               />

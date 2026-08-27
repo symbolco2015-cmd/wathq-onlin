@@ -5,6 +5,7 @@ import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
 import { usePublicEvidence } from './hooks/usePublicEvidence';
 import { usePublicResultsAnalysis } from './hooks/usePublicResultsAnalysis';
+import { usePublicLessonPlanSummary } from './hooks/usePublicLessonPlanSummary';
 import { useHarvestReport } from './hooks/useHarvestReport';
 import { useResultsAnalysis } from './components/ResultsAnalysis/useResultsAnalysis';
 import { toPublicResultsAnalysisRow } from './components/ResultsAnalysis/logic';
@@ -18,7 +19,8 @@ import AdminDashboard from './components/Admin/AdminDashboard';
 import Onboarding from './components/Onboarding';
 import { Modal, Toast, SelectDropdown } from './components/UI';
 import EvidenceModal from './components/EvidenceModal';
-import { SECS } from './data';
+import { SECS, LESSON_PLAN_SECTION_ID } from './data';
+import { supabase } from './supabaseClient';
 import { calculateEvaluation, isProfileIncomplete } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
 import { useMonthlyProgress } from './hooks/useMonthlyProgress';
@@ -131,6 +133,11 @@ export default function App() {
   // انظر usePublicResultsAnalysis)؛ الشكل المُرجَع مبسَّط أصلاً بلا أي اسم طالب.
   const sharedResultsAnalysis = usePublicResultsAnalysis(shareUserId ?? null);
 
+  // ملخص بند "إعداد خطة التعلم" (section_id=6) للعرض العام — جلب منفصل عبر
+  // RPC آمنة بنفس نمط sharedEvidence (RLS تمنع قراءة section_ai_summaries
+  // مباشرة لغير المالك، انظر usePublicLessonPlanSummary).
+  const sharedLessonPlanSummary = usePublicLessonPlanSummary(shareUserId ?? null);
+
   // تقرير حصاد فصلي (?report=) — قراءة مباشرة (ليست RPC) على harvest_reports،
   // السماح بها عبر RLS "قراءة عامة بمعرفة id" فقط (انظر useHarvestReport).
   const { report: harvestReport, loading: harvestReportLoading, error: harvestReportError } = useHarvestReport(reportId ?? null);
@@ -167,6 +174,28 @@ export default function App() {
     () => ownResultsAnalysis.analyses.map(toPublicResultsAnalysisRow),
     [ownResultsAnalysis.analyses]
   );
+
+  // ملخص بند "إعداد خطة التعلم" لمعاينة المالك لملفه بنفسه — قراءة مباشرة
+  // بـRLS (المالك يملك صلاحية قراءة صفه في section_ai_summaries أصلاً)،
+  // بلا RPC، بنفس روح ownResultsAnalysis أعلاه (لا Dashboard.tsx مركَّب هنا
+  // فلا تكرار مع جلبه الخاص هناك).
+  const [ownLessonPlanSummary, setOwnLessonPlanSummary] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isOwnPreview || !user?.id || !supabase) { setOwnLessonPlanSummary(null); return; }
+    let cancelled = false;
+    supabase
+      .from('section_ai_summaries')
+      .select('ai_sentence')
+      .eq('portfolio_id', user.id)
+      .eq('section_id', LESSON_PLAN_SECTION_ID)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.warn('[App] تعذّر جلب ملخص بند 6:', error.message); setOwnLessonPlanSummary(null); return; }
+        setOwnLessonPlanSummary(data?.ai_sentence ?? null);
+      });
+    return () => { cancelled = true; };
+  }, [isOwnPreview, user?.id]);
 
   // Redirect users dynamically based on auth status — but not when in shared-profile view
   useEffect(() => {
@@ -798,7 +827,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} />
+          <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} lessonPlanSummary={sharedLessonPlanSummary} />
         </main>
       </>
     );
@@ -919,6 +948,7 @@ export default function App() {
             continuity={ownContinuity}
             evidence={supabaseEv.evidence}
             resultsAnalysis={ownResultsAnalysisPublic}
+            lessonPlanSummary={ownLessonPlanSummary}
           />
         )}
         

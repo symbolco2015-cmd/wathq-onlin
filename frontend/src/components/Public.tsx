@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData } from '../types';
 import { calculateEvaluation, calculatePointsLevel, getCompletionColor, getCompletionLabel } from '../utils';
+import { LESSON_PLAN_SECTION_ID } from '../data';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
@@ -37,6 +38,14 @@ interface PublicProps {
    * وفي هذه الحالة البطاقة لا تُعرض إطلاقاً. في وضع ?report= يأتي جاهزاً من
    * snapshot.resultsAnalysis (مخبوز وقت التوليد، انظر HarvestReportSheet.tsx). */
   resultsAnalysis?: PublicResultsAnalysisRow[] | null;
+  /** ملخص ذكاء اصطناعي لبند "إعداد خطة التعلم" (section_id=6) كاملاً —
+   * جملة واحدة أو جملتان، مصدرها جدول section_ai_summaries عبر
+   * get_shared_lesson_plan_summary() (مسار ?share=) أو قراءة مباشرة بـRLS
+   * (معاينة المالك). null/undefined يعني ببساطة "لا يوجد ملخص بعد" — لا
+   * تمييز بينهما هنا خلافاً لـevidence/resultsAnalysis (لا قسم إضافي كامل
+   * يُخفى، فقط سطر/صندوق صغير داخل بطاقة موجودة أصلاً). غائب دائماً في وضع
+   * ?report= (خارج نطاق هذه الميزة حالياً). */
+  lessonPlanSummary?: string | null;
   /** عناصر مقارنة بند 10 مخبوزة سلفاً — تُمرَّر فقط في وضع ?report=، حيث حُسبت
    * وقت توليد التقرير من resultsAnalysis أعلاه (انظر HarvestReportSheet.tsx)
    * ولا يصح إعادة حسابها هنا وقت العرض (لقطة ثابتة، لا تتأثر بتعديل لاحق
@@ -288,7 +297,9 @@ function Avatar({ profile, size }: { profile: PublicPortfolioState['profile']; s
 /** بطاقة قسم واحدة — تُستخدم لكل من الأقسام النشطة (المستوى 2) والأقسام
  * الفارغة الموسّعة (المستوى 3)، حتى لا يتكرر تصميم البطاقة في أكثر من مكان.
  * اللون مأخوذ بالكامل من getCompletionColor(pct) في utils.ts. */
-function SectionCard({ sec, isTop, onClick, style }: { sec: SectionWithPct; isTop?: boolean; onClick: () => void; style?: React.CSSProperties }) {
+const LESSON_PLAN_SUMMARY_PREVIEW_MAX = 70;
+
+function SectionCard({ sec, isTop, onClick, style, lessonPlanSummary }: { sec: SectionWithPct; isTop?: boolean; onClick: () => void; style?: React.CSSProperties; lessonPlanSummary?: string | null }) {
   const color = getCompletionColor(sec.pct);
   // العمق التراكمي = إجمالي الأدلة (evCount) ÷ عدد المؤشرات الفرعية المغطاة تراكمياً
   const filledSubsCount = new Set(sec.evs.map(e => e.sub)).size;
@@ -333,6 +344,18 @@ function SectionCard({ sec, isTop, onClick, style }: { sec: SectionWithPct; isTo
             <span>{sec.isStrat ? 'الاستراتيجيات المضافة' : 'الأدلة الموثقة'}</span>
             <strong className="text-white font-black" style={{ fontSize: isTop ? 22 : 19 }}>{sec.evCount}</strong>
           </p>
+          {/* معاينة ملخص بند "إعداد خطة التعلم" بالذكاء الاصطناعي — سطر واحد
+              مقتطع، يظهر فقط لهذا البند تحديداً وعند وجود ملخص فعلي */}
+          {sec.id === LESSON_PLAN_SECTION_ID && lessonPlanSummary && (
+            <p className="text-[11.5px] text-[var(--em8)] mt-1.5 flex items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap">
+              <i className="ti ti-sparkles text-[11px] shrink-0" />
+              <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                {lessonPlanSummary.length > LESSON_PLAN_SUMMARY_PREVIEW_MAX
+                  ? `${lessonPlanSummary.slice(0, LESSON_PLAN_SUMMARY_PREVIEW_MAX)}…`
+                  : lessonPlanSummary}
+              </span>
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -572,7 +595,7 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
   );
 }
 
-export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons }: PublicProps) {
+export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, lessonPlanSummary }: PublicProps) {
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
@@ -981,6 +1004,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                 isTop={i === 0}
                 onClick={() => setSelectedSecId(sec.id)}
                 style={{ animation: `fadeUp .4s var(--sp) both ${i * 0.05}s` }}
+                lessonPlanSummary={lessonPlanSummary}
               />
             ))}
           </div>
@@ -1000,7 +1024,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
               </button>
               <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 overflow-hidden transition-all duration-300 ${showEmpty ? 'mt-4 max-h-[3000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                 {emptySecs.map(sec => (
-                  <SectionCard key={sec.id} sec={sec} onClick={() => setSelectedSecId(sec.id)} />
+                  <SectionCard key={sec.id} sec={sec} onClick={() => setSelectedSecId(sec.id)} lessonPlanSummary={lessonPlanSummary} />
                 ))}
               </div>
             </div>
@@ -1010,7 +1034,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
           {emptySecs.length > 0 && (
             <div className="hidden print:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
               {emptySecs.map(sec => (
-                <SectionCard key={`print-${sec.id}`} sec={sec} onClick={() => setSelectedSecId(sec.id)} />
+                <SectionCard key={`print-${sec.id}`} sec={sec} onClick={() => setSelectedSecId(sec.id)} lessonPlanSummary={lessonPlanSummary} />
               ))}
             </div>
           )}
@@ -1374,6 +1398,14 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                 )
               ) : (
                 <>
+                {/* ملخص بند "إعداد خطة التعلم" بالذكاء الاصطناعي — الجملة كاملة،
+                    يظهر فقط لهذا البند تحديداً وقبل عرض أي أدلة */}
+                {selectedSecData.id === LESSON_PLAN_SECTION_ID && lessonPlanSummary && (
+                  <div className="mb-5 flex items-start gap-2.5 bg-[var(--em7)]/5 border border-[var(--em7)]/15 rounded-2xl py-3.5 px-4">
+                    <i className="ti ti-sparkles text-[var(--em7)] text-[16px] mt-0.5 shrink-0" />
+                    <p className="text-[13px] text-[var(--text2)] leading-relaxed">{lessonPlanSummary}</p>
+                  </div>
+                )}
                 {selectedSecData.evs.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {selectedSecData.evs.map((e, idx) => {

@@ -561,6 +561,69 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     }
   };
 
+  // ملخص ذكاء اصطناعي لبند 6 (إعداد خطة التعلم) كاملاً — بديل نهائي لتصميم
+  // "زر لكل مؤشر" أعلاه (lessonPlanIndicators/indicatorSummaries/
+  // handleGenerateIndicatorSummary تبقى كما هي دون حذف، فقط غير مستخدَمة
+  // بعد الآن). جدول section_ai_summaries، Edge Function منفصلة
+  // generate-section-summary. "آخر دليل" و"وجود دليل من الأساس" يُحسبان من
+  // supabaseEv.getBySection مباشرة — بلا استعلام إضافي.
+  const [sectionSummary, setSectionSummary] = useState<{ ai_sentence: string; generated_at: string } | null>(null);
+
+  const refetchSectionSummary = useCallback(() => {
+    if (!supabase || !userId) return;
+    supabase
+      .from('section_ai_summaries')
+      .select('ai_sentence, generated_at')
+      .eq('portfolio_id', userId)
+      .eq('section_id', LESSON_PLAN_SECTION_ID)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) { console.warn('[Dashboard] تعذّر جلب ملخص بند 6:', error.message); return; }
+        setSectionSummary(data ?? null);
+      });
+  }, [userId]);
+
+  useEffect(() => { refetchSectionSummary(); }, [refetchSectionSummary]);
+
+  // تعطيل 60 ثانية من لحظة الضغط، بصرف النظر عن نجاح/فشل الطلب — قسم واحد
+  // فقط هنا (لا Record كما في الكولداون أعلاه المفتاح بـindicator_id)
+  const [sectionSummaryBusy, setSectionSummaryBusy] = useState(false);
+
+  const lessonPlanEvidence = supabaseEv?.getBySection(LESSON_PLAN_SECTION_ID) ?? [];
+  const lessonPlanHasEvidence = lessonPlanEvidence.length > 0;
+  const lessonPlanLatestEvidenceAt = lessonPlanHasEvidence
+    ? lessonPlanEvidence.reduce((max, e) => (e.created_at > max ? e.created_at : max), lessonPlanEvidence[0].created_at)
+    : null;
+  const sectionSummaryUpdateAvailable =
+    !!sectionSummary && !!lessonPlanLatestEvidenceAt && lessonPlanLatestEvidenceAt > sectionSummary.generated_at;
+
+  const handleGenerateSectionSummary = async () => {
+    if (!supabase || sectionSummaryBusy) return;
+    setSectionSummaryBusy(true);
+    setTimeout(() => setSectionSummaryBusy(false), 60000);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) { onToast?.('يجب تسجيل الدخول أولاً ⚠️', '⚠️'); return; }
+      const { data, error } = await supabase.functions.invoke('generate-section-summary', {
+        body: { section_id: LESSON_PLAN_SECTION_ID },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (error) { onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌'); return; }
+      if (data?.generated && data?.ai_sentence) {
+        setSectionSummary({ ai_sentence: data.ai_sentence, generated_at: data.generated_at });
+        onToast?.('تم توليد الملخص بنجاح ✅', '✅');
+      } else if (data?.reason === 'no_description') {
+        onToast?.('لا توجد أوصاف نصية كافية بين آخر أدلة هذا البند', 'ℹ️');
+      } else {
+        onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌');
+      }
+    } catch (err) {
+      console.error('[Dashboard] فشل توليد ملخص بند 6:', err);
+      onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌');
+    }
+  };
+
   // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية — pickableSections
   // (لا sections الكاملة) حتى يستبعد stats.bySections/filledSectionCount بندي
   // 5/10 مثل بقية النظام؛ قسم الاستراتيجيات يبقى مشمولاً عمداً (سلوكه الحالي
@@ -1532,6 +1595,40 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 )}
 
                 <div className={`overflow-hidden transition-all duration-500 ease-[var(--ease)] ${isOpen ? 'max-h-[9999px] opacity-100 border-t border-[var(--line)]' : 'max-h-0 opacity-0 border-t-0'}`}>
+
+                  {/* ملخص ذكاء اصطناعي لبند "إعداد خطة التعلم" كاملاً — يظهر فقط
+                      لهذا البند (id:6)، مستقل تماماً عن حلقة allSubs.map أدناه
+                      (التصميم القديم لكل مؤشر على حدة، لم يُمس). */}
+                  {sec.id === LESSON_PLAN_SECTION_ID && (
+                    <div className="py-4 px-6 border-b border-white/5 bg-[var(--em7)]/[0.03]">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={handleGenerateSectionSummary}
+                          disabled={sectionSummaryBusy || !lessonPlanHasEvidence}
+                          className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[12px] font-bold border-[1.5px] border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/5 hover:bg-[var(--em7)]/15 transition-all duration-250 cursor-pointer font-[var(--font)] disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {sectionSummaryBusy ? (
+                            <><i className="ti ti-loader animate-spin text-[13px]" /> جارٍ التوليد...</>
+                          ) : (
+                            <><i className="ti ti-sparkles text-[13px]" /> ولّد الملخص</>
+                          )}
+                        </button>
+                        {sectionSummaryUpdateAvailable && !sectionSummaryBusy && (
+                          <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[var(--gold3)]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--gold)]" /> تحديث متاح
+                          </span>
+                        )}
+                        {!lessonPlanHasEvidence && !sectionSummaryBusy && (
+                          <span className="text-[10.5px] text-[var(--text4)]">أضف دليلاً أولاً لتوليد الملخص</span>
+                        )}
+                      </div>
+                      {sectionSummary?.ai_sentence && (
+                        <div className="text-[12.5px] text-[var(--text3)] bg-white/5 border border-[var(--line)] rounded-lg py-2 px-3 mt-2.5 leading-relaxed">
+                          <i className="ti ti-sparkles text-[var(--em7)] ml-1.5" />{sectionSummary.ai_sentence}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {allSubs.map((sub, idx) => {
                      const isCustom = idx >= sec.subs.length;

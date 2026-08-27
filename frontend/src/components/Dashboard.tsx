@@ -11,6 +11,7 @@ import { useEvidenceStore } from '../hooks/useEvidenceStore';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import { supabase } from '../supabaseClient';
+import { LESSON_PLAN_SECTION_ID } from '../data';
 import BulkImportPicker from './BulkImportPicker';
 import BulkImportReview from './BulkImportReview';
 import HarvestReportSheet from './HarvestReportSheet';
@@ -488,6 +489,75 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       onToast?.('تعذّر تحديث الملخص، حاول مجدداً ❌', '❌');
     } finally {
       setSummaryRefreshBusy(false);
+    }
+  };
+
+  // ملخص ذكاء اصطناعي لكل مؤشر فرعي ضمن بند 6 (إعداد خطة التعلم) — مستقل
+  // تماماً عن ملخص الملف العام أعلاه (جدول indicator_ai_summaries، Edge
+  // Function منفصلة generate-indicator-summary). lessonPlanIndicators يربط
+  // نص "sub" في allSubs.map بـ indicator_id الحقيقي عبر مطابقة name_ar
+  // (نفس نمط استعلام section_indicators في EvidenceForm.tsx).
+  const [lessonPlanIndicators, setLessonPlanIndicators] = useState<{ id: string; name_ar: string }[]>([]);
+
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    supabase
+      .from('section_indicators')
+      .select('id, name_ar')
+      .eq('section_id', LESSON_PLAN_SECTION_ID)
+      .then(({ data, error }) => {
+        if (error) { console.warn('[Dashboard] تعذّر جلب مؤشرات بند 6:', error.message); return; }
+        setLessonPlanIndicators(data ?? []);
+      });
+  }, [userId]);
+
+  const [indicatorSummaries, setIndicatorSummaries] = useState<Record<string, { ai_sentence: string; generated_at: string }>>({});
+
+  const refetchIndicatorSummaries = useCallback(() => {
+    if (!supabase || !userId || lessonPlanIndicators.length === 0) return;
+    supabase
+      .from('indicator_ai_summaries')
+      .select('indicator_id, ai_sentence, generated_at')
+      .eq('portfolio_id', userId)
+      .eq('section_id', LESSON_PLAN_SECTION_ID)
+      .in('indicator_id', lessonPlanIndicators.map(i => i.id))
+      .then(({ data, error }) => {
+        if (error) { console.warn('[Dashboard] تعذّر جلب ملخصات المؤشرات:', error.message); return; }
+        const map: Record<string, { ai_sentence: string; generated_at: string }> = {};
+        for (const row of data ?? []) map[row.indicator_id] = { ai_sentence: row.ai_sentence, generated_at: row.generated_at };
+        setIndicatorSummaries(map);
+      });
+  }, [userId, lessonPlanIndicators]);
+
+  useEffect(() => { refetchIndicatorSummaries(); }, [refetchIndicatorSummaries]);
+
+  // تعطيل 60 ثانية من لحظة الضغط، بصرف النظر عن نجاح/فشل الطلب — مفتاحه indicator_id
+  const [indicatorSummaryCooldown, setIndicatorSummaryCooldown] = useState<Record<string, boolean>>({});
+
+  const handleGenerateIndicatorSummary = async (indicatorId: string) => {
+    if (!supabase || indicatorSummaryCooldown[indicatorId]) return;
+    setIndicatorSummaryCooldown(prev => ({ ...prev, [indicatorId]: true }));
+    setTimeout(() => setIndicatorSummaryCooldown(prev => ({ ...prev, [indicatorId]: false })), 60000);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) { onToast?.('يجب تسجيل الدخول أولاً ⚠️', '⚠️'); return; }
+      const { data, error } = await supabase.functions.invoke('generate-indicator-summary', {
+        body: { indicator_id: indicatorId, section_id: LESSON_PLAN_SECTION_ID },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (error) { onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌'); return; }
+      if (data?.generated && data?.ai_sentence) {
+        setIndicatorSummaries(prev => ({ ...prev, [indicatorId]: { ai_sentence: data.ai_sentence, generated_at: data.generated_at } }));
+        onToast?.('تم توليد الملخص بنجاح ✅', '✅');
+      } else if (data?.reason === 'no_description') {
+        onToast?.('لا توجد أوصاف نصية كافية بين آخر الأدلة لهذا المؤشر', 'ℹ️');
+      } else {
+        onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌');
+      }
+    } catch (err) {
+      console.error('[Dashboard] فشل توليد ملخص المؤشر:', err);
+      onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌');
     }
   };
 
@@ -1469,6 +1539,22 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                      const evs = state.ev[k] || [];
                      const note = state.notes[k] || '';
 
+                     const isLessonPlanIndicator = sec.id === LESSON_PLAN_SECTION_ID && !isCustom;
+                     const lessonPlanIndicatorId = isLessonPlanIndicator
+                       ? lessonPlanIndicators.find(ind => ind.name_ar === sub)?.id
+                       : undefined;
+                     const indicatorEvidence = lessonPlanIndicatorId
+                       ? (supabaseEv?.evidence.filter(e => e.indicator_id === lessonPlanIndicatorId) ?? [])
+                       : [];
+                     const indicatorHasEvidence = indicatorEvidence.length > 0;
+                     const indicatorSummaryRow = lessonPlanIndicatorId ? indicatorSummaries[lessonPlanIndicatorId] : undefined;
+                     const indicatorLatestEvidenceAt = indicatorHasEvidence
+                       ? indicatorEvidence.reduce((max, e) => (e.created_at > max ? e.created_at : max), indicatorEvidence[0].created_at)
+                       : null;
+                     const indicatorUpdateAvailable =
+                       !!indicatorSummaryRow && !!indicatorLatestEvidenceAt && indicatorLatestEvidenceAt > indicatorSummaryRow.generated_at;
+                     const indicatorSummaryBusy = !!(lessonPlanIndicatorId && indicatorSummaryCooldown[lessonPlanIndicatorId]);
+
                      return (
                         <div key={sub} className="py-5 px-6 border-b border-white/5 hover:bg-white/[0.015] transition-colors duration-200 last:border-b-0">
                            <div className="flex items-center justify-between mb-4">
@@ -1493,6 +1579,37 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                                </button>
                              </div>
                            </div>
+
+                           {lessonPlanIndicatorId && (
+                             <div className="mb-3 flex flex-col gap-2">
+                               <div className="flex items-center gap-2 flex-wrap">
+                                 <button
+                                   onClick={() => handleGenerateIndicatorSummary(lessonPlanIndicatorId)}
+                                   disabled={indicatorSummaryBusy || !indicatorHasEvidence}
+                                   className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[12px] font-bold border-[1.5px] border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/5 hover:bg-[var(--em7)]/15 transition-all duration-250 cursor-pointer font-[var(--font)] disabled:opacity-40 disabled:cursor-not-allowed"
+                                 >
+                                   {indicatorSummaryBusy ? (
+                                     <><i className="ti ti-loader animate-spin text-[13px]" /> جارٍ التوليد...</>
+                                   ) : (
+                                     <><i className="ti ti-sparkles text-[13px]" /> ولّد الملخص</>
+                                   )}
+                                 </button>
+                                 {indicatorUpdateAvailable && !indicatorSummaryBusy && (
+                                   <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[var(--gold3)]">
+                                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--gold)]" /> تحديث متاح
+                                   </span>
+                                 )}
+                                 {!indicatorHasEvidence && !indicatorSummaryBusy && (
+                                   <span className="text-[10.5px] text-[var(--text4)]">أضف دليلاً أولاً لتوليد الملخص</span>
+                                 )}
+                               </div>
+                               {indicatorSummaryRow?.ai_sentence && (
+                                 <div className="text-[12.5px] text-[var(--text3)] bg-white/5 border border-[var(--line)] rounded-lg py-2 px-3 leading-relaxed">
+                                   <i className="ti ti-sparkles text-[var(--em7)] ml-1.5" />{indicatorSummaryRow.ai_sentence}
+                                 </div>
+                               )}
+                             </div>
+                           )}
 
                            {evs.length > 0 && (
                              <div className="flex flex-col gap-2 mb-3">

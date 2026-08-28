@@ -810,6 +810,17 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
   const selectedSecData = selectedSecId ? sectionsWithPct.find(c => c.id === selectedSecId) : null;
 
+  // اختبار وجود أدلة فعلية لبند "إعداد خطة التعلم" (id:6) عبر النظامين معاً
+  // (القديم selectedSecData.evs + الغني evidenceBySection) — حصراً لهذا
+  // البند. بقية الأقسام تبقى على فحص selectedSecData.evs وحده تماماً كما
+  // كانت (showEmptyMessage = !hasLegacyEvidence لها، مطابق تماماً للشرط
+  // القديم evs.length > 0 بعد النفي).
+  const hasLegacyEvidence = !!selectedSecData && selectedSecData.evs.length > 0;
+  const hasRichEvidence = !!selectedSecData && (evidenceBySection[selectedSecData.id]?.length ?? 0) > 0;
+  const showEmptyMessage = selectedSecData?.id === LESSON_PLAN_SECTION_ID
+    ? (!hasLegacyEvidence && !hasRichEvidence)
+    : !hasLegacyEvidence;
+
   return (
     <div>
       <div id="public-portfolio-content" className="bg-[#060f0a] min-h-screen">
@@ -1406,7 +1417,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                     <p className="text-[13px] text-[var(--text2)] leading-relaxed">{lessonPlanSummary}</p>
                   </div>
                 )}
-                {selectedSecData.evs.length > 0 ? (
+                {!showEmptyMessage ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {selectedSecData.evs.map((e, idx) => {
                       const t = EVT_CONFIG[e.type] || EVT_CONFIG.doc;

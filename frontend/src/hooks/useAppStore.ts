@@ -34,7 +34,10 @@ const defaultState: AppState = {
   stratDates: {},
 };
 
-
+// إصدار تخزين localStorage — غيّره عند أي تصفير كامل لقاعدة البيانات لإبطال
+// مفتاح 'w4' القديم محلياً تلقائياً عند كل مستخدم، بدل أن يُعاد كتابته فوق
+// القاعدة النظيفة عبر saveState (انظر الـeffect الأول في useAppStore).
+const STORAGE_VERSION = 'v2-2026-08';
 
 export function useAppStore() {
   const [state, setState] = useState<AppState>(defaultState);
@@ -52,6 +55,20 @@ export function useAppStore() {
   // كائن مركَّب عند التمرير لمكوّن Public.tsx فقط في معاينة المالك لملفه الخاص.
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiTopAchievementEvidenceId, setAiTopAchievementEvidenceId] = useState<string | null>(null);
+
+  // 0. ترحيل/إبطال localStorage — يجب أن يعمل قبل أي قراءة لمفتاح 'w4' (يقع
+  // في الـeffect رقم 2 أدناه، ضمن fallback عدم وجود مستخدم/Supabase). React
+  // يُشغّل effects حسب ترتيب تصريحها ضمن نفس الـcommit، لذا وضعه هنا قبل بقية
+  // الـeffects يضمن اكتمال الترحيل قبل أي fallback قراءة لاحق.
+  useEffect(() => {
+    try {
+      const storedVersion = localStorage.getItem('w4_version');
+      if (storedVersion !== STORAGE_VERSION) {
+        localStorage.removeItem('w4');
+        localStorage.setItem('w4_version', STORAGE_VERSION);
+      }
+    } catch (e) {}
+  }, []);
 
   // 1. Listen to Auth State
   useEffect(() => {

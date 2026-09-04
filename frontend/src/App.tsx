@@ -688,6 +688,7 @@ export default function App() {
       icon: 'ti-settings',
       body: <Body />,
       onConfirm: async () => {
+        console.log('DEBUG p before save:', p);
         const saved = await updateProfile(p);
         if (!saved) {
           showToast('فشل الحفظ، تحقق من اتصالك وحاول مجدداً', '⚠️');

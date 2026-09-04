@@ -24,9 +24,13 @@ interface ModalProps {
   icon: string;
   children: React.ReactNode;
   onConfirm: () => void;
+  /** يعطّل زر "حفظ" فقط (وليس "إلغاء") — يُستخدم مثلاً أثناء معالجة/رفع صورة داخل المودال */
+  confirmDisabled?: boolean;
+  /** نص صغير يظهر بجانب زر "حفظ" أثناء تعطيله (يُتجاهل إن كان confirmDisabled غير مفعّل) */
+  confirmHelperText?: string;
 }
 
-export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConfirm }: ModalProps) {
+export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConfirm, confirmDisabled, confirmHelperText }: ModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -46,11 +50,22 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConf
 
         <div>{children}</div>
 
-        <div className="flex gap-2.5 mt-8 justify-end">
-          <button className="py-3 px-6 rounded-xl border border-[var(--line2)] bg-transparent cursor-pointer font-[var(--font)] text-[14px] text-[var(--text3)] transition-all duration-200 hover:bg-[var(--glass2)] hover:text-white" onClick={onClose}>إلغاء</button>
-          <button className="flex items-center gap-2 py-3 px-6 rounded-xl border-none bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white cursor-pointer font-[var(--font)] text-[14px] font-extrabold shadow-[0_6px_20px_rgba(42,122,68,.5)] transition-all duration-250 hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(42,122,68,.6)]" onClick={onConfirm}>
-            <i className="ti ti-check"></i> حفظ
-          </button>
+        <div className={`flex items-center gap-2.5 mt-8 ${confirmDisabled && confirmHelperText ? 'justify-between' : 'justify-end'}`}>
+          {confirmDisabled && confirmHelperText && (
+            <div className="text-[12px] text-[var(--text4)] flex items-center gap-1.5">
+              <i className="ti ti-loader animate-spin"></i>{confirmHelperText}
+            </div>
+          )}
+          <div className="flex gap-2.5">
+            <button className="py-3 px-6 rounded-xl border border-[var(--line2)] bg-transparent cursor-pointer font-[var(--font)] text-[14px] text-[var(--text3)] transition-all duration-200 hover:bg-[var(--glass2)] hover:text-white" onClick={onClose}>إلغاء</button>
+            <button
+              className={`flex items-center gap-2 py-3 px-6 rounded-xl border-none text-white font-[var(--font)] text-[14px] font-extrabold transition-all duration-250 ${confirmDisabled ? 'bg-[var(--surf4)] opacity-50 cursor-not-allowed' : 'bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] cursor-pointer shadow-[0_6px_20px_rgba(42,122,68,.5)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(42,122,68,.6)]'}`}
+              onClick={onConfirm}
+              disabled={confirmDisabled}
+            >
+              <i className="ti ti-check"></i> حفظ
+            </button>
+          </div>
         </div>
       </div>
     </div>

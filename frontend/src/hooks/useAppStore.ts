@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { AppState, UserProfile, Announcement, AcademicDate, Evidence } from '../types';
 
@@ -55,6 +55,11 @@ export function useAppStore() {
   // كائن مركَّب عند التمرير لمكوّن Public.tsx فقط في معاينة المالك لملفه الخاص.
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiTopAchievementEvidenceId, setAiTopAchievementEvidenceId] = useState<string | null>(null);
+  // عدّاد طلبات تحميل state — يزيده أي تحميل جديد (الـeffect رقم 2) وأي حفظ
+  // يدوي ناجح (saveState). عند رجوع نتيجة SELECT متأخرة، إن لم يعد رقمها
+  // المحلي مطابقاً لهذا العدّاد، تُتجاهل تماماً بدل استدعاء setState — يمنع
+  // race condition تمحو حفظاً حديثاً بنتيجة تحميل قديمة رجعت متأخرة.
+  const loadRequestIdRef = useRef(0);
 
   // 0. ترحيل/إبطال localStorage — يجب أن يعمل قبل أي قراءة لمفتاح 'w4' (يقع
   // في الـeffect رقم 2 أدناه، ضمن fallback عدم وجود مستخدم/Supabase). React
@@ -184,6 +189,7 @@ export function useAppStore() {
   // 2. Load State (from Supabase if logged in, otherwise localStorage)
   useEffect(() => {
     async function loadData() {
+      const requestId = ++loadRequestIdRef.current;
       setLoading(true);
       if (user && supabase) {
         try {
@@ -192,6 +198,10 @@ export function useAppStore() {
             .select('state, share_enabled, ai_summary, ai_top_achievement_evidence_id')
             .eq('id', user.id)
             .single();
+
+          // تجاهل هذه النتيجة إن بدأ تحميل أحدث، أو إن نجح حفظ يدوي (saveState
+          // يزيد loadRequestIdRef عند النجاح) أثناء انتظار هذا الـ SELECT
+          if (requestId !== loadRequestIdRef.current) return;
 
           if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows found"
             console.error("Error loading portfolio from Supabase:", error);
@@ -235,7 +245,11 @@ export function useAppStore() {
                 state: initialStateWithProfile,
                 updated_at: new Date().toISOString()
               });
-            
+
+            // نفس منطق التجاهل هنا: لو حفظ يدوي أحدث نجح أثناء انتظار تزريع
+            // الحساب الجديد، لا نُنهي التحميل فوق حالة أحدث حفظها المستخدم للتو
+            if (requestId !== loadRequestIdRef.current) return;
+
             if (insertError) {
               console.error("Failed to seed initial portfolio row:", insertError);
             }
@@ -246,6 +260,10 @@ export function useAppStore() {
           console.error("Exception loading data from Supabase:", e);
         }
       }
+
+      // نفس منطق التجاهل: قد نصل هنا بعد استثناء وقع خلال الانتظار أعلاه —
+      // تحقق أن هذا لا يزال أحدث طلب قبل الكتابة فوق state بأي fallback
+      if (requestId !== loadRequestIdRef.current) return;
 
       // Local storage fallback for guests or before Supabase connects
       try {
@@ -271,9 +289,12 @@ export function useAppStore() {
   }, [user?.id]); // يعتمد على ID فقط — لا يُعاد التحميل عند تجديد الـ token (TOKEN_REFRESHED)
 
   // 3. Save State (local & DB)
-  const saveState = async (newState: AppState) => {
+  // ترجع Promise<boolean> (true = نجح الحفظ فعلياً) بدل fire-and-forget، حتى
+  // تقدر الواجهة (مثل مودال إعدادات الحساب) تعرف إن فشل الحفظ الصامت ولا
+  // تتصرف كأنه نجح (إغلاق المودال، toast نجاح، ...).
+  const saveState = async (newState: AppState): Promise<boolean> => {
     setState(newState);
-    
+
     // Always save to localStorage for offline access
     try {
       localStorage.setItem('w4', JSON.stringify(newState));
@@ -292,15 +313,25 @@ export function useAppStore() {
 
         if (error) {
           console.error("Error saving portfolio to Supabase:", error);
+          return false;
         }
+
+        // حفظ يدوي ناجح يُبطل أي طلب تحميل (SELECT) سابق لا يزال معلّقاً —
+        // حتى لو لم يبدأ أي تحميل جديد فعلياً — يمنع نتيجته المتأخرة من محو
+        // هذا الحفظ (انظر التعليق أعلى loadRequestIdRef وeffect رقم 2)
+        loadRequestIdRef.current++;
+        return true;
       } catch (e) {
         console.error("Failed to sync portfolio to Supabase:", e);
+        return false;
       }
     }
+
+    return true;
   };
 
   const updateProfile = (profileUpdate: Partial<UserProfile>) => {
-    saveState({ ...state, profile: { ...state.profile, ...profileUpdate } });
+    return saveState({ ...state, profile: { ...state.profile, ...profileUpdate } });
   };
 
   // share_enabled عمود مستقل خارج state JSONB — يُحدَّث مباشرة وليس عبر saveState
@@ -338,7 +369,7 @@ export function useAppStore() {
       date: new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' }),
       ...stratFields,
     });
-    saveState({ ...state, ev: newEv });
+    return saveState({ ...state, ev: newEv });
   };
 
   const delEv = (sid: number, sub: string, i: number) => {
@@ -346,7 +377,7 @@ export function useAppStore() {
     const newEv = { ...state.ev };
     if (newEv[k]) {
       newEv[k].splice(i, 1);
-      saveState({ ...state, ev: newEv });
+      return saveState({ ...state, ev: newEv });
     }
   };
 
@@ -361,12 +392,12 @@ export function useAppStore() {
       newStrats.push(s);
       newStratDates[s] = new Date().toISOString();
     }
-    saveState({ ...state, strats: newStrats, stratDates: newStratDates });
+    return saveState({ ...state, strats: newStrats, stratDates: newStratDates });
   };
 
   const addStrat = (s: string) => {
      if (s) {
-       saveState({
+       return saveState({
          ...state,
          strats: [...state.strats, s],
          stratDates: { ...state.stratDates, [s]: new Date().toISOString() },
@@ -378,7 +409,7 @@ export function useAppStore() {
     const newSubs = { ...state.csubs };
     if (!newSubs[sid]) newSubs[sid] = [];
     newSubs[sid].push(val);
-    saveState({ ...state, csubs: newSubs });
+    return saveState({ ...state, csubs: newSubs });
   };
 
   const delSub = (sid: number, subName: string) => {
@@ -392,11 +423,11 @@ export function useAppStore() {
     delete newEv[k];
     const newNotes = { ...state.notes };
     delete newNotes[k];
-    saveState({ ...state, csubs: newSubs, ev: newEv, notes: newNotes });
+    return saveState({ ...state, csubs: newSubs, ev: newEv, notes: newNotes });
   };
 
   const updateNote = (k: string, val: string) => {
-    saveState({ ...state, notes: { ...state.notes, [k]: val } });
+    return saveState({ ...state, notes: { ...state.notes, [k]: val } });
   };
 
   const signOut = async () => {
@@ -412,14 +443,14 @@ export function useAppStore() {
   const clearPasswordRecovery = () => setPasswordRecovery(false);
 
   const updateYearStartMonth = (month: number) => {
-    saveState({ ...state, yearStartMonth: month });
+    return saveState({ ...state, yearStartMonth: month });
   };
 
   const markAnnouncementAsRead = (id: string) => {
     const read = state.readAnnouncements || [];
     if (!read.includes(id)) {
       const nextRead = [...read, id];
-      saveState({
+      return saveState({
         ...state,
         readAnnouncements: nextRead
       });
@@ -430,7 +461,7 @@ export function useAppStore() {
   // "اقتراح تلقائي من الصورة" بعد أول موافقة.
   const setAiSuggestConsent = () => {
     if (state.aiSuggestConsentAt) return;
-    saveState({ ...state, aiSuggestConsentAt: new Date().toISOString() });
+    return saveState({ ...state, aiSuggestConsentAt: new Date().toISOString() });
   };
 
   return {

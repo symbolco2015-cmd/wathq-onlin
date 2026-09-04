@@ -257,6 +257,8 @@ export default function App() {
     icon: string;
     body: React.ReactNode;
     onConfirm: () => void;
+    confirmDisabled?: boolean;
+    confirmHelperText?: string;
   }>({
     isOpen: false,
     title: '',
@@ -402,29 +404,43 @@ export default function App() {
         p = next;
       };
 
+      // يبثّ isProcessing لأعلى إلى modalConfig نفسه — يعطّل زر "حفظ" بالمودال
+      // بالكامل (وليس فقط زر رفع الصورة) طالما رفع/معالجة الصورة لم تكتمل بعد،
+      // حتى لا يحفظ المستخدم رابط avatar مؤقت (base64) قبل اكتمال رفعه لـ Storage
+      const setProcessing = (value: boolean) => {
+        setIsProcessing(value);
+        setModalConfig(prev => ({
+          ...prev,
+          confirmDisabled: value,
+          confirmHelperText: value ? 'بانتظار اكتمال معالجة الصورة...' : undefined,
+        }));
+      };
+
       const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        
+
         const reader = new FileReader();
         reader.onload = async (ev) => {
           if (ev.target?.result) {
             const dataUrl = ev.target.result as string;
             setOriginalAvatar(dataUrl);
             handleUpdate('avatar', dataUrl);
-            
-            setIsProcessing(true);
+
+            setProcessing(true);
             try {
               const imgly = await import('@imgly/background-removal') as any;
               const removeBg = imgly.default || imgly.removeBackground;
               const blob = await removeBg(file);
-              
+
               const img = new Image();
               img.src = URL.createObjectURL(blob);
               img.onload = () => {
+                // تصغير لأقصى بُعد 512px مع الحفاظ على النسبة، قبل الرفع لـ Storage
+                const scale = Math.min(1, 512 / Math.max(img.width, img.height));
                 const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                   const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
@@ -432,18 +448,38 @@ export default function App() {
                   gradient.addColorStop(1, '#1a4f2c'); // var(--em7) roughly
                   ctx.fillStyle = gradient;
                   ctx.fillRect(0, 0, canvas.width, canvas.height);
-                  ctx.drawImage(img, 0, 0);
-                  
-                  const finalDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-                  handleUpdate('avatar', finalDataUrl);
+                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                   URL.revokeObjectURL(img.src);
+
+                  canvas.toBlob(async (finalBlob) => {
+                    if (finalBlob && user && supabase) {
+                      try {
+                        const filePath = `${user.id}/avatar.jpg`;
+                        const { error: uploadError } = await supabase.storage
+                          .from('avatars')
+                          .upload(filePath, finalBlob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
+                        if (uploadError) throw uploadError;
+                        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+                        // كسر الكاش: نفس المسار يُستبدل بـ upsert فيبقى الرابط ثابتاً بدون هذا
+                        handleUpdate('avatar', `${urlData.publicUrl}?v=${Date.now()}`);
+                      } catch (uploadErr) {
+                        console.error('فشل رفع الصورة الشخصية إلى Storage:', uploadErr);
+                        showToast('تعذّر رفع الصورة، حاول مجدداً', '⚠️');
+                      }
+                    } else if (finalBlob) {
+                      // بلا حساب Supabase — لا يوجد Storage للرفع، fallback لـ base64 محلياً كباقي التطبيق
+                      handleUpdate('avatar', canvas.toDataURL('image/jpeg', 0.95));
+                    }
+                    setProcessing(false);
+                  }, 'image/jpeg', 0.95);
+                } else {
+                  setProcessing(false);
                 }
-                setIsProcessing(false);
               };
             } catch (err) {
               console.error("BG removal failed", err);
               // Fallback to original
-              setIsProcessing(false);
+              setProcessing(false);
             }
           }
         };
@@ -451,9 +487,59 @@ export default function App() {
       };
 
       const handleUndo = () => {
-        if (originalAvatar) {
-          handleUpdate('avatar', originalAvatar);
-          setOriginalAvatar(null);
+        if (!originalAvatar) return;
+        const original = originalAvatar;
+        // تحديث تفاؤلي فوري بالمعاينة المحلية (نفس نمط handleFile)، يُستبدل
+        // بالرابط النهائي من Storage بعد اكتمال الرفع أدناه
+        handleUpdate('avatar', original);
+        setOriginalAvatar(null);
+
+        const img = new Image();
+        img.onload = () => {
+          setProcessing(true);
+          // نفس تصغير 512px المستخدم بـ handleFile، قبل الرفع لنفس المسار
+          const scale = Math.min(1, 512 / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { setProcessing(false); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          canvas.toBlob(async (finalBlob) => {
+            if (finalBlob && user && supabase) {
+              try {
+                const filePath = `${user.id}/avatar.jpg`;
+                const { error: uploadError } = await supabase.storage
+                  .from('avatars')
+                  .upload(filePath, finalBlob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
+                if (uploadError) throw uploadError;
+                const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+                handleUpdate('avatar', `${urlData.publicUrl}?v=${Date.now()}`);
+              } catch (uploadErr) {
+                console.error('فشل رفع صورة التراجع إلى Storage:', uploadErr);
+                showToast('تعذّر رفع الصورة، حاول مجدداً', '⚠️');
+              }
+            } else if (finalBlob) {
+              // بلا حساب Supabase — لا يوجد Storage للرفع، fallback لـ base64 محلياً كباقي التطبيق
+              handleUpdate('avatar', canvas.toDataURL('image/jpeg', 0.95));
+            }
+            setProcessing(false);
+          }, 'image/jpeg', 0.95);
+        };
+        img.src = original;
+      };
+
+      const handleDeleteAvatar = async () => {
+        handleUpdate('avatar', '');
+        setOriginalAvatar(null);
+        if (user && supabase) {
+          try {
+            const { error } = await supabase.storage.from('avatars').remove([`${user.id}/avatar.jpg`]);
+            if (error) console.error('فشل حذف الصورة الشخصية من Storage:', error);
+          } catch (err) {
+            console.error('فشل حذف الصورة الشخصية من Storage:', err);
+          }
         }
       };
 
@@ -470,7 +556,7 @@ export default function App() {
                   <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isProcessing} />
                 </label>
                 {localP.avatar && (
-                  <button className="py-2 px-4 rounded-xl border border-[#f87171]/30 text-[13px] font-bold text-[#f87171] cursor-pointer hover:bg-[#f87171]/10 transition-all bg-transparent" onClick={() => { handleUpdate('avatar', ''); setOriginalAvatar(null); }}>
+                  <button className="py-2 px-4 rounded-xl border border-[#f87171]/30 text-[13px] font-bold text-[#f87171] cursor-pointer hover:bg-[#f87171]/10 transition-all bg-transparent" onClick={handleDeleteAvatar}>
                     حذف
                   </button>
                 )}
@@ -601,8 +687,12 @@ export default function App() {
       subtitle: 'تحديث بيانات الملف الشخصي وحسابات التواصل',
       icon: 'ti-settings',
       body: <Body />,
-      onConfirm: () => {
-        updateProfile(p);
+      onConfirm: async () => {
+        const saved = await updateProfile(p);
+        if (!saved) {
+          showToast('فشل الحفظ، تحقق من اتصالك وحاول مجدداً', '⚠️');
+          return; // لا نغلق المودال ولا نحدّث السنة الدراسية — يبقى تعديل المستخدم كما هو ليعيد المحاولة
+        }
         updateYearStartMonth(yearStart);
         showToast('تم تحديث الحساب بنجاح ✨', '✨');
         closeModal();

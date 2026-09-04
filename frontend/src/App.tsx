@@ -50,9 +50,10 @@ export default function App() {
     toggleStrat, 
     addSub, 
     delSub,
-    updateNote, 
-    addStrat, 
-    updateProfile, 
+    updateNote,
+    addStrat,
+    updateProfile,
+    saveState,
     signOut,
     announcements,
     markAnnouncementAsRead,
@@ -688,13 +689,20 @@ export default function App() {
       icon: 'ti-settings',
       body: <Body />,
       onConfirm: async () => {
-        console.log('DEBUG p before save:', p);
-        const saved = await updateProfile(p);
+        // ندمج تعديلي profile وyearStartMonth في استدعاء saveState واحد بدل
+        // استدعاءين منفصلين (updateProfile ثم updateYearStartMonth) — كل واحد
+        // منهما كان يبني newState من نسخة state القديمة في الـ closure دون رؤية
+        // تعديل الآخر، فيتصارعان على نفس عمود state ويكتب الثاني فوق الأول
+        const combinedState = {
+          ...state,
+          profile: { ...state.profile, ...p },
+          yearStartMonth: yearStart,
+        };
+        const saved = await saveState(combinedState);
         if (!saved) {
           showToast('فشل الحفظ، تحقق من اتصالك وحاول مجدداً', '⚠️');
-          return; // لا نغلق المودال ولا نحدّث السنة الدراسية — يبقى تعديل المستخدم كما هو ليعيد المحاولة
+          return; // لا نغلق المودال — يبقى تعديل المستخدم كما هو ليعيد المحاولة
         }
-        updateYearStartMonth(yearStart);
         showToast('تم تحديث الحساب بنجاح ✨', '✨');
         closeModal();
       }

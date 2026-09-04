@@ -189,6 +189,7 @@ export function useAppStore() {
   // 2. Load State (from Supabase if logged in, otherwise localStorage)
   useEffect(() => {
     async function loadData() {
+      console.log('DEBUG loadData triggered at:', new Date().toISOString());
       const requestId = ++loadRequestIdRef.current;
       setLoading(true);
       if (user && supabase) {
@@ -303,6 +304,9 @@ export function useAppStore() {
     // Sync with Supabase if authenticated
     if (user && supabase) {
       try {
+        console.log('DEBUG newState.profile before upsert:', newState.profile);
+        console.log('DEBUG payload size (chars):', JSON.stringify(newState).length);
+        console.log('DEBUG caller stack:', new Error().stack);
         const { error } = await supabase
           .from('portfolios')
           .upsert({

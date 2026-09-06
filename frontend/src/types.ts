@@ -19,11 +19,20 @@ export interface Evidence {
   stratSubject?: string;
 }
 
-export interface SectionData {
+/** مؤشر فرعي حقيقي من جدول section_indicators — id/name_ar معتمدان من
+ * القاعدة حرفياً، لا يُعدَّلان أو يُخترعان بالفرونت إند (انظر useSections.ts). */
+export interface SectionIndicator {
+  id: string;
+  name_ar: string;
+}
+
+/** البيانات الثابتة لكل قسم — مكتوبة يدوياً في data.ts، لا تأتي من القاعدة
+ * (جدول sections بالقاعدة أفقر: بلا isStrat/isResultsSection/strats، وبعض
+ * الأيقونات/الأسماء مختلفة عمداً هنا). SECS في data.ts من هذا النوع. */
+export interface SectionMeta {
   id: number;
   ttl: string;
   icon: string;
-  subs: string[];
   isStrat?: boolean;
   strats?: string[];
   /** بند 5 (تحسين نتائج المتعلمين) أو بند 10 (تحليل نتائج المتعلمين) — محتواهما
@@ -31,6 +40,15 @@ export interface SectionData {
    * فرعية عادية. نفس معاملة isStrat: مُستبعدان من شبكة الأقسام/النسب/منتقيات
    * القسم العامة، ولهما بطاقتان مثبّتتان دائماً بدلاً من ذلك. */
   isResultsSection?: boolean;
+}
+
+/** القسم الكامل كما يستهلكه بقية التطبيق — دمج SectionMeta (data.ts) مع
+ * مؤشرات section_indicators الحقيقية (القاعدة)، مبني عبر useSections.ts فقط.
+ * subs مشتقة دائماً من indicators (indicators.map(i => i.name_ar))، وليست
+ * مكتوبة يدوياً — أسماء القاعدة معتمدة حرفياً كما هي. */
+export interface SectionData extends SectionMeta {
+  indicators: SectionIndicator[];
+  subs: string[];
 }
 
 export interface UserProfile {

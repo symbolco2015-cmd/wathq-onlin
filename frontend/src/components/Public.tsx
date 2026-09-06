@@ -701,16 +701,19 @@ export default function Public({ state, sections, isSharedView, continuity, evid
       .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(resultsAnalysis, subject) }));
   }, [frozenResultsComparisons, resultsAnalysis]);
 
-  // "مراعاة الفروق الفردية بين المتعلمين" — أول مؤشر فرعي عادي بالقسم الهجين،
+  // "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي بالقسم الهجين،
   // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط
   // state.strats/مفاتيح "strat:"، فهذا المؤشر لا يظهر هناك رغم كونه جزءاً
   // طبيعياً من subs — عرض مبسّط مستقل له (بلا أزرار تعديل، مطابق لباقي
   // شواهد صفحة المشاركة).
+  // يُحدَّد بالاسم لا بالترتيب (subs[0]) — نفس سبب Dashboard.tsx: ترتيب weight
+  // بجدول section_indicators غير مضمون التطابق مع الترتيب القديم في data.ts.
+  // غير موجود ⇐ إخفاء البطاقة (الشرط أدناه) لا كسر الصفحة.
   // ⚠️ تنبيه: لا حذف هنا (عرض فقط)، لكن الحذف المقابل بلوحة التحكم (Dashboard.tsx
   // onDeleteEv) يطابق السجل في جدول evidence الحقيقي بالعنوان النصي فقط
   // (section_id + title)، لا بمعرّف مرتبط — عناوين متطابقة قد تحذف السجل
   // الخطأ من الجدول الحقيقي، فقد يسبب تبايناً صامتاً بين ما يظهر هنا وهناك.
-  const indivDiffSub = stratSection?.subs[0];
+  const indivDiffSub = stratSection?.indicators.find(i => i.name_ar.includes('الفروق الفردية'))?.name_ar;
   const indivDiffEvs = (stratSection && indivDiffSub) ? (state.ev[`${stratSection.id}|${indivDiffSub}`] || []) : [];
 
   const chartData = nonStratSections.map(sec => {

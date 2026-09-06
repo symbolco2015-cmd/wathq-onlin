@@ -667,16 +667,20 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? state.strats.reduce((acc, name) => acc + (state.ev[`${stratSection.id}|strat:${name}`] || []).length, 0)
     : 0;
 
-  // "مراعاة الفروق الفردية بين المتعلمين" — أول مؤشر فرعي عادي في القسم
-  // الهجين، منفصل كلياً عن الاستراتيجيات أعلاه. بطاقة الاستراتيجيات تعرض فقط
+  // "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي في القسم الهجين،
+  // منفصل كلياً عن الاستراتيجيات أعلاه. بطاقة الاستراتيجيات تعرض فقط
   // stratSection.strats/مفاتيح "strat:"، فهذا المؤشر لا يظهر هناك إطلاقاً رغم
   // كونه جزءاً طبيعياً من subs — له بطاقة حالة مستقلة أدناه بنفس نمط أي مؤشر
   // فرعي عادي (state.ev[sectionId|subName]).
+  // يُحدَّد بالاسم لا بالترتيب (subs[0]): القسم يحوي 3 مؤشرات من section_indicators
+  // بترتيب weight غير مضمون التطابق مع الترتيب القديم في data.ts — subs[0] كان
+  // يلتقط أحياناً مؤشراً مختلفاً تماماً ("توظيف استراتيجيات تدريس متنوعة" مثلاً)
+  // بدل هذا المؤشر تحديداً. غير موجود ⇐ إخفاء البطاقة (الشرط أدناه) لا كسر الصفحة.
   // ⚠️ تنبيه: زر الحذف في هذه البطاقة يمرّ عبر onDeleteEv (App.tsx handleDeleteEv)،
   // الذي يطابق السجل المقابل في جدول evidence الحقيقي بالعنوان النصي فقط
   // (section_id + title)، لا بمعرّف مرتبط — عناوين متطابقة قد تحذف السجل
   // الخطأ من الجدول الحقيقي، وأدلة بلا نظير حقيقي تُحذف من state.ev بصمت.
-  const indivDiffSub = stratSection?.subs[0];
+  const indivDiffSub = stratSection?.indicators.find(i => i.name_ar.includes('الفروق الفردية'))?.name_ar;
   const indivDiffEvs = (stratSection && indivDiffSub) ? (state.ev[`${stratSection.id}|${indivDiffSub}`] || []) : [];
 
   // نسبة اكتمال البند بناءً على monthly_progress (عداد الشهر الحالي ÷ 3)
@@ -2203,14 +2207,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
       </BottomSheet>
 
-      {/* Bottom Sheet — التقاط سريع: اختيار البند بعد الصورة — جوال فقط */}
+      {/* Bottom Sheet — التقاط سريع: اختيار البند ثم المؤشر الفرعي — جوال فقط */}
       <BottomSheet isOpen={quickCapture.pickerSheetOpen} onClose={quickCapture.cancelPending}>
         <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
               <i className="ti ti-camera" />
             </div>
-            <div className="text-[16px] font-black text-white">اختر البند</div>
+            <div className="text-[16px] font-black text-white">{quickCapture.pendingSection ? 'اختر المؤشر الفرعي' : 'اختر البند'}</div>
           </div>
           <button
             onClick={quickCapture.cancelPending}
@@ -2227,21 +2231,54 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               className="w-full max-h-[160px] object-cover rounded-2xl border border-[var(--line)] mb-4"
             />
           )}
-          <div className="flex flex-col gap-1.5">
-            {pickableSections.map(sec => (
+          {!quickCapture.pendingSection ? (
+            <div className="flex flex-col gap-1.5">
+              {pickableSections.map(sec => (
+                <button
+                  key={sec.id}
+                  type="button"
+                  onClick={() => quickCapture.selectSection(sec)}
+                  className="flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-[var(--em7)]/10 transition-all duration-200 text-right cursor-pointer"
+                >
+                  <i className={`ti ${sec.icon} text-[16px] text-[var(--em7)] shrink-0`} />
+                  <span className="flex-1 text-[13.5px] font-bold text-[var(--text2)]">{sec.ttl}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
               <button
-                key={sec.id}
                 type="button"
+                onClick={quickCapture.backToSectionPicker}
                 disabled={quickCapture.saving}
-                onClick={() => quickCapture.saveToSection(sec)}
-                className="flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-[var(--em7)]/10 transition-all duration-200 text-right cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--text4)] hover:text-white mb-2 cursor-pointer disabled:opacity-50 disabled:cursor-wait"
               >
-                <i className={`ti ${sec.icon} text-[16px] text-[var(--em7)] shrink-0`} />
-                <span className="flex-1 text-[13.5px] font-bold text-[var(--text2)]">{sec.ttl}</span>
-                {quickCapture.saving && <i className="ti ti-loader animate-spin text-[14px] text-[var(--em8)]" />}
+                <i className="ti ti-arrow-right" /> رجوع لاختيار البند
               </button>
-            ))}
-          </div>
+              <div className="text-[12px] font-bold text-[var(--text3)] mb-1">{quickCapture.pendingSection.ttl}</div>
+              {quickCapture.indicatorsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <i className="ti ti-loader animate-spin text-[22px] text-[var(--em8)]" />
+                </div>
+              ) : quickCapture.sectionIndicators.length === 0 ? (
+                <p className="text-[12.5px] text-[var(--text4)] text-center py-6">لا توجد مؤشرات متاحة لهذا البند حالياً</p>
+              ) : (
+                quickCapture.sectionIndicators.map(ind => (
+                  <button
+                    key={ind.id}
+                    type="button"
+                    disabled={quickCapture.saving}
+                    onClick={() => quickCapture.saveToIndicator(ind)}
+                    className="flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-[var(--em7)]/10 transition-all duration-200 text-right cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    <i className="ti ti-list-check text-[16px] text-[var(--em7)] shrink-0" />
+                    <span className="flex-1 text-[13.5px] font-bold text-[var(--text2)]">{ind.name_ar}</span>
+                    {quickCapture.saving && <i className="ti ti-loader animate-spin text-[14px] text-[var(--em8)]" />}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </BottomSheet>
 
@@ -2401,6 +2438,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         onClose={() => setIsHarvestReportOpen(false)}
         userId={userId}
         state={state}
+        sections={sections}
         academicDates={academicDates}
         onToast={onToast}
       />

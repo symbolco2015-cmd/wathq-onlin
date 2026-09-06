@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import BottomSheet from './BottomSheet';
 import { supabase } from '../supabaseClient';
-import { SECS } from '../data';
 import { calculatePointsLevelFromTotal, supabaseEvidenceTypeToLocal } from '../utils';
-import type { AcademicDate, AppState, Evidence, HarvestSnapshot } from '../types';
+import type { AcademicDate, AppState, Evidence, HarvestSnapshot, SectionData } from '../types';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { ResultsAnalysisRow } from './ResultsAnalysis/types';
 import { toPublicResultsAnalysisRow, groupPublicAnalysesBySubject, buildPublicComparisonSeries } from './ResultsAnalysis/logic';
@@ -13,6 +12,7 @@ interface HarvestReportSheetProps {
   onClose: () => void;
   userId?: string;
   state: Pick<AppState, 'profile' | 'strats' | 'yearStartMonth'>;
+  sections: SectionData[];
   academicDates?: AcademicDate[];
   onToast?: (msg: string, icon?: string) => void;
 }
@@ -82,7 +82,7 @@ function buildSemesterOptions(academicDates: AcademicDate[]): SemesterOption[] {
  * إطلاقاً — يقرأ evidence/monthly_progress مباشرة بصلاحية المعلم العادية (RLS
  * الحالي كافٍ، هذه استعلامات مالك على جدوله الخاص).
  */
-export default function HarvestReportSheet({ isOpen, onClose, userId, state, academicDates, onToast }: HarvestReportSheetProps) {
+export default function HarvestReportSheet({ isOpen, onClose, userId, state, sections, academicDates, onToast }: HarvestReportSheetProps) {
   const semesterOptions = useMemo(() => buildSemesterOptions(academicDates || []), [academicDates]);
   const [selectedKey, setSelectedKey] = useState<string>('custom');
   const [customFrom, setCustomFrom] = useState('');
@@ -173,7 +173,7 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, aca
       rawEvidence.forEach(row => {
         if (row.section_id == null) return; // مستبعد أصلاً بالاستعلام، حراسة إضافية فقط
         const subName = (row.indicator_id && indicatorNames.get(row.indicator_id)) || 'أدلة أخرى';
-        const secStatic = SECS.find(s => s.id === row.section_id);
+        const secStatic = sections.find(s => s.id === row.section_id);
         const isKnownSub = secStatic?.subs.includes(subName);
         if (!isKnownSub) {
           if (!csubs[row.section_id]) csubs[row.section_id] = [];

@@ -19,12 +19,13 @@ import AdminDashboard from './components/Admin/AdminDashboard';
 import Onboarding from './components/Onboarding';
 import { Modal, Toast, SelectDropdown } from './components/UI';
 import EvidenceModal from './components/EvidenceModal';
-import { SECS, LESSON_PLAN_SECTION_ID } from './data';
+import { LESSON_PLAN_SECTION_ID } from './data';
 import { supabase } from './supabaseClient';
 import { calculateEvaluation, isProfileIncomplete } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
 import { useMonthlyProgress } from './hooks/useMonthlyProgress';
 import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
+import { useSections } from './hooks/useSections';
 import type { ContinuityData } from './types';
 
 export default function App() {
@@ -88,6 +89,12 @@ export default function App() {
     setPortfolioFeatureOverride,
     removePortfolioFeatureOverride,
   } = useAdminStore(isAdmin);
+
+  // مصدر SectionData[] الوحيد للتطبيق كله — يدمج SECS الثابتة (data.ts) مع
+  // مؤشرات section_indicators الحقيقية من القاعدة (انظر useSections.ts).
+  // مستقل عن حالة تسجيل الدخول (يُستهلك أيضاً في مساري ?share= و?report=
+  // العامّين أدناه)، لذا يُستدعى هنا بلا شرط.
+  const { sections, status: sectionsStatus, reload: reloadSections } = useSections();
 
   const monthlyProgress = useMonthlyProgress({
     userId: user?.id ?? null,
@@ -717,7 +724,7 @@ export default function App() {
   };
 
   const openEvalModal = () => {
-    const stats = calculateEvaluation(state, SECS);
+    const stats = calculateEvaluation(state, sections);
     
     setModalConfig({
       isOpen: true,
@@ -744,7 +751,7 @@ export default function App() {
                 <div className="text-[14px] font-bold text-white flex items-center gap-2"><i className="ti ti-layout-grid text-[#3b82f6]"></i> اكتمال الأقسام</div>
                 <div className="text-[13px] font-bold text-[#3b82f6]">{stats.secScore} / 50</div>
               </div>
-              <div className="text-[12px] text-[var(--text4)]">تم تعبئة {stats.filledSecs} من أصل {SECS.length} أقسام مطلوبة.</div>
+              <div className="text-[12px] text-[var(--text4)]">تم تعبئة {stats.filledSecs} من أصل {sections.length} أقسام مطلوبة.</div>
               <div className="mt-3 h-1.5 bg-white/10 rounded-full overflow-hidden">
                 <div className="h-full bg-[#3b82f6] rounded-full" style={{width: `${(stats.secScore/50)*100}%`}}></div>
               </div>
@@ -816,6 +823,51 @@ export default function App() {
       }
     });
   };
+
+  // شاشة تحميل الأقسام/المؤشرات — تسبق كل مسارات العرض (لوحة التحكم، المشاركة
+  // العامة، تقرير الحصاد)، إذ تحتاجها جميعاً لبناء sections الكامل (subs
+  // مشتقة من section_indicators). لا سقوط على subs ثابتة عند الفشل أبداً.
+  if (sectionsStatus === 'loading') {
+    return (
+      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
+        <Background />
+        <div className="relative z-10 text-center flex flex-col items-center" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
+          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--em3)] to-[var(--em6)] text-[40px] text-white flex items-center justify-center shadow-[0_0_0_1px_rgba(82,196,120,.3),0_16px_48px_rgba(42,122,68,.5)] mb-6 animate-pulse">
+            <i className="ti ti-list-check animate-spin" style={{ animationDuration: '3s' }}></i>
+          </div>
+          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">جاري تحميل بيانات الأقسام...</div>
+          <div className="text-[13px] text-[var(--text4)] flex items-center gap-1.5 justify-center font-[var(--font2)]">
+            <i className="ti ti-lock text-[16px] text-[var(--em8)] animate-pulse"></i>
+            اتصال آمن بـ Supabase
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // فشل جلب مؤشرات الأقسام — لا يمكن بناء أي واجهة صحيحة بدونها (subs
+  // مشتقة منها كلياً الآن)، فتُحجب الواجهة كاملة بدل عرض بيانات ناقصة/مضلِّلة
+  if (sectionsStatus === 'error') {
+    return (
+      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
+        <Background />
+        <div className="relative z-10 text-center flex flex-col items-center px-6" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
+          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-red-900/60 to-red-700/40 text-[40px] text-red-400 flex items-center justify-center shadow-[0_0_0_1px_rgba(239,68,68,.3),0_16px_48px_rgba(239,68,68,.2)] mb-6">
+            <i className="ti ti-mood-sad"></i>
+          </div>
+          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">تعذّر تحميل بيانات الأقسام</div>
+          <div className="text-[14px] text-[var(--text4)] max-w-sm">حدث خطأ أثناء الاتصال بالخادم، يرجى المحاولة مرة أخرى.</div>
+          <button
+            type="button"
+            onClick={() => reloadSections()}
+            className="mt-8 py-3 px-8 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white text-[14px] font-bold border-none cursor-pointer hover:opacity-90 transition-opacity"
+          >
+            <i className="ti ti-refresh ml-2"></i>إعادة المحاولة
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Show loading screen for shared profile view
   if (shareUserId && sharedLoading) {
@@ -933,7 +985,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={SECS} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} lessonPlanSummary={sharedLessonPlanSummary} />
+          <Public state={sharedState} sections={sections} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} lessonPlanSummary={sharedLessonPlanSummary} />
         </main>
       </>
     );
@@ -964,7 +1016,7 @@ export default function App() {
         <main>
           <Public
             state={snapshot.state}
-            sections={SECS}
+            sections={sections}
             isSharedView
             continuity={snapshot.continuity}
             evidence={snapshot.evidence}
@@ -1025,7 +1077,7 @@ export default function App() {
         {currentPage === 'dashboard' && (
           <Dashboard
             state={state}
-            sections={SECS}
+            sections={sections}
             onAddEvClick={openAddEvModal}
             onAddSubClick={openAddSubModal}
             onToggleStrat={toggleStrat}
@@ -1050,7 +1102,7 @@ export default function App() {
         {currentPage === 'public' && (
           <Public
             state={{ ...state, ai_summary: aiSummary, ai_top_achievement_evidence_id: aiTopAchievementEvidenceId }}
-            sections={SECS}
+            sections={sections}
             continuity={ownContinuity}
             evidence={supabaseEv.evidence}
             resultsAnalysis={ownResultsAnalysisPublic}

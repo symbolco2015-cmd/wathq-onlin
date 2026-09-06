@@ -3,8 +3,14 @@ import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
 import type { SectionData } from '../types';
 import { useVoiceRecording } from './useVoiceRecording';
+import { useSaveEvidence } from './useSaveEvidence';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('./useSupabaseEvidence').useSupabaseEvidence>;
+
+interface Indicator {
+  id: string;
+  name_ar: string;
+}
 
 // نفس حد الصور في EvidenceForm (TYPE_CONFIG['image'].maxSizeMB)
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -42,11 +48,20 @@ interface UseQuickCaptureOptions {
  * بنفس آلية الضغط/الرفع المستخدمة في EvidenceForm (دون تعديل ذلك الملف).
  */
 export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections, aiConsentGiven, onGiveAiConsent }: UseQuickCaptureOptions) {
+  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تحديث state.ev
+  // + monthly_progress عبر onAddEv (انظر useSaveEvidence.ts)
+  const { saveEvidence } = useSaveEvidence(supabaseEv?.addEvidence, onAddEv);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
   const [pickerSheetOpen, setPickerSheetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // ── اختيار البند ثم المؤشر الفرعي (خطوتان داخل نفس الـBottom Sheet) ─────
+  const [pendingSection, setPendingSection] = useState<SectionData | null>(null);
+  const [sectionIndicators, setSectionIndicators] = useState<Indicator[]>([]);
+  const [indicatorsLoading, setIndicatorsLoading] = useState(false);
 
   const openPicker = () => fileInputRef.current?.click();
 
@@ -56,6 +71,9 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
     setPendingPreviewUrl(null);
     setPickerSheetOpen(false);
     setSaving(false);
+    setPendingSection(null);
+    setSectionIndicators([]);
+    setIndicatorsLoading(false);
   };
 
   const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,8 +91,43 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
 
   const cancelPending = () => reset();
 
-  const saveToSection = async (sec: SectionData) => {
-    if (!pendingFile || saving) return;
+  /** الخطوة الأولى: اختيار البند — يجلب مؤشراته الفرعية فوراً (نفس استعلام
+   *  EvidenceForm: section_indicators مرتّبة بـweight) وينقل الشيت للخطوة
+   *  الثانية. لا رفع ولا حفظ عند هذه الخطوة. */
+  const selectSection = async (sec: SectionData) => {
+    setPendingSection(sec);
+    setSectionIndicators([]);
+    if (!supabase) return;
+    setIndicatorsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('section_indicators')
+        .select('id, name_ar')
+        .eq('section_id', sec.id)
+        .order('weight', { ascending: true })
+        .order('name_ar', { ascending: true });
+      if (error) {
+        console.warn('[QuickCapture] تعذّر تحميل مؤشرات القسم:', error.message);
+        setSectionIndicators([]);
+        return;
+      }
+      setSectionIndicators(data ?? []);
+    } finally {
+      setIndicatorsLoading(false);
+    }
+  };
+
+  /** رجوع من خطوة اختيار المؤشر إلى خطوة اختيار البند، دون إغلاق الشيت */
+  const backToSectionPicker = () => {
+    setPendingSection(null);
+    setSectionIndicators([]);
+    setIndicatorsLoading(false);
+  };
+
+  /** الخطوة الثانية: اختيار المؤشر — هنا فقط يبدأ الرفع والحفظ الفعليان */
+  const saveToIndicator = async (indicator: Indicator) => {
+    const sec = pendingSection;
+    if (!pendingFile || saving || !sec) return;
     if (!supabaseEv) {
       onToast('غير متاح حالياً، يرجى المحاولة مجدداً', '❌');
       return;
@@ -104,8 +157,13 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
       }
 
       const title = `شاهد سريع - ${new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}`;
-      const result = await supabaseEv.addEvidence({
+      // sub = اسم المؤشر المختار فعلياً (indicator.name_ar)، لا subs[0] الثابت —
+      // حتى يُصنَّف الشاهد محلياً (state.ev) تحت نفس المؤشر المسجَّل في evidence
+      // عبر indicator_id، بدل الانحياز دائماً لأول مؤشر بالقسم بصرف النظر عن اختيار المستخدم
+      const result = await saveEvidence({
         section_id: sec.id,
+        indicator_id: indicator.id,
+        sub: indicator.name_ar,
         title,
         evidence_type: 'image',
         file_url: fileUrl,
@@ -117,7 +175,12 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
         return;
       }
 
-      onAddEv(sec.id, sec.subs[0] ?? 'عام', 'img', title, fileUrl);
+      if (!result.localSyncOk) {
+        onToast('تم حفظ الشاهد، لكن تعذّر تحديث العرض المحلي — يرجى تحديث الصفحة', '⚠️');
+        reset();
+        return;
+      }
+
       onToast('تم حفظ الشاهد بنجاح ✅', '✅');
       reset();
     } catch (err) {
@@ -203,6 +266,10 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
         }
 
         const title = `شاهد صوتي سريع - ${new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+        // ⚠️ يتجاوز saveEvidence الموحّد عمداً (استثناء VOICE_CAPTURE_ENABLED أعلاه)
+        // ولا يمرّر indicator_id — إعادة تفعيل هذا التدفّق مستقبلاً تستلزم أولاً
+        // إضافة خطوة اختيار مؤشر (مثل selectSection/saveToIndicator أعلاه)، وإلا
+        // فشل هذا الحفظ حال إضافة قيد NOT NULL على evidence.indicator_id مستقبلاً
         const result = await supabaseEv.addEvidence({
           section_id: sectionMeta?.id ?? null,
           title,
@@ -245,7 +312,12 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
     pickerSheetOpen,
     cancelPending,
     saving,
-    saveToSection,
+    selectSection,
+    backToSectionPicker,
+    saveToIndicator,
+    pendingSection,
+    sectionIndicators,
+    indicatorsLoading,
 
     voiceRecording,
     voiceConsentPromptOpen,

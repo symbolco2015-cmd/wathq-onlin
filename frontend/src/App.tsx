@@ -99,7 +99,13 @@ export default function App() {
   // wrapper: يسجّل في monthly_progress عند كل إضافة شاهد
   // createdAt اختياري: يُمرَّر فقط عند الإضافة من أرشيف شهر سابق ضمن نافذة التعديل
   // المسموحة، لربط الشاهد بشهره الصحيح في monthly_progress بدل الشهر الحالي الفعلي
-  const handleAddEv = (
+  // ترجع Promise<boolean> (نتيجة addEv/saveState الفعلية) بدل fire-and-forget —
+  // saveState صارت Promise<boolean>، وتجاهل نتيجتها بصمت يعني أن المستدعي
+  // (useSaveEvidence) قد يُبلغ المستخدم بنجاح رغم فشل حفظ state.ev فعلياً.
+  // monthlyProgress.recordEvidence يبقى غير مشروط بنجاح addEv عمداً: الشاهد
+  // الحقيقي في جدول evidence مُدرَج فعلاً قبل الوصول لهنا (saveEvidence)،
+  // وعدّاد monthly_progress يتبع وجوده هو لا نجاح مرآة state.ev المحلية.
+  const handleAddEv = async (
     sid: number,
     sub: string,
     type: 'pdf' | 'img' | 'doc' | 'vid',
@@ -107,9 +113,10 @@ export default function App() {
     url?: string,
     stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
     createdAt?: string
-  ) => {
-    addEv(sid, sub, type, name, url, stratFields);
+  ): Promise<boolean> => {
+    const ok = await addEv(sid, sub, type, name, url, stratFields);
     monthlyProgress.recordEvidence(sid, createdAt);
+    return ok;
   };
 
   const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string }>({

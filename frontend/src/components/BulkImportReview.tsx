@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
 import BottomSheet from './BottomSheet';
 import { SectionReclassifyDropdown } from './Dashboard';
+import { SelectDropdown } from './UI';
 import { supabase } from '../supabaseClient';
+import { useSaveEvidence } from '../hooks/useSaveEvidence';
 import type { SectionData, Evidence } from '../types';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
+
+interface Indicator {
+  id: string;
+  name_ar: string;
+}
 
 interface ClassifiedRow {
   id: string;
@@ -22,6 +29,8 @@ interface FailedRow {
 interface RowEdit {
   sectionId: number | null;
   title: string;
+  /** يُصفَّر عند كل تغيير للقسم — يجب اختياره من جديد لمؤشرات القسم الجديد */
+  indicatorId: string | null;
 }
 
 interface BulkImportReviewProps {
@@ -53,17 +62,45 @@ const publicUrlFor = (filePath: string): string =>
  * المستخدم (تُحفظ بلا قسم في evidence، نفس منطق فشل التصنيف الصوتي) ولا تُعرض هنا.
  */
 export default function BulkImportReview({ isOpen, onClose, userId, sections, supabaseEv, onAddEv, onToast }: BulkImportReviewProps) {
+  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تحديث state.ev
+  // + monthly_progress عبر onAddEv (انظر useSaveEvidence.ts). لا يُستخدم في
+  // resolveFailedRows أدناه (استثناء مقصود، انظر تعليقها).
+  const { saveEvidence } = useSaveEvidence(supabaseEv?.addEvidence, onAddEv);
+
   const [rows, setRows] = useState<ClassifiedRow[]>([]);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [loading, setLoading] = useState(false);
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null); // 'all' أو id الصف الجاري اعتماده
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  // مؤشرات section_indicators مجلوبة لكل قسم ظهر بين الصفوف — مفتاحها section_id،
+  // تُملأ عند أول ظهور لكل قسم (اقتراح مبدئي أو اختيار يدوي) لتفادي تكرار الجلب
+  const [indicatorsBySection, setIndicatorsBySection] = useState<Record<number, Indicator[]>>({});
 
   const getEdit = (row: ClassifiedRow): RowEdit =>
-    edits[row.id] ?? { sectionId: row.suggested_section_id, title: row.suggested_title ?? '' };
+    edits[row.id] ?? { sectionId: row.suggested_section_id, title: row.suggested_title ?? '', indicatorId: null };
+
+  const ensureIndicatorsLoaded = async (sectionId: number) => {
+    if (indicatorsBySection[sectionId] || !supabase) return;
+    const { data, error } = await supabase
+      .from('section_indicators')
+      .select('id, name_ar')
+      .eq('section_id', sectionId)
+      .order('weight', { ascending: true })
+      .order('name_ar', { ascending: true });
+    if (error) {
+      console.warn('[BulkImportReview] تعذّر تحميل مؤشرات القسم:', error.message);
+      return;
+    }
+    setIndicatorsBySection(prev => ({ ...prev, [sectionId]: data ?? [] }));
+  };
 
   const resolveFailedRows = async (failedRows: FailedRow[]) => {
     if (!supabase || !userId || failedRows.length === 0) return;
+    // استثناء مقصود من مسار saveEvidence الموحّد: هذه الصفوف تُحفظ بلا قسم
+    // (section_id null) للتصنيف اليدوي لاحقاً من قائمة "غير مصنّف" — بلا قسم
+    // لا يوجد مؤشر ممكن أصلاً (indicator_id يتبع section_id)، فلا يمكن إلزامها
+    // بمؤشر. تبقى INSERT مباشرة كما كانت تماماً، ولا تُحدَّث state.ev/monthly_progress
+    // هنا (نفس السلوك السابق) لأنها غير مصنَّفة بقسم بعد.
     const dateLabel = new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
     const payload = failedRows.map(r => ({
       portfolio_id: userId,
@@ -126,10 +163,16 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, su
       setEdits(prev => {
         const next = { ...prev };
         for (const row of list) {
-          if (!next[row.id]) next[row.id] = { sectionId: row.suggested_section_id, title: row.suggested_title ?? '' };
+          if (!next[row.id]) next[row.id] = { sectionId: row.suggested_section_id, title: row.suggested_title ?? '', indicatorId: null };
         }
         return next;
       });
+      // جلب مؤشرات كل قسم مقترح دفعة واحدة (بلا تكرار لنفس القسم) — حتى يظهر
+      // منتقي المؤشر جاهزاً فور فتح الصف، دون انتظار تفاعل المستخدم مع منتقي القسم
+      const uniqueSectionIds = Array.from(new Set(
+        list.map(r => r.suggested_section_id).filter((id): id is number => id != null)
+      ));
+      uniqueSectionIds.forEach(id => ensureIndicatorsLoaded(id));
       setLoading(false);
     })();
 
@@ -138,44 +181,57 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, su
   }, [isOpen, userId]);
 
   const confirmRows = async (targetRows: ClassifiedRow[], busyKey: string) => {
-    if (!supabase || !userId || targetRows.length === 0) return;
+    if (!supabase || !userId || !supabaseEv || targetRows.length === 0) return;
     setConfirmingKey(busyKey);
     try {
-      const payload = targetRows.map(row => {
+      // مرّت saveEvidence على كل صف على حدة (وليس INSERT دفعي واحد كما سابقاً)،
+      // بالتتابع (await داخل الحلقة) لا بالتوازي — recordEvidence في monthly_progress
+      // يقرأ العدّاد الحالي ثم يكتب قيمة جديدة (upsert)، فتنفيذ عدة صفوف لنفس
+      // القسم بالتوازي قد يتسابق على نفس الصف فيضيع بعض العدّ.
+      let localSyncFailed = false;
+      const succeededIds: string[] = [];
+      for (const row of targetRows) {
         const edit = getEdit(row);
-        return {
-          portfolio_id: userId,
+        if (edit.sectionId == null || !edit.indicatorId) continue; // احتياط إضافي — الأزرار مُعطَّلة أصلاً لهذه الحالة
+
+        // sub = اسم المؤشر المختار فعلياً لهذا الصف (لا subs[0] الثابت) — حتى
+        // يُصنَّف الشاهد محلياً (state.ev) تحت نفس المؤشر المسجَّل في evidence
+        // عبر indicator_id، بدل الانحياز دائماً لأول مؤشر بالقسم
+        const indicatorName = indicatorsBySection[edit.sectionId]?.find(i => i.id === edit.indicatorId)?.name_ar ?? 'عام';
+        const result = await saveEvidence({
           section_id: edit.sectionId,
+          indicator_id: edit.indicatorId,
+          sub: indicatorName,
           title: edit.title.trim() || 'شاهد من الاستيراد الجماعي',
-          evidence_type: 'image' as const,
+          evidence_type: 'image',
           file_url: publicUrlFor(row.file_path),
-        };
-      });
-
-      // INSERT دفعي واحد لكل الصفوف المعتمدة، وليس حلقة نداءات منفصلة
-      const { data: inserted, error } = await supabase.from('evidence').insert(payload).select();
-      if (error || !inserted) throw error ?? new Error('insert_failed');
-
-      // تحديث العداد الشهري + الحالة المحلية لكل قسم متأثر — نفس onAddEv
-      // المستخدم بعد كل إدخال شاهد بالمشروع (التقاط سريع/تسجيل صوتي)، ويُتخطّى
-      // للشواهد التي بقيت بلا قسم (section_id null لم تُحتسب بـ monthly_progress أصلاً)
-      inserted.forEach((ev: any) => {
-        if (ev.section_id != null) {
-          const sec = sections.find(s => s.id === ev.section_id);
-          onAddEv?.(ev.section_id, sec?.subs[0] ?? 'عام', 'img', ev.title, ev.file_url ?? undefined, undefined, ev.created_at);
+        });
+        if (result) {
+          succeededIds.push(row.id);
+          if (!result.localSyncOk) localSyncFailed = true;
         }
-      });
-
-      // الحذف من الطابور فقط بعد نجاح الإدخال في evidence — لو فشل الإدخال لن نصل هنا إطلاقاً
-      const ids = targetRows.map(r => r.id);
-      const { error: delErr } = await supabase.from('bulk_import_queue').delete().in('id', ids);
-      if (delErr) {
-        console.error('[BulkImportReview] تعذّر حذف صفوف الطابور بعد الإدخال الناجح:', delErr.message);
       }
 
-      await supabaseEv?.refetch();
-      setRows(prev => prev.filter(r => !ids.includes(r.id)));
-      onToast?.(`تم اعتماد ${inserted.length} ${inserted.length === 1 ? 'شاهد' : 'شواهد'} بنجاح ✅`, '✅');
+      // الحذف من الطابور فقط للصفوف التي نجح إدخالها فعلياً في evidence
+      if (succeededIds.length > 0) {
+        const { error: delErr } = await supabase.from('bulk_import_queue').delete().in('id', succeededIds);
+        if (delErr) {
+          console.error('[BulkImportReview] تعذّر حذف صفوف الطابور بعد الإدخال الناجح:', delErr.message);
+        }
+        setRows(prev => prev.filter(r => !succeededIds.includes(r.id)));
+      }
+
+      if (succeededIds.length === targetRows.length) {
+        if (localSyncFailed) {
+          onToast?.('تم حفظ الشواهد، لكن تعذّر تحديث العرض المحلي لبعضها — يرجى تحديث الصفحة', '⚠️');
+        } else {
+          onToast?.(`تم اعتماد ${succeededIds.length} ${succeededIds.length === 1 ? 'شاهد' : 'شواهد'} بنجاح ✅`, '✅');
+        }
+      } else if (succeededIds.length > 0) {
+        onToast?.(`تم اعتماد ${succeededIds.length} من ${targetRows.length}، تعذّر حفظ الباقي ❌`, '⚠️');
+      } else {
+        onToast?.('تعذّر حفظ الشواهد، حاول مرة أخرى ❌', '❌');
+      }
     } catch (err) {
       console.error('[BulkImportReview] فشل اعتماد الشواهد:', err);
       onToast?.('تعذّر حفظ الشواهد، حاول مرة أخرى ❌', '❌');
@@ -188,6 +244,11 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, su
   const acceptOne = (row: ClassifiedRow) => confirmRows([row], row.id);
 
   const isBusy = confirmingKey !== null;
+  const isRowReady = (row: ClassifiedRow): boolean => {
+    const edit = getEdit(row);
+    return edit.sectionId != null && !!edit.indicatorId;
+  };
+  const allRowsReady = rows.length > 0 && rows.every(isRowReady);
 
   return (
     <BottomSheet isOpen={isOpen} onClose={isBusy ? () => {} : onClose}>
@@ -219,9 +280,10 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, su
           <>
             <button
               type="button"
-              disabled={isBusy}
+              disabled={isBusy || !allRowsReady}
               onClick={acceptAll}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[13.5px] font-bold bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white disabled:opacity-40 disabled:cursor-wait cursor-pointer"
+              title={!allRowsReady ? 'أكمل اختيار القسم والمؤشر لكل الصفوف أولاً' : undefined}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[13.5px] font-bold bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {confirmingKey === 'all' ? (
                 <><i className="ti ti-loader animate-spin" /> جارٍ الاعتماد...</>
@@ -256,27 +318,48 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, su
                         <span className="text-[11.5px] text-[var(--text4)] font-bold shrink-0">القسم:</span>
                         <span className="text-[12px] font-bold text-[var(--text2)] truncate">{sectionLabel ?? 'بلا قسم — اختر قسماً'}</span>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <SectionReclassifyDropdown
-                          sections={sections}
-                          isOpen={openDropdownId === row.id}
-                          isBusy={rowBusy}
-                          onOpen={() => setOpenDropdownId(row.id)}
-                          onClose={() => setOpenDropdownId(null)}
-                          onSelect={(sectionId) => {
-                            setOpenDropdownId(null);
-                            setEdits(prev => ({ ...prev, [row.id]: { ...edit, sectionId: Number(sectionId) } }));
-                          }}
+                      <SectionReclassifyDropdown
+                        sections={sections}
+                        isOpen={openDropdownId === row.id}
+                        isBusy={rowBusy}
+                        onOpen={() => setOpenDropdownId(row.id)}
+                        onClose={() => setOpenDropdownId(null)}
+                        onSelect={(sectionId) => {
+                          setOpenDropdownId(null);
+                          const numericId = Number(sectionId);
+                          // تصفير المؤشر عند تغيير القسم — مؤشرات القسم الجديد مختلفة تماماً
+                          setEdits(prev => ({ ...prev, [row.id]: { ...edit, sectionId: numericId, indicatorId: null } }));
+                          ensureIndicatorsLoaded(numericId);
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11.5px] text-[var(--text4)] font-bold shrink-0">المؤشر الفرعي:</span>
+                      {edit.sectionId == null ? (
+                        <span className="text-[11.5px] text-[var(--text4)] italic">اختر قسماً أولاً</span>
+                      ) : (
+                        <SelectDropdown
+                          options={(indicatorsBySection[edit.sectionId] ?? []).map(i => ({ value: i.id, label: i.name_ar }))}
+                          value={edit.indicatorId ?? ''}
+                          onChange={v => setEdits(prev => ({ ...prev, [row.id]: { ...edit, indicatorId: v || null } }))}
+                          placeholder="— اختر المؤشر —"
+                          triggerClassName="py-2 px-3 text-[12px] font-bold bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer min-w-[160px]"
+                          allowClear
                         />
-                        <button
-                          type="button"
-                          disabled={rowBusy}
-                          onClick={() => acceptOne(row)}
-                          className="py-2 px-3.5 text-[12px] font-bold rounded-lg bg-[var(--em7)]/15 text-[var(--em8)] border border-[var(--em7)]/25 hover:bg-[var(--em7)]/25 transition-colors disabled:opacity-50 disabled:cursor-wait cursor-pointer flex items-center gap-1.5"
-                        >
-                          {rowBusy ? <i className="ti ti-loader animate-spin text-[13px]" /> : <><i className="ti ti-check text-[13px]" /> قبول</>}
-                        </button>
-                      </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        disabled={rowBusy || !isRowReady(row)}
+                        onClick={() => acceptOne(row)}
+                        title={!isRowReady(row) ? 'اختر القسم والمؤشر الفرعي أولاً' : undefined}
+                        className="py-2 px-3.5 text-[12px] font-bold rounded-lg bg-[var(--em7)]/15 text-[var(--em8)] border border-[var(--em7)]/25 hover:bg-[var(--em7)]/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+                      >
+                        {rowBusy ? <i className="ti ti-loader animate-spin text-[13px]" /> : <><i className="ti ti-check text-[13px]" /> قبول</>}
+                      </button>
                     </div>
                   </div>
                 );

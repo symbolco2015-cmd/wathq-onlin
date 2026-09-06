@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
 import type { EvidenceType } from '../hooks/useSupabaseEvidence';
 import type { Evidence } from '../types';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
+import { useSaveEvidence } from '../hooks/useSaveEvidence';
 import { AI_CONSENT_TEXT } from '../utils';
 import { SelectDropdown } from './UI';
 import { LESSON_PLAN_SECTION_ID } from '../data';
@@ -25,9 +26,12 @@ interface LessonPlanTemplate {
 // تحقّقنا منه مباشرة على قاعدة الإنتاج (section_indicators)، لا افتراضاً.
 // حقلا التكرار وزر "اكتب خطة من الصفر" مقصوران على هذا المؤشر تحديداً،
 // بينما حقل "المادة" يظهر لكل مؤشرات هذا البند (LESSON_PLAN_SECTION_ID،
-// مستورَد من data.ts). لا مصدر مرجعي بالفرونت إند يُشتَق منه هذا الـ uuid
-// (المؤشرات تُجلب ديناميكياً من section_indicators، لا تُكتب بـdata.ts) —
-// يبقى حرفياً هنا، موثَّقاً بمصدره فقط.
+// مستورَد من data.ts). صار قابلاً للاشتقاق ديناميكياً الآن عبر useSections
+// (sections.find(s => s.id === LESSON_PLAN_SECTION_ID)?.indicators.find(...))
+// بدل هذا الحرفي — يبقى كما هو عمداً هنا: EvidenceForm لا يستقبل sections
+// كـprop أصلاً (يجلب indicators الخاصة بقسمه مباشرة من section_indicators
+// أدناه)، فربطه بـuseSections يستلزم تمرير prop إضافي بلا أي فائدة عملية
+// لمكوّن واحد فقط. موثَّق بمصدره (قاعدة الإنتاج) لا مشتقّ.
 const LESSON_PLAN_DISTRIBUTION_INDICATOR_ID = 'be68ebb3-8742-4619-bbf5-b3d79141e147';
 
 export interface EvidenceFormProps {
@@ -109,13 +113,6 @@ const TYPE_CONFIG: {
   { id: 'note',  icon: 'ti-notes',          label: 'ملاحظة', color: '#c4b5fd', accept: undefined,                    hint: '',                       hasFile: false, hasLink: false, maxSizeMB: 0,  bucket: '' },
 ];
 
-const toLocalType = (t: EvidenceType): 'pdf' | 'img' | 'doc' | 'vid' => {
-  if (t === 'image') return 'img';
-  if (t === 'video') return 'vid';
-  if (t === 'file')  return 'pdf';
-  return 'doc';
-};
-
 /**
  * يحتوي على نموذج إضافة الشاهد كاملاً (الترويسة + المحتوى + الفوتر) بدون أي
  * حاوية/overlay خاصة به — تتولى الحاوية المستدعية (EvidenceModal على
@@ -125,6 +122,10 @@ export default function EvidenceForm({
   isOpen, onClose, sectionId, sub, userId, supabaseEv, onAddEv, onToast, createdAt,
   aiConsentGiven, onGiveAiConsent, prefill,
 }: EvidenceFormProps) {
+  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تحديث state.ev
+  // + monthly_progress عبر onAddEv (انظر useSaveEvidence.ts)
+  const { saveEvidence } = useSaveEvidence(supabaseEv.addEvidence, onAddEv);
+
   // ── Form state ──────────────────────────────────────────────
   const [title,          setTitle]          = useState('');
   const [indicatorId,    setIndicatorId]    = useState('');
@@ -161,6 +162,10 @@ export default function EvidenceForm({
 
   // ── Indicators ───────────────────────────────────────────────
   const [indicators, setIndicators] = useState<Indicator[]>([]);
+  /** 'error' يغطي فشل الاستعلام والنجاح-لكن-فارغ معاً: كلاهما يجعل الحفظ
+   *  مستحيلاً بما أن indicatorId إلزامي الآن — فلا يجوز إخفاء الحقل بصمت في
+   *  أي منهما، بل إظهار خطأ صريح قابل لإعادة المحاولة مكانه. */
+  const [indicatorsStatus, setIndicatorsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   // ── اقتراح تلقائي من الصورة (Beta) — قرار مستقل لكل حقل ─────
   const [aiSelectedFile,          setAiSelectedFile]          = useState<File | null>(null);
@@ -202,15 +207,27 @@ export default function EvidenceForm({
   }, [isOpen]);
 
   // Fetch indicators for this section
-  useEffect(() => {
-    if (!isOpen || !sectionId || !supabase) return;
+  const loadIndicators = useCallback(() => {
+    if (!sectionId || !supabase) { setIndicators([]); setIndicatorsStatus('error'); return; }
+    setIndicatorsStatus('loading');
     supabase
       .from('section_indicators')
       .select('id, name_ar')
       .eq('section_id', sectionId)
-      .order('weight' as any)
-      .then(({ data }) => setIndicators(data ?? []));
-  }, [isOpen, sectionId]);
+      .order('weight', { ascending: true })
+      .order('name_ar', { ascending: true })
+      .then(({ data, error }) => {
+        if (error) console.warn('[EvidenceForm] تعذّر تحميل مؤشرات القسم:', error.message);
+        if (error || !data || data.length === 0) { setIndicators([]); setIndicatorsStatus('error'); return; }
+        setIndicators(data);
+        setIndicatorsStatus('ready');
+      });
+  }, [sectionId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    loadIndicators();
+  }, [isOpen, loadIndicators]);
 
   // بوابة صلاحية ميزة "اقتراح تلقائي من الصورة" (Beta) — يديرها الأدمن عبر
   // feature_flags/portfolio_feature_overrides في قاعدة البيانات، وليست قائمة مكتوبة بالكود.
@@ -465,6 +482,7 @@ export default function EvidenceForm({
   // ── Save ──────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!title.trim()) { onToast('يرجى إدخال عنوان الشاهد', '⚠️'); return; }
+    if (!indicatorId) { onToast('يرجى اختيار المؤشر الفرعي', '⚠️'); return; }
     if (writeFromScratch) {
       if (!description.trim()) { onToast('يرجى كتابة نص الخطة', '⚠️'); return; }
     } else {
@@ -475,12 +493,29 @@ export default function EvidenceForm({
     // الكتابة من الصفر تُنتج دائماً دليل "ملاحظة" بلا ملف مرفق، بصرف النظر عن
     // نوع الشاهد المختار أعلاه (مخفي أصلاً في هذا الوضع)
     const effectiveEvidenceType: EvidenceType = writeFromScratch ? 'note' : evidenceType;
+    // sub يُشتَق من المؤشر المختار فعلياً (indicatorId)، لا من prop sub القادم
+    // من البطاقة التي فُتح منها النموذج — قد يختلفان لأن indicatorId يبدأ
+    // فارغاً دوماً (انظر useEffect أعلاه) ويُعاد اختياره يدوياً من كل مؤشرات
+    // القسم، لا مقيَّداً بمؤشر البطاقة الأصلية. عدم الاشتقاق يحفظ الشاهد فعلياً
+    // تحت indicator_id واحد بينما يظهر محلياً (state.ev) تحت مفتاح "sub" آخر.
+    // مستثنى لأدلة الاستراتيجيات (isStratEvidence): مفتاحها "strat:اسم" اصطناعي
+    // بالكامل من state.strats ولا يقابله أي صف في section_indicators إطلاقاً،
+    // فلا يوجد name_ar يُشتَق منه — يبقى sub الأصلي هو المصدر الوحيد هناك.
+    const effectiveSub = isStratEvidence ? sub : (indicators.find(i => i.id === indicatorId)?.name_ar ?? sub);
+    const stratFields = isStratEvidence ? {
+      stratDate:    stratDate || undefined,
+      stratStage:   stratStage ? (stratStage as 'ابتدائي' | 'متوسط' | 'ثانوي') : undefined,
+      stratGrade:   stratGrade.trim() || undefined,
+      stratPeriod:  stratPeriod ? Number(stratPeriod) : undefined,
+      stratSubject: stratSubject.trim() || undefined,
+    } : undefined;
 
     setSaving(true);
     try {
-      const result = await supabaseEv.addEvidence({
+      const result = await saveEvidence({
         section_id:      sectionId,
-        indicator_id:    indicatorId  || undefined,
+        indicator_id:    indicatorId,
+        sub:             effectiveSub,
         title:           title.trim(),
         description:     description.trim()    || undefined,
         impact:          impact.trim()         || undefined,
@@ -492,20 +527,15 @@ export default function EvidenceForm({
         link_url:        writeFromScratch ? undefined : (linkUrl.trim() || undefined),
         self_reflection: selfReflection.trim() || undefined,
         frequency:       isDistributionIndicator ? (frequency || undefined) : undefined,
+        stratFields,
       }, createdAt);
 
       if (result) {
-        // أيضاً احفظ في state.ev المحلي
-        const url = writeFromScratch ? undefined : (fileUrl || linkUrl.trim() || undefined);
-        const stratFields = isStratEvidence ? {
-          stratDate:    stratDate || undefined,
-          stratStage:   stratStage ? (stratStage as 'ابتدائي' | 'متوسط' | 'ثانوي') : undefined,
-          stratGrade:   stratGrade.trim() || undefined,
-          stratPeriod:  stratPeriod ? Number(stratPeriod) : undefined,
-          stratSubject: stratSubject.trim() || undefined,
-        } : undefined;
-        onAddEv(sectionId, sub, toLocalType(effectiveEvidenceType), title.trim(), url, stratFields, createdAt);
-        onToast('تم إضافة الشاهد بنجاح ✅', '✅');
+        if (result.localSyncOk) {
+          onToast('تم إضافة الشاهد بنجاح ✅', '✅');
+        } else {
+          onToast('تم حفظ الشاهد، لكن تعذّر تحديث العرض المحلي — يرجى تحديث الصفحة', '⚠️');
+        }
         onClose();
       } else {
         onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', '❌');
@@ -561,20 +591,36 @@ export default function EvidenceForm({
           />
         </div>
 
-        {/* المؤشر الفرعي */}
-        {indicators.length > 0 && (
+        {/* المؤشر الفرعي — إلزامي؛ فشل الجلب أو نتيجة فارغة يُعرَضان كخطأ
+            صريح بدل إخفاء الحقل (كان يجعل الحفظ مستحيلاً بصمت) */}
+        {indicators.length > 0 ? (
           <div>
-            <div className={labelCls}><i className="ti ti-list-check text-[var(--em7)]" /> المؤشر الفرعي</div>
+            <div className={labelCls}><i className="ti ti-list-check text-[var(--em7)]" /> المؤشر الفرعي <span className="text-red-400">*</span></div>
             <SelectDropdown
               options={indicators.map(i => ({ value: i.id, label: i.name_ar }))}
               value={indicatorId}
               onChange={setIndicatorId}
-              placeholder="— اختر المؤشر (اختياري) —"
+              placeholder="— اختر المؤشر —"
               triggerClassName={inputCls + ' cursor-pointer'}
-              allowClear
             />
           </div>
-        )}
+        ) : indicatorsStatus === 'error' ? (
+          <div>
+            <div className={labelCls}><i className="ti ti-list-check text-[var(--em7)]" /> المؤشر الفرعي <span className="text-red-400">*</span></div>
+            <div className="flex items-center justify-between gap-3 py-3 px-4 bg-red-500/5 border border-red-500/20 rounded-xl">
+              <span className="text-[12.5px] text-red-400 font-semibold flex items-center gap-1.5">
+                <i className="ti ti-alert-triangle" /> تعذّر تحميل المؤشرات، أعد المحاولة
+              </span>
+              <button
+                type="button"
+                onClick={loadIndicators}
+                className="py-1.5 px-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-300 text-[11.5px] font-bold cursor-pointer shrink-0"
+              >
+                إعادة المحاولة
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {/* المادة — تظهر لكل مؤشرات بند "إعداد خطة التعلم" */}
         {isLessonPlanSection && (

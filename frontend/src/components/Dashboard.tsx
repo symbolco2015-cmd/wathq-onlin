@@ -434,6 +434,44 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     refetchSummaryStatus();
   }, [refetchSummaryStatus]);
 
+  // نسبة الجاهزية العامة الموحّدة — من get_portfolio_completion (RPC)، المصدر
+  // الوحيد الآن لـoverallPct/completed_sections/total_sections. تعتمد على
+  // تغطية evidence.indicator_id تراكمياً (بلا علاقة بالشهر الحالي)، بنفس منطق
+  // completion الذي ترجعه get_shared_portfolio للعرض العام (Public.tsx) — رقم
+  // واحد موحّد بين اللوحة والمشاركة. لا علاقة لها بـgetMonthlyPct/nonStratSections
+  // أدناه (تلك تبقى لعداد "الشهر الحالي" المستقل لكل بند على حدة).
+  const [completion, setCompletion] = useState<{
+    overall_pct: number;
+    completed_sections: number;
+    total_sections: number;
+  } | null>(null);
+  const [completionError, setCompletionError] = useState(false);
+
+  const refetchCompletion = useCallback(() => {
+    if (!supabase || !userId) { setCompletion(null); setCompletionError(false); return; }
+    supabase
+      .rpc('get_portfolio_completion', { p_portfolio_id: userId })
+      .then(({ data, error }) => {
+        const row = Array.isArray(data) ? data[0] : data;
+        if (error || !row) {
+          console.warn('[Dashboard] تعذّر جلب نسبة الجاهزية:', error?.message);
+          setCompletion(null);
+          setCompletionError(true);
+          return;
+        }
+        setCompletionError(false);
+        setCompletion({
+          overall_pct: row.overall_pct ?? 0,
+          completed_sections: row.completed_sections ?? 0,
+          total_sections: row.total_sections ?? 0,
+        });
+      });
+  }, [userId]);
+
+  useEffect(() => {
+    refetchCompletion();
+  }, [refetchCompletion]);
+
   const SUMMARY_COOLDOWN_DAYS = 7;
   const summaryDaysSince = summaryStatus?.generatedAt
     ? Math.floor((Date.now() - new Date(summaryStatus.generatedAt).getTime()) / 86400000)
@@ -687,14 +725,12 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const getMonthlyPct = (sectionId: number): number =>
     Math.min(100, Math.round(((monthlyProgress?.getSectionMonthCount(sectionId) ?? 0) / 3) * 100));
 
-  // التقدم العام = مجموع شواهد الشهر لكل المجالات الأساسية (بلا الاستراتيجيات) / (عددها × 3) × 100
-  // كل بند يساهم بحد أقصى 3 في المجموع (نفس سقف getMonthlyPct)، حتى لا يطغى بند واحد مكدّس على الإجمالي
-  const overallPct = nonStratSections.length > 0
-    ? Math.min(100, Math.round(
-        nonStratSections.reduce((sum, s) => sum + Math.min(3, monthlyProgress?.getSectionMonthCount(s.id) ?? 0), 0)
-        / (nonStratSections.length * 3) * 100
-      ))
-    : 0;
+  // التقدم العام = get_portfolio_completion (RPC أعلاه) — تراكمي عبر تغطية
+  // evidence.indicator_id، موحَّد مع نفس الرقم المعروض بالمشاركة العامة
+  // (Public.tsx عبر get_shared_portfolio). خطأ الجلب ⇐ 0% + رسالة بدل قيمة وهمية.
+  const overallPct = completionError ? 0 : (completion?.overall_pct ?? 0);
+  const completedSections = completionError ? 0 : (completion?.completed_sections ?? 0);
+  const totalSections = completionError ? 0 : (completion?.total_sections ?? 0);
 
   // نقاط ومستوى الملف العام (نافذة متحركة لآخر 3 أشهر تقويمية، بصرف النظر عن
   // القسم) — مستقل كلياً عن overallPct/getMonthlyPct، لا يؤثر فيهما ولا يتأثر بهما
@@ -708,8 +744,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? incompleteSections.reduce((min, s) => getMonthlyPct(s.id) < getMonthlyPct(min.id) ? s : min)
     : null;
 
-  // رسالة تشجيعية حسب نسبة الجاهزية
-  const readinessMsg =
+  // رسالة تشجيعية حسب نسبة الجاهزية — تعذّر جلب completion ⇐ رسالة خطأ بدلها
+  const readinessMsg = completionError ? 'تعذّر تحميل الجاهزية' :
     overallPct === 100 ? 'أحسنت! ملفك مكتمل' :
     overallPct >= 71   ? 'اقتربت من الهدف، لا تتوقف الآن' :
     overallPct >= 31   ? 'أنت في المنتصف، واصل الإنجاز' :
@@ -847,8 +883,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       <Sidebar
         state={state}
         sections={sections}
-        totalCount={nonStratSections.length}
-        filledCount={filledSecs}
+        totalCount={totalSections}
+        filledCount={completedSections}
         overallPct={overallPct}
         monthlyProgress={monthlyProgress}
       />
@@ -1257,7 +1293,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               <div className="sm:text-center">
                 <div className="text-[11px] font-bold text-[var(--text4)] mb-0.5">أقسام مكتملة</div>
                 <div className="text-[24px] font-black text-[var(--em8)] font-[var(--font)] leading-none">
-                  {filledSecs}<span className="text-[14px] text-[var(--text4)] font-semibold"> / {nonStratSections.length}</span>
+                  {completedSections}<span className="text-[14px] text-[var(--text4)] font-semibold"> / {totalSections}</span>
                 </div>
               </div>
               <div className="sm:text-center">

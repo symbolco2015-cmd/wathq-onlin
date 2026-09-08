@@ -742,8 +742,11 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     return { ...data, pct };
   });
 
-  // مؤشر الجاهزية الإجمالي (المستوى 1) — متوسط pct عبر كل الأقسام، بما فيها الفارغة
-  const overallPct = Math.round(sectionsWithPct.reduce((sum, s) => sum + s.pct, 0) / sectionsWithPct.length);
+  // مؤشر الجاهزية الإجمالي (المستوى 1) — من get_portfolio_completion (عبر
+  // get_shared_portfolio)، موحَّد مع نفس الرقم المعروض في Dashboard.tsx، بدل
+  // متوسط sectionsWithPct.pct المحلي القديم. state.completion غائب (كاش لحساب
+  // لم يُحدَّث بعد) ⇐ 0% بدل انهيار الصفحة أو undefined.
+  const overallPct = state.completion?.overall_pct ?? 0;
 
   // تنازلياً بـpct، وعند التساوي (شائع بسبب سقف maxTarget أعلاه) يُرجَّح القسم
   // الأعلى إجمالي أدلة تراكمية (evCount) — يعكس عمق التوثيق الفعلي رغم تساوي النسبة
@@ -933,7 +936,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                 <h2 className="text-[15px] font-bold text-[var(--text3)] flex items-center gap-2">
                   <i className="ti ti-gauge text-[var(--em8)]"></i> مؤشر الجاهزية العام
                 </h2>
-                <p className="text-[12px] text-[var(--text4)] mt-1">متوسط نسبة الاكتمال عبر {sectionsWithPct.length} مجالات أساسية</p>
+                <p className="text-[12px] text-[var(--text4)] mt-1">متوسط نسبة الاكتمال عبر {state.completion?.total_sections ?? sectionsWithPct.length} مجالات أساسية</p>
               </div>
               <div className="text-[40px] sm:text-[48px] font-black leading-none" style={{ color: getCompletionColor(overallPct) }}>{overallPct}%</div>
             </div>

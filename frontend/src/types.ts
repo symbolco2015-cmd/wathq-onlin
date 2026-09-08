@@ -117,6 +117,14 @@ export type PublicPortfolioState = Pick<AppState, 'ev' | 'strats' | 'csubs' | 'p
    * ai_top_achievement_evidence_id) — يُطابَق مقابل مصفوفة evidence المجلوبة من
    * get_shared_evidence()؛ غائب أو null يعني الرجوع لمنطق heuristic القسم الأعلى اكتمالاً. */
   ai_top_achievement_evidence_id?: string | null;
+  /** ملخص الجاهزية التراكمي (get_portfolio_completion عبر get_shared_portfolio)
+   * — نفس الرقم الموحَّد المعروض في Dashboard.tsx. غائب لحساب لم يُحدَّث كاشه
+   * بعد؛ Public.tsx يرجع في هذي الحالة لـ0% بدل الانهيار. */
+  completion?: {
+    overall_pct: number;
+    completed_sections: number;
+    total_sections: number;
+  };
 };
 
 /** مؤشر الاستمرارية عبر الزمن — بداية السنة الدراسية + الأشهر التي فيها

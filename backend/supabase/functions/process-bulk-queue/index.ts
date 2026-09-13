@@ -123,19 +123,26 @@ Deno.serve(async (req: Request) => {
     const trustedHeader = req.headers.get('X-Bulk-Import-Key');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceKey = Deno.env.get('BULK_IMPORT_SERVICE_KEY')?.trim();
-    if (!serviceKey) {
+
+    // bulkImportKey: سر مخصص لمقارنة هوية المتصل (pg_cron موثوق أم لا) فقط —
+    // نص عشوائي، ليس مفتاح Supabase، ولا يصلح لإنشاء عميل قاعدة بيانات به.
+    const bulkImportKey = Deno.env.get('BULK_IMPORT_SERVICE_KEY')?.trim();
+    if (!bulkImportKey) {
       console.error('[process-bulk-queue] BULK_IMPORT_SERVICE_KEY غير مضبوط');
       return jsonResponse({ error: 'server_misconfigured' }, 500);
     }
 
-    console.log('[DEBUG] trustedHeader length:', trustedHeader?.length ?? 0, 'serviceKey length:', serviceKey?.length, 'first6:', trustedHeader?.slice(0,6), 'serviceKeyFirst6:', serviceKey?.slice(0,6), 'last4match:', trustedHeader?.slice(-4) === serviceKey?.slice(-4));
+    // serviceRoleKey: مفتاح Supabase الحقيقي كامل الصلاحيات، متوفر تلقائياً
+    // بكل Edge Function بلا حاجة لضبطه يدوياً — هذا وحده يصلح لإنشاء عميل admin.
+    // (كان الكود القديم يمرر bulkImportKey هنا بالخطأ، ما يسبب "Invalid API key"
+    // بكل استعلامات admin بلا استثناء — 13 سبتمبر 2026.)
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
     // الحالة 1: نداء pg_cron — هيدر مخصص X-Bulk-Import-Key يحمل مفتاح secret الدالة
     // مباشرة. بوابة Supabase تتدخل تلقائياً بأي قيمة Authorization بصيغة sb_...،
     // لذلك تعذّر تمرير هذا المفتاح عبر Authorization كما كان سابقاً — هيدر مخصص
     // بديل يتفادى تدخّل البوابة تماماً
-    const isTrustedCron = trustedHeader === serviceKey;
+    const isTrustedCron = trustedHeader === bulkImportKey;
 
     // الحالة 2: نداء يدوي فوري بعد الرفع — Authorization يحمل توكن مستخدم حقيقي.
     // Authorization مطلوب فقط بهذا المسار الآن (وليس أعلى الدالة) لأن نداء
@@ -153,7 +160,7 @@ Deno.serve(async (req: Request) => {
 
     // كل القراءة/الكتابة من هنا فصاعداً عبر عميل مطوَّق بصلاحيات كاملة — لازم
     // لمعالجة صفوف معلمين متعددين بتشغيلة واحدة وتحديث صفوف بلا سياسة UPDATE للمستخدم
-    const admin = createClient(supabaseUrl, serviceKey);
+    const admin = createClient(supabaseUrl, serviceRoleKey);
 
     // 1) قائمة الأقسام ديناميكياً من جدول sections (لا تُكتب ثابتة بالكود)
     const { data: sectionsData, error: sectionsErr } = await admin

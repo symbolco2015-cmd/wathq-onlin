@@ -733,6 +733,8 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // التغطية نفسه المستخدم سابقاً (target/filled/maxTarget) بلا أي تغيير، فقط
   // محسوب مرة واحدة هنا بدل تكراره في كل من شبكة البطاقات والدوائر القديمة.
   // (قسم الاستراتيجيات isStrat مُستبعد أصلاً من nonStratSections أعلاه)
+  // ⚠️ pct الرقمي نفسه يبقى محسوباً من state.ev حصراً كما كان دائماً — لا
+  // علاقة له بـevidenceBySection إطلاقاً، هذا خارج نطاق التوحيد أدناه عمداً.
   const sectionsWithPct: SectionWithPct[] = chartData.map(data => {
     const target = data.subs.length + (state.csubs[data.id] || []).length;
     const allSubs = [...data.subs, ...(state.csubs[data.id] || [])];
@@ -742,6 +744,17 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     return { ...data, pct };
   });
 
+  // دالة موحّدة: هل يملك القسم أي دليل موثّق عبر أي من المصدرين معاً (النظام
+  // القديم state.ev/evs، أو الجدول الحقيقي evidenceBySection)؟ نفس المنطق
+  // المزدوج المطبَّق سابقاً حصراً على بند "إعداد خطة التعلم" (id:6)، معمَّم
+  // الآن لكل أقسام sectionsWithPct (لا يشمل قسم الاستراتيجيات isStrat، المستبعد
+  // أصلاً من nonStratSections أعلاه — له تحقّق منفصل خاص به، انظر تعليقه أدناه
+  // عند selectedSecData.isStrat). تُستخدم فقط لتصنيف "فارغ/غير فارغ" لأغراض
+  // العرض (activeSecs/emptySecs + رسالة المودال) — لا تمسّ حساب pct الرقمي
+  // إطلاقاً.
+  const sectionHasEvidence = (sec: Pick<SectionWithPct, 'id' | 'evs'>): boolean =>
+    sec.evs.length > 0 || (evidenceBySection[sec.id]?.length ?? 0) > 0;
+
   // مؤشر الجاهزية الإجمالي (المستوى 1) — من get_portfolio_completion (عبر
   // get_shared_portfolio)، موحَّد مع نفس الرقم المعروض في Dashboard.tsx، بدل
   // متوسط sectionsWithPct.pct المحلي القديم. state.completion غائب (كاش لحساب
@@ -749,13 +762,17 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   const overallPct = state.completion?.overall_pct ?? 0;
 
   // تنازلياً بـpct، وعند التساوي (شائع بسبب سقف maxTarget أعلاه) يُرجَّح القسم
-  // الأعلى إجمالي أدلة تراكمية (evCount) — يعكس عمق التوثيق الفعلي رغم تساوي النسبة
-  const activeSecs = sectionsWithPct.filter(s => s.pct > 0).sort((a, b) => {
+  // الأعلى إجمالي أدلة تراكمية (evCount) — يعكس عمق التوثيق الفعلي رغم تساوي النسبة.
+  // التصنيف نشط/فارغ نفسه أصبح عبر sectionHasEvidence (مزدوج المصدر) بدل pct
+  // وحده — قسم بلا أدلة بالنظام القديم لكن بأدلة حقيقية بـevidenceBySection
+  // يُصنَّف الآن "نشط" ويظهر في الشبكة الرئيسية رغم أن شارة pct المعروضة عليه
+  // قد تبقى 0% (الرقم نفسه غير متأثر بهذا التغيير، انظر تعليق sectionsWithPct أعلاه).
+  const activeSecs = sectionsWithPct.filter(s => sectionHasEvidence(s)).sort((a, b) => {
     const pctDiff = b.pct - a.pct;
     if (pctDiff !== 0) return pctDiff;
     return b.evCount - a.evCount;
   });
-  const emptySecs = sectionsWithPct.filter(s => s.pct === 0);
+  const emptySecs = sectionsWithPct.filter(s => !sectionHasEvidence(s));
 
   const exportToPDF = () => {
     // تاريخ التصدير الفعلي لحظة الطباعة (وليس تاريخاً ثابتاً من لحظة تحميل
@@ -816,16 +833,12 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
   const selectedSecData = selectedSecId ? sectionsWithPct.find(c => c.id === selectedSecId) : null;
 
-  // اختبار وجود أدلة فعلية لبند "إعداد خطة التعلم" (id:6) عبر النظامين معاً
-  // (القديم selectedSecData.evs + الغني evidenceBySection) — حصراً لهذا
-  // البند. بقية الأقسام تبقى على فحص selectedSecData.evs وحده تماماً كما
-  // كانت (showEmptyMessage = !hasLegacyEvidence لها، مطابق تماماً للشرط
-  // القديم evs.length > 0 بعد النفي).
-  const hasLegacyEvidence = !!selectedSecData && selectedSecData.evs.length > 0;
-  const hasRichEvidence = !!selectedSecData && (evidenceBySection[selectedSecData.id]?.length ?? 0) > 0;
-  const showEmptyMessage = selectedSecData?.id === LESSON_PLAN_SECTION_ID
-    ? (!hasLegacyEvidence && !hasRichEvidence)
-    : !hasLegacyEvidence;
+  // اختبار وجود أدلة فعلية عبر النظامين معاً (القديم selectedSecData.evs +
+  // الغني evidenceBySection) — نفس sectionHasEvidence المستخدمة أعلاه لتصنيف
+  // activeSecs/emptySecs، معمَّمة الآن لكل الأقسام بدل اقتصارها سابقاً على
+  // LESSON_PLAN_SECTION_ID (id:6) وحده. رسالة "لا توجد أدلة موثقة" أدناه
+  // تظهر فقط إذا كان كلا المصدرين فارغين معاً لأي قسم.
+  const showEmptyMessage = !selectedSecData || !sectionHasEvidence(selectedSecData);
 
   return (
     <div>
@@ -1363,6 +1376,14 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             </div>
 
             <div className="flex-1 overflow-y-auto p-6" dir="rtl">
+              {/* قسم الاستراتيجيات (isStrat) مُستثنى عمداً من sectionHasEvidence
+                  الموحّدة أعلاه: "فارغ" هنا يعني تحديداً "لا استراتيجيات مُختارة"
+                  (state.strats.length، قائمة تصنيف وليست أدلة)، لا "لا أدلة
+                  موثقة". وجود شواهد بـevidenceBySection[section.id] لهذا القسم
+                  لا يعني أن أي استراتيجية اختيرت فعلياً — والبطاقة أصلاً مبنية
+                  حول تجميع كل شاهد تحت اسم استراتيجيته (state.strats)، فلا يوجد
+                  مقابل معنوي لعرض شواهد evidenceBySection "يتيمة" هنا بلا
+                  استراتيجية تُنسَب إليها. لذلك يبقى الشرط أحادي المصدر كما كان. */}
               {selectedSecData.isStrat ? (
                 state.strats.length > 0 ? (
                   <div className="flex flex-col gap-4">

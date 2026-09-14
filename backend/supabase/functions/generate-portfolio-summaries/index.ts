@@ -281,13 +281,22 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const serviceKey = Deno.env.get('PORTFOLIO_SUMMARY_SERVICE_KEY')?.trim();
+
+    // batchKey: سر مخصص لمقارنة هوية المتصل (GitHub Actions موثوق أم لا) فقط —
+    // نص عشوائي، ليس مفتاح Supabase، ولا يصلح لإنشاء عميل قاعدة بيانات به.
+    const batchKey = Deno.env.get('PORTFOLIO_SUMMARY_SERVICE_KEY')?.trim();
 
     const trustedHeader = req.headers.get('X-Portfolio-Summary-Key');
-    const isTrustedBatchCall = !!serviceKey && trustedHeader === serviceKey;
+    const isTrustedBatchCall = !!batchKey && trustedHeader === batchKey;
 
     if (isTrustedBatchCall) {
-      const admin = createClient(supabaseUrl, serviceKey!);
+      // serviceRoleKey: مفتاح Supabase الحقيقي كامل الصلاحيات، متوفر تلقائياً
+      // بكل Edge Function بلا حاجة لضبطه يدوياً — هذا وحده يصلح لإنشاء عميل
+      // admin. (كان الكود القديم يمرر batchKey هنا بالخطأ، ما يسبب
+      // "Invalid API key" بكل استعلامات admin بلا استثناء — 13 سبتمبر 2026،
+      // نفس الباگ الذي أُصلح في process-bulk-queue بنفس اليوم.)
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const admin = createClient(supabaseUrl, serviceRoleKey);
 
       const batchSizeEnv = Number(Deno.env.get('PORTFOLIO_SUMMARY_BATCH_SIZE'));
       const batchSize = Number.isFinite(batchSizeEnv) && batchSizeEnv > 0

@@ -21,7 +21,7 @@ import { Modal, Toast, SelectDropdown } from './components/UI';
 import EvidenceModal from './components/EvidenceModal';
 import { LESSON_PLAN_SECTION_ID } from './data';
 import { supabase } from './supabaseClient';
-import { calculateEvaluation, isProfileIncomplete } from './utils';
+import { isProfileIncomplete } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
 import { useMonthlyProgress } from './hooks/useMonthlyProgress';
 import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
@@ -723,71 +723,8 @@ export default function App() {
     });
   };
 
-  const openEvalModal = () => {
-    const stats = calculateEvaluation(state, sections);
-    
-    setModalConfig({
-      isOpen: true,
-      title: 'معايير التقييم والتوثيق',
-      subtitle: 'يتم احتساب التقييم بناءً على مدى اكتمال ملف الإنجاز',
-      icon: 'ti-chart-pie',
-      body: (
-        <div className="flex flex-col gap-5 pb-4">
-          <div className="flex items-center gap-5 bg-black/20 p-5 rounded-2xl border border-[var(--line)] shadow-[inset_0_2px_10px_rgba(0,0,0,.2)]">
-            <div className={`w-[80px] h-[80px] rounded-full shrink-0 flex items-center justify-center text-[34px] bg-white/5 border-[2px] ${stats.isVerified ? 'text-[var(--em8)] border-[var(--em7)]/40 shadow-[0_0_20px_rgba(82,196,120,.2)]' : 'text-gray-400 border-gray-600/40'}`}>
-              <i className={`ti ${stats.levelIcon}`}></i>
-            </div>
-            <div>
-              <div className="text-[13px] text-[var(--text4)] mb-1 uppercase tracking-wide">الحالة الحالية</div>
-              <div className={`text-[22px] font-black ${stats.isVerified ? 'text-white' : 'text-gray-300'}`}>{stats.levelStr}</div>
-              <div className="text-[14px] font-bold text-[var(--em7)] mt-1">{stats.totalScore} / 100 نقطة</div>
-            </div>
-          </div>
-
-          <div className="grid gap-3">
-            <div className="bg-white/5 p-4 rounded-xl border border-[var(--line2)] relative overflow-hidden">
-              <div className="absolute top-0 bottom-0 right-0 w-[4px] bg-[#3b82f6]"></div>
-              <div className="flex justify-between items-center mb-2">
-                <div className="text-[14px] font-bold text-white flex items-center gap-2"><i className="ti ti-layout-grid text-[#3b82f6]"></i> اكتمال الأقسام</div>
-                <div className="text-[13px] font-bold text-[#3b82f6]">{stats.secScore} / 50</div>
-              </div>
-              <div className="text-[12px] text-[var(--text4)]">تم تعبئة {stats.filledSecs} من أصل {sections.length} أقسام مطلوبة.</div>
-              <div className="mt-3 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-[#3b82f6] rounded-full" style={{width: `${(stats.secScore/50)*100}%`}}></div>
-              </div>
-            </div>
-
-            <div className="bg-white/5 p-4 rounded-xl border border-[var(--line2)] relative overflow-hidden">
-              <div className="absolute top-0 bottom-0 right-0 w-[4px] bg-[#10b981]"></div>
-              <div className="flex justify-between items-center mb-2">
-                <div className="text-[14px] font-bold text-white flex items-center gap-2"><i className="ti ti-files text-[#10b981]"></i> عدد الأدلة والشواهد</div>
-                <div className="text-[13px] font-bold text-[#10b981]">{stats.evScore} / 30</div>
-              </div>
-              <div className="text-[12px] text-[var(--text4)]">مجموع الأدلة المضافة: {stats.totalEvs} أدلة (تحتاج لـ 15 فأكثر للعلامة الكاملة).</div>
-              <div className="mt-3 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-[#10b981] rounded-full" style={{width: `${(stats.evScore/30)*100}%`}}></div>
-              </div>
-            </div>
-
-            <div className="bg-white/5 p-4 rounded-xl border border-[var(--line2)] relative overflow-hidden">
-              <div className="absolute top-0 bottom-0 right-0 w-[4px] bg-[#f59e0b]"></div>
-              <div className="flex justify-between items-center mb-2">
-                <div className="text-[14px] font-bold text-white flex items-center gap-2"><i className="ti ti-bulb text-[#f59e0b]"></i> استراتيجيات التدريس</div>
-                <div className="text-[13px] font-bold text-[#f59e0b]">{stats.stratScore} / 20</div>
-              </div>
-              <div className="text-[12px] text-[var(--text4)]">تم تفعيل {state.strats.length} استراتيجيات (تحتاج لـ 4 للعلامة الكاملة).</div>
-              <div className="mt-3 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-[#f59e0b] rounded-full" style={{width: `${(stats.stratScore/20)*100}%`}}></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ),
-      onConfirm: () => {
-        closeModal();
-      }
-    });
-  };
+  // openEvalModal() حُذفت (14 سبتمبر 2026) مع calculateEvaluation() — كانت تفتح
+  // مودال تفصيلي (50/30/20 نقطة) لنفس الشارة المهجورة المحذوفة من utils.ts.
 
   const handleDeleteEv = (sid: number, sub: string, idx: number) => {
     setModalConfig({
@@ -1084,7 +1021,6 @@ export default function App() {
             onUpdateNote={updateNote}
             onDeleteEv={handleDeleteEv}
             onAddStratClick={openAddStratModal}
-            onOpenEvalClick={openEvalModal}
             onDelSub={delSub}
             announcements={announcements}
             onMarkAsRead={markAnnouncementAsRead}

@@ -6,7 +6,7 @@ import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import { calculateEvaluation, calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT } from '../utils';
+import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT } from '../utils';
 import { useEvidenceStore } from '../hooks/useEvidenceStore';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
@@ -51,7 +51,6 @@ interface DashboardProps {
   onUpdateNote: (k: string, v: string) => void;
   onDeleteEv: (sid: number, sub: string, idx: number) => void;
   onAddStratClick: () => void;
-  onOpenEvalClick: () => void;
   onDelSub: (sid: number, subName: string) => void;
   announcements?: Announcement[];
   onMarkAsRead?: (id: string) => void;
@@ -177,7 +176,7 @@ export function SectionReclassifyDropdown({
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onOpenEvalClick, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -789,7 +788,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         return countA - countB;
       });
 
-  const stats = calculateEvaluation(state, sections);
+  // stats (calculateEvaluation) حُذفت 14 سبتمبر 2026 — راجع utils.ts للتفاصيل.
   // إجمالي الأدلة من Supabase مباشرة — يتزامن بعد كل حذف أو إضافة
   const totalEvs = supabaseEv
     ? sections.reduce((sum, s) => sum + supabaseEv.getBySection(s.id).length, 0)
@@ -924,9 +923,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
           <div className="relative z-10 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 sm:gap-8">
             <div>
-              <div className="inline-flex items-center gap-2 text-[11.5px] font-bold text-[var(--em8)] tracking-wide uppercase bg-[var(--em7)]/10 border border-[var(--em7)]/20 py-1 px-3.5 rounded-full mb-3.5">
-                <i className={`ti ${stats.levelIcon} text-[14px] ${stats.levelClass.includes('gold') ? 'text-[var(--gold)]' : 'text-[var(--em8)]'}`}></i> ملف إنجاز {stats.levelStr}
-              </div>
               <div className="text-[28px] sm:text-[32px] font-black text-white tracking-tight leading-tight mb-2">{state.profile.name}</div>
               <div className="text-[14.5px] text-[var(--text3)] mb-5.5 leading-relaxed">
                 {state.profile.role}<span> — {state.profile.school} · وزارة التعليم</span>
@@ -935,9 +931,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 <div className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-full text-[12.5px] font-bold bg-white/5 border border-white/10 text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/30 hover:-translate-y-0.5">
                   <i className="ti ti-calendar text-[14px]"></i> السنة الدراسية 1446
                 </div>
-                <button className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-full text-[12.5px] font-bold bg-[var(--em7)]/10 border border-[var(--em7)]/30 text-[var(--em8)] backdrop-blur-md cursor-pointer transition-all duration-250 hover:bg-[var(--em7)]/20 hover:border-[var(--em7)]/50 hover:-translate-y-0.5 shadow-[0_4px_12px_rgba(42,122,68,.2)]" onClick={onOpenEvalClick}>
-                  <i className="ti ti-chart-pie text-[14px]"></i> التقييم والتوثيق
-                </button>
               </div>
             </div>
             <div className="shrink-0 flex flex-col items-center gap-3.5 self-start xl:self-auto">

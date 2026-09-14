@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData } from '../types';
-import { calculateEvaluation, calculatePointsLevel, getCompletionColor, getCompletionLabel } from '../utils';
+import { calculatePointsLevel, getCompletionColor, getCompletionLabel } from '../utils';
 import { LESSON_PLAN_SECTION_ID } from '../data';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
@@ -246,12 +246,9 @@ function LevelBadge({ pointsLevel, pointsSubtitle = 'خلال آخر 3 أشهر'
   );
 }
 
-function BadgesRow({ stats, justify }: { stats: ReturnType<typeof calculateEvaluation>; justify: string }) {
+function BadgesRow({ justify }: { justify: string }) {
   return (
     <div className={`flex ${justify} gap-2 flex-wrap relative z-10`}>
-      <div className="inline-flex items-center gap-1.5 py-1.5 px-4 bg-white/5 border border-white/10 rounded-full text-[12.5px] text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/25 hover:-translate-y-0.5">
-        <i className={`ti ${stats.levelIcon} ${stats.isVerified ? 'text-[var(--gold)]' : 'text-[var(--em8)]'}`}></i> ملف إنجاز {stats.levelStr}
-      </div>
       <div className="inline-flex items-center gap-1.5 py-1.5 px-4 bg-white/5 border border-white/10 rounded-full text-[12.5px] text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/25 hover:-translate-y-0.5">
         <i className="ti ti-school text-[var(--gold)]"></i> وزارة التعليم
       </div>
@@ -626,8 +623,9 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     });
   };
 
-  const stats = calculateEvaluation(state, sections);
-  const totalEvs = stats.totalEvs;
+  // totalEvs: عدد الأدلة الفعلي من جدول evidence (لا state.ev القديم) —
+  // calculateEvaluation() حُذفت 14 سبتمبر 2026، راجع utils.ts للتفاصيل.
+  const totalEvs = evidence?.length ?? 0;
 
   // تجميع شواهد جدول evidence الجديد (الغني) حسب section_id — لعرضها كقائمة
   // إضافية في نافذة تفاصيل البند العادي (لا يمسّ قسم الاستراتيجيات إطلاقاً).
@@ -910,7 +908,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             </div>
 
             <div className="mt-5">
-              <BadgesRow stats={stats} justify="justify-center" />
+              <BadgesRow justify="justify-center" />
             </div>
           </div>
 
@@ -934,7 +932,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
               <SocialIconsRow profile={state.profile} justify="justify-end" />
               <StatsRow totalEvs={totalEvs} sectionsCount={sections.length} years={state.profile.yearsOfExperience} justify="justify-end" />
-              <BadgesRow stats={stats} justify="justify-end" />
+              <BadgesRow justify="justify-end" />
             </div>
           </div>
         </div>

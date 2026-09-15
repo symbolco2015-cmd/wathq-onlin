@@ -22,6 +22,9 @@ export interface SupabaseEvidence {
   /** 'weekly' | 'semester' | null — يُستخدم فقط لأدلة مؤشر "إعداد خطة فصلية
    *  موزعة" ضمن بند 6 (إعداد خطة التعلم)، بقية الأدلة تُخزَّن NULL دائماً */
   frequency: 'weekly' | 'semester' | null;
+  /** معرّف استراتيجية التدريس (teaching_strategies.id) — غير NULL فقط لأدلة
+   *  بند 4 (isStrat) المُضافة عبر تدفّق "استراتيجيات التدريس" الجديد. */
+  strategy_id: string | null;
 }
 
 // روابط Supabase العلنية تتبع الصيغة: .../storage/v1/object/public/<bucket>/<path>
@@ -78,6 +81,7 @@ export function useSupabaseEvidence(
     link_url?: string;
     self_reflection?: string;
     frequency?: 'weekly' | 'semester';
+    strategy_id?: string;
   }, createdAt?: string) => {
     if (!portfolioId || !supabase) return null;
     const { data, error } = await supabase

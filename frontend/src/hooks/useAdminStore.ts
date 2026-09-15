@@ -65,12 +65,33 @@ export function useAdminStore(isAdmin: boolean) {
         return;
       }
 
+      // عدد الاستراتيجيات "المفعّلة" (strategiesCount) كان يُحسَب من
+      // state.strats.length — مصفوفة نصية مهجورة تماماً بعد إعادة بناء قسم
+      // الاستراتيجيات (14 سبتمبر 2026)، ستبقى صفراً دائماً لكل الحسابات
+      // الجديدة إن اعتُمد عليها. الحساب الحقيقي الآن: عدد strategy_id المميّزة
+      // ضمن أدلة القسم 4 (isStrat، رقمه ثابت 4 كما في Dashboard.tsx لبندي 5/10
+      // — لا ثابت مسمّى بالمشروع لهذا) لكل portfolio_id، من جدول evidence مباشرة.
+      const { data: stratEvidenceRows, error: stratEvidenceError } = await supabase
+        .from('evidence')
+        .select('portfolio_id, strategy_id')
+        .eq('section_id', 4)
+        .not('strategy_id', 'is', null);
+      if (stratEvidenceError) throw stratEvidenceError;
+      const strategyIdsByPortfolio = new Map<string, Set<string>>();
+      (stratEvidenceRows || []).forEach((row: any) => {
+        const set = strategyIdsByPortfolio.get(row.portfolio_id) ?? new Set<string>();
+        set.add(row.strategy_id);
+        strategyIdsByPortfolio.set(row.portfolio_id, set);
+      });
+      const strategiesCountByPortfolio = new Map<string, number>(
+        Array.from(strategyIdsByPortfolio.entries()).map(([id, set]) => [id, set.size])
+      );
+
       // Map portfolios to AdminUser objects
       const mapped: AdminUser[] = portfolios.map((p: any) => {
         const state: AppState = p.state || {};
         const profile = state.profile || {} as any;
         const ev = state.ev || {};
-        const strats = state.strats || [];
 
         const evidenceCount = Object.values(ev).reduce(
           (sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0),
@@ -88,7 +109,7 @@ export function useAdminStore(isAdmin: boolean) {
           avatar: profile.avatar || '',
           yearsOfExperience: profile.yearsOfExperience || 0,
           evidenceCount,
-          strategiesCount: strats.length,
+          strategiesCount: strategiesCountByPortfolio.get(p.id) ?? 0,
           updated_at: p.updated_at || null,
         };
       });
@@ -288,7 +309,6 @@ export function useAdminStore(isAdmin: boolean) {
         ev: {},
         csubs: {},
         notes: {},
-        strats: ['الصف المقلوب', 'التعلم التعاوني', 'التعلم النشط'],
       };
 
       const { error } = await supabase

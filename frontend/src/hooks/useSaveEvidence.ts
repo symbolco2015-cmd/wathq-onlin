@@ -1,4 +1,3 @@
-import type { Evidence } from '../types';
 import type { EvidenceType, SupabaseEvidence } from './useSupabaseEvidence';
 import { supabaseEvidenceTypeToLocal } from '../utils';
 
@@ -11,7 +10,6 @@ type OnAddEvFn = (
   type: 'pdf' | 'img' | 'doc' | 'vid',
   name: string,
   url?: string,
-  stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
   createdAt?: string
 ) => Promise<boolean> | void;
 
@@ -37,7 +35,8 @@ export interface SaveEvidencePayload {
   link_url?: string;
   self_reflection?: string;
   frequency?: 'weekly' | 'semester';
-  stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>;
+  /** معرّف استراتيجية التدريس (بند 4 فقط) — يمر مباشرة إلى addEvidence. */
+  strategy_id?: string;
 }
 
 export interface SaveEvidenceResult {
@@ -75,13 +74,13 @@ export function useSaveEvidence(
   ): Promise<SaveEvidenceResult | null> => {
     if (!addEvidence) return null;
 
-    const { sub, stratFields, ...evidencePayload } = payload;
+    const { sub, ...evidencePayload } = payload;
     const result = await addEvidence(evidencePayload, createdAt);
     if (!result) return null;
 
     const localType = supabaseEvidenceTypeToLocal(payload.evidence_type);
     const localUrl = payload.file_url || payload.link_url || undefined;
-    const localSyncResult = await onAddEv?.(payload.section_id, sub, localType, payload.title, localUrl, stratFields, createdAt);
+    const localSyncResult = await onAddEv?.(payload.section_id, sub, localType, payload.title, localUrl, createdAt);
 
     return { evidence: result, localSyncOk: localSyncResult !== false };
   };

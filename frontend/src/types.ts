@@ -10,13 +10,6 @@ export interface Evidence {
   date: string;
   sub?: string;
   url?: string;
-  // ── حقول سياقية إضافية، تُحفظ فقط للأدلة المرتبطة باستراتيجية تدريس
-  // (sub يبدأ بـ "strat:") — اختيارية بالكامل، الأدلة القديمة لا تملكها ───
-  stratDate?: string;
-  stratStage?: 'ابتدائي' | 'متوسط' | 'ثانوي';
-  stratGrade?: string;
-  stratPeriod?: number;
-  stratSubject?: string;
 }
 
 /** مؤشر فرعي حقيقي من جدول section_indicators — id/name_ar معتمدان من
@@ -27,14 +20,13 @@ export interface SectionIndicator {
 }
 
 /** البيانات الثابتة لكل قسم — مكتوبة يدوياً في data.ts، لا تأتي من القاعدة
- * (جدول sections بالقاعدة أفقر: بلا isStrat/isResultsSection/strats، وبعض
+ * (جدول sections بالقاعدة أفقر: بلا isStrat/isResultsSection، وبعض
  * الأيقونات/الأسماء مختلفة عمداً هنا). SECS في data.ts من هذا النوع. */
 export interface SectionMeta {
   id: number;
   ttl: string;
   icon: string;
   isStrat?: boolean;
-  strats?: string[];
   /** بند 5 (تحسين نتائج المتعلمين) أو بند 10 (تحليل نتائج المتعلمين) — محتواهما
    * بالكامل واجهة أداة تحليل النتائج المخصّصة (ResultsAnalysis)، لا مؤشرات
    * فرعية عادية. نفس معاملة isStrat: مُستبعدان من شبكة الأقسام/النسب/منتقيات
@@ -92,23 +84,18 @@ export interface AcademicDate {
 
 export interface AppState {
   ev: Record<string, Evidence[]>;
-  strats: string[];
   csubs: Record<number, string[]>;
   notes: Record<string, string>;
   profile: UserProfile;
   readAnnouncements?: string[];
   yearStartMonth?: number; // 1–12، الافتراضي 9 (سبتمبر)
-  /** تاريخ إضافة كل استراتيجية (ISO) — يُستخدم لحساب "استراتيجيات مستخدمة هذا
-   * الشهر" في لوحة التحكم. اختياري بالكامل؛ الاستراتيجيات القديمة بلا تاريخ
-   * مسجَّل تُستثنى من عدّ الشهر الحالي دون أي كسر. */
-  stratDates?: Record<string, string>;
   /** تاريخ موافقة الحساب (ISO) على تحذير خصوصية ميزة "اقتراح تلقائي من
    * الصورة" (Beta) — وجوده يمنع تكرار عرض التحذير لهذا الحساب. */
   aiSuggestConsentAt?: string;
 }
 
 /** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */
-export type PublicPortfolioState = Pick<AppState, 'ev' | 'strats' | 'csubs' | 'profile'> & {
+export type PublicPortfolioState = Pick<AppState, 'ev' | 'csubs' | 'profile'> & {
   /** ملخص عام مولَّد بالذكاء الاصطناعي (عمود ai_summary في portfolios) — غائب
    * أو null قبل أول توليد أو لملف بلا شواهد مصنَّفة؛ الصفحة تتدهور بأمان لسلوكها
    * الحالي بدون هذا الحقل. */
@@ -162,6 +149,10 @@ export interface HarvestSnapshot {
    * مُفرَّغة دائماً (null) بنفس منطق الخصوصية في get_shared_evidence، لأن هذا
    * التقرير قابل للقراءة العامة عبر id (انظر RLS على harvest_reports). */
   evidence: SupabaseEvidence[];
+  /** اسم كل استراتيجية تدريس (id → name_ar) مُخبوز وقت التوليد — التقرير
+   * قابل للقراءة العامة عبر id بلا أي RPC حية وقت العرض (نفس مبدأ evidence
+   * أعلاه)، فلا يمكن حل strategy_id إلى اسم إلا بتجميده هنا مسبقاً. */
+  strategyNames: Record<string, string>;
   /** شارة اللقب/النقاط محسوبة مرة واحدة وقت التوليد من شواهد المدى المختار
    * فقط (وليس نافذة آخر 3 أشهر التقويمية المعتادة) — Public.tsx يعرضها كما
    * هي في وضع التقرير بدل إعادة حسابها حياً من continuity. */

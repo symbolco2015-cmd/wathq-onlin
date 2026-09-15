@@ -7,7 +7,7 @@ export type SectionsStatus = 'loading' | 'ready' | 'error';
 
 /**
  * مصدر SectionData[] الوحيد لبقية التطبيق — يدمج بيانات الأقسام الثابتة
- * (SECS في data.ts: id/ttl/icon/isStrat/strats/isResultsSection) مع مؤشرات
+ * (SECS في data.ts: id/ttl/icon/isStrat/isResultsSection) مع مؤشرات
  * section_indicators الحقيقية من القاعدة (id/name_ar لكل قسم، بترتيب weight).
  * subs = indicators.map(i => i.name_ar) — أسماء القاعدة معتمدة حرفياً، لا
  * تُعدَّل ولا تُطابَق مقابل أي نص ثابت بالكود.

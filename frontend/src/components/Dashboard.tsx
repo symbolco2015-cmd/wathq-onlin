@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { AppState, SectionData, Announcement, AcademicDate, Evidence } from '../types';
+import type { AppState, SectionData, Announcement, AcademicDate } from '../types';
 import Sidebar from './Sidebar';
 import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
@@ -45,12 +45,16 @@ interface DashboardProps {
   state: AppState;
   sections: SectionData[];
   supabaseEv?: SupabaseEvidenceHook;
-  onAddEvClick: (sid: number, sub: string) => void;
+  onAddEvClick: (sid: number, sub: string, strategyId?: string) => void;
   onAddSubClick: (sid: number) => void;
-  onToggleStrat: (s: string) => void;
   onUpdateNote: (k: string, v: string) => void;
   onDeleteEv: (sid: number, sub: string, idx: number) => void;
-  onAddStratClick: () => void;
+  /** يفتح تدفّق "إضافة استراتيجية" (اختيار من الكتالوج أو إنشاء جديدة، ثم
+   *  فتح نموذج الدليل الإجباري) — انظر openAddStrategyModal في App.tsx. */
+  onAddStrategyClick: () => void;
+  /** اسم كل استراتيجية تدريس (id → name_ar) لحلّ evidence[].strategy_id إلى
+   *  اسم معروض ببطاقة القسم 4 — من useTeachingStrategies في App.tsx. */
+  strategyNames: Record<string, string>;
   onDelSub: (sid: number, subName: string) => void;
   announcements?: Announcement[];
   onMarkAsRead?: (id: string) => void;
@@ -64,7 +68,6 @@ interface DashboardProps {
     type: 'pdf' | 'img' | 'doc' | 'vid',
     name: string,
     url?: string,
-    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
     createdAt?: string
   ) => void;
   onToast?: (msg: string, icon?: string) => void;
@@ -176,7 +179,7 @@ export function SectionReclassifyDropdown({
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onToggleStrat, onUpdateNote, onDeleteEv, onAddStratClick, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onUpdateNote, onDeleteEv, onAddStrategyClick, strategyNames, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -671,7 +674,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ev: state.ev,
     sections: pickableSections,
     csubs: state.csubs,
-    strats: state.strats,
   });
 
   // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب/الترتيب/
@@ -689,24 +691,43 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // .getSectionMonthCount/getSectionYearTotal تحسبان section_id بالكامل من
   // monthly_progress بلا أي تمييز بين الاثنين، فتُقحمان أدلة مراعاة الفروق
   // الفردية ضمن رقم الاستراتيجيات خطأً (مثال: 6 فروق فردية + 2 استراتيجيات
-  // تظهر كـ8). لذلك نعيد منطق العداد القديم: فلترة مفاتيح "strat:" في
-  // state.ev مباشرة بدل الدالتين العامتين هنا تحديداً.
+  // تظهر كـ8). لذلك نحسب مباشرة من أدلة evidence الحقيقية ذات strategy_id غير
+  // الفارغ لقسم 4 — لا فرق بين "الفروق الفردية" والاستراتيجيات لأن الأولى لا
+  // تحمل strategy_id إطلاقاً (مؤشر عادي، لا كتالوج).
   const now = new Date();
   const curYear = now.getFullYear();
   const curMonth = now.getMonth() + 1;
-  const stratsUsedThisMonth = state.strats.filter(name => {
-    const iso = state.stratDates?.[name];
-    if (!iso) return false;
-    const d = new Date(iso);
-    return d.getFullYear() === curYear && (d.getMonth() + 1) === curMonth;
-  }).length;
-  const stratEvCount = stratSection
-    ? state.strats.reduce((acc, name) => acc + (state.ev[`${stratSection.id}|strat:${name}`] || []).length, 0)
-    : 0;
+  const stratEvidence = stratSection
+    ? (supabaseEv?.getBySection(stratSection.id) ?? []).filter(e => e.strategy_id)
+    : [];
+  const stratGroups = useMemo(() => {
+    const map = new Map<string, typeof stratEvidence>();
+    for (const e of stratEvidence) {
+      const id = e.strategy_id as string;
+      const arr = map.get(id) ?? [];
+      arr.push(e);
+      map.set(id, arr);
+    }
+    return Array.from(map.entries()).map(([id, evs]) => ({
+      id,
+      name: strategyNames[id] ?? '—',
+      evidence: evs,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stratEvidence, strategyNames]);
+  const stratsUsedThisMonth = new Set(
+    stratEvidence
+      .filter(e => {
+        const d = new Date(e.created_at);
+        return d.getFullYear() === curYear && (d.getMonth() + 1) === curMonth;
+      })
+      .map(e => e.strategy_id as string)
+  ).size;
+  const stratEvCount = stratEvidence.length;
 
   // "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي في القسم الهجين،
-  // منفصل كلياً عن الاستراتيجيات أعلاه. بطاقة الاستراتيجيات تعرض فقط
-  // stratSection.strats/مفاتيح "strat:"، فهذا المؤشر لا يظهر هناك إطلاقاً رغم
+  // منفصل كلياً عن الاستراتيجيات أعلاه. بطاقة الاستراتيجيات تعرض فقط أدلة
+  // strategy_id غير الفارغ (stratGroups)، فهذا المؤشر لا يظهر هناك إطلاقاً رغم
   // كونه جزءاً طبيعياً من subs — له بطاقة حالة مستقلة أدناه بنفس نمط أي مؤشر
   // فرعي عادي (state.ev[sectionId|subName]).
   // يُحدَّد بالاسم لا بالترتيب (subs[0]): القسم يحوي 3 مؤشرات من section_indicators
@@ -1423,7 +1444,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           {[
             { id: 1, val: totalEvs, lbl: 'إجمالي الأدلة', ico: 'ti-files', bIco: 'ti-trending-up', bLbl: 'حي', theme: { bg: 'bg-gradient-to-br from-[var(--em2)]/30 to-[var(--em7)]/15', color: 'text-[var(--em7)]', badgeBg: 'bg-[var(--em7)]/10', badgeColor: 'text-[var(--em8)]' }, dly: '0.05s', sub: `${evStats.byType.pdf} PDF · ${evStats.byType.img} صور` },
             { id: 2, val: nonStratSections.length, lbl: 'مجالات أساسية', ico: 'ti-layout-grid', bIco: 'ti-check', bLbl: `${filledSecs} موثّق`, theme: { bg: 'bg-gradient-to-br from-[#1d4ed8]/30 to-[#93c5fd]/15', color: 'text-[#93c5fd]', badgeBg: 'bg-[#93c5fd]/10', badgeColor: 'text-[#93c5fd]' }, dly: '0.1s', sub: `${evStats.byType.doc} مستندات · ${evStats.byType.vid} فيديو` },
-            { id: 3, val: state.strats.length, lbl: 'استراتيجيات مفعّلة', ico: 'ti-bulb', bIco: 'ti-star', bLbl: 'نشطة', theme: { bg: 'bg-gradient-to-br from-[#b45309]/30 to-[#fcd34d]/15', color: 'text-[#fcd34d]', badgeBg: 'bg-[#fcd34d]/10', badgeColor: 'text-[#fcd34d]' }, dly: '0.15s', sub: null },
+            { id: 3, val: stratGroups.length, lbl: 'استراتيجيات مفعّلة', ico: 'ti-bulb', bIco: 'ti-star', bLbl: 'نشطة', theme: { bg: 'bg-gradient-to-br from-[#b45309]/30 to-[#fcd34d]/15', color: 'text-[#fcd34d]', badgeBg: 'bg-[#fcd34d]/10', badgeColor: 'text-[#fcd34d]' }, dly: '0.15s', sub: null },
             { id: 4, val: filledSecs, lbl: 'أقسام موثّقة', ico: 'ti-trophy', bIco: 'ti-chart-bar', bLbl: `من ${nonStratSections.length}`, theme: { bg: 'bg-gradient-to-br from-[#c0399a]/30 to-[#f472b6]/15', color: 'text-[#f472b6]', badgeBg: 'bg-[#f472b6]/10', badgeColor: 'text-[#f472b6]' }, dly: '0.2s', sub: `${Math.round((filledSecs / nonStratSections.length) * 100)}% اكتمال` },
           ].map(st => (
             <div key={st.id} className="group bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] p-3 sm:p-6 border border-[var(--line)] relative overflow-hidden transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--line2)] hover:shadow-[0_20px_50px_rgba(0,0,0,.5)] cursor-default" style={{ animation: `fadeUp .5s var(--sp) both ${st.dly}` }}>
@@ -1841,8 +1862,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           {/* بطاقة الاستراتيجيات — مثبّتة دائماً في آخر القائمة، خارج نظام
               النسب/الترتيب/التلوين بالكامل (لا borderColor دلالي، لا شريط تقدم،
               لا نسبة مئوية) — فقط عدادا نشاط (شهري + تراكمي) من stratsUsedThisMonth/
-              stratEvCount أعلاه (فلترة مفاتيح "strat:" في state.ev، لا monthly_progress
-              — انظر التعليق عند تعريفهما لسبب ذلك). */}
+              stratEvCount أعلاه (مبنيان من أدلة evidence الحقيقية ذات strategy_id،
+              لا monthly_progress — انظر التعليق عند تعريفهما لسبب ذلك). */}
           {stratSection && (
             <div key={stratSection.id} id={`sc-${stratSection.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', borderRight: '4px solid var(--gold)' }}>
               <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => toggleSec(stratSection.id)}>
@@ -1881,93 +1902,46 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               <div className={`overflow-hidden transition-all duration-500 ease-[var(--ease)] ${openSecs[stratSection.id] ? 'max-h-[9999px] opacity-100 border-t border-[var(--line)]' : 'max-h-0 opacity-0 border-t-0'}`}>
                 <div className="py-5 px-6 bg-[var(--gold)]/5">
                    <div className="flex items-center gap-2 text-[13px] font-extrabold text-[var(--text2)] mb-4 tracking-wide">
-                     <i className="ti ti-bulb text-[20px] text-[var(--gold)]"></i> استراتيجيات التدريس المتاحة
-                   </div>
-                   <div className="flex flex-wrap gap-2 mb-5">
-                     {stratSection.strats?.map(s => {
-                        const isOn = state.strats.includes(s);
-                        return (
-                          <div
-                            key={s}
-                            className={`group relative flex items-center gap-1.5 py-2 px-4 rounded-full text-[13px] font-semibold cursor-pointer border-[1.5px] transition-all duration-250 overflow-hidden hover:-translate-y-0.5 ${isOn ? 'text-white border-transparent shadow-[0_6px_18px_rgba(42,122,68,.5)]' : 'border-white/10 text-[var(--text3)] bg-white/5 hover:border-[var(--em7)]/30'}`}
-                            onClick={() => onToggleStrat(s)}
-                          >
-                            <div className={`absolute inset-0 bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] transition-opacity duration-250 ${isOn ? 'opacity-100' : 'opacity-0'}`}></div>
-                            <i className={`ti ${isOn ? 'ti-check' : 'ti-plus'} text-[15px] relative z-10`}></i>
-                            <span className="relative z-10">{s}</span>
-                          </div>
-                        );
-                     })}
+                     <i className="ti ti-bulb text-[20px] text-[var(--gold)]"></i> استراتيجيات موثّقة بدليل
                    </div>
 
-                   {/* Active Strategies Details with Evidence Attachment */}
-                   {state.strats.length > 0 && (
+                   {/* كل استراتيجية هنا مُشتقّة من أدلة evidence الحقيقية (strategy_id
+                       غير فارغ) — لا قائمة "مفعّلة/غير مفعّلة" منفصلة بعد الآن؛
+                       صفر أدلة لاستراتيجية ما يعني اختفاءها تلقائياً من هذه القائمة
+                       (لا حذف يدوي منفصل — حذف آخر دليل لها يُخفيها). */}
+                   {stratGroups.length > 0 ? (
                      <div className="flex flex-col gap-4 mt-2">
-                       <div className="text-[12px] font-bold text-[var(--em8)] border-b border-[var(--em7)]/10 pb-2 mb-1">توثيق الاستراتيجيات المفعّلة:</div>
-                       {state.strats.map(stratName => {
-                         const k = `strat:${stratName}`;
-                         const evs = state.ev[`${stratSection.id}|${k}`] || [];
-                         return (
-                           <div key={stratName} className="bg-white/5 rounded-2xl p-4 border border-[var(--em7)]/10">
-                             <div className="flex items-center justify-between mb-3">
-                               <div className="flex items-center gap-2">
-                                 <div className="w-2 h-2 rounded-full bg-[var(--gold)] shadow-[0_0_8px_rgba(201,162,39,.5)]"></div>
-                                 <span className="text-[14px] font-bold text-white">{stratName}</span>
-                                 {evs.length > 0 && <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{evs.length} شواهد</span>}
-                               </div>
-                               <div className="flex items-center gap-2">
-                                 <button
-                                   className="py-1.5 px-3 rounded-lg bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[12px] font-bold text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all flex items-center gap-1.5"
-                                   onClick={() => onAddEvClick(stratSection.id, k)}
-                                 >
-                                   <i className="ti ti-paperclip"></i> إرفاق شواهد
-                                 </button>
-                                 <button
-                                   className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text4)] hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
-                                   onClick={() => onToggleStrat(stratName)}
-                                   title="حذف الاستراتيجية"
-                                 >
-                                   <i className="ti ti-x text-[11px]"></i>
-                                 </button>
-                               </div>
+                       {stratGroups.map(group => (
+                         <div key={group.id} className="bg-white/5 rounded-2xl p-4 border border-[var(--em7)]/10">
+                           <div className="flex items-center justify-between mb-3">
+                             <div className="flex items-center gap-2">
+                               <div className="w-2 h-2 rounded-full bg-[var(--gold)] shadow-[0_0_8px_rgba(201,162,39,.5)]"></div>
+                               <span className="text-[14px] font-bold text-white">{group.name}</span>
+                               <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{group.evidence.length} شواهد</span>
                              </div>
-
-                             {evs.length > 0 && (
-                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                                 {evs.map((ev, ei) => {
-                                   const t = EVT_CONFIG[ev.type] || EVT_CONFIG.doc;
-                                   return (
-                                     <div key={ei} className="flex items-center gap-2.5 py-2 px-3 bg-black/20 rounded-xl border border-white/5 relative group">
-                                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[16px] shrink-0 ${t.cls}`}>
-                                         <i className={`ti ${t.icon}`}></i>
-                                       </div>
-                                       <div
-                                          className={`flex-1 min-w-0 ${ev.url ? 'cursor-pointer hover:opacity-80 transition-all' : ''}`}
-                                          onClick={() => ev.url && window.open(ev.url, '_blank')}
-                                          title={ev.url ? 'اضغط لعرض الملف' : ''}
-                                        >
-                                          <div className="text-[12px] font-bold text-white truncate group-hover:text-[var(--em8)] transition-colors" dir="ltr" style={{unicodeBidi:'isolate'}}>{ev.name}</div>
-                                          {ev.url && <div className="text-[10px] text-[var(--em8)] mt-0.5 flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</div>}
-                                        </div>
-                                       <button className="text-[var(--text4)] hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => onDeleteEv(stratSection.id, k, ei)}>
-                                         <i className="ti ti-trash"></i>
-                                       </button>
-                                     </div>
-                                   );
-                                 })}
-                               </div>
-                             )}
-
-                             {evs.length === 0 && (
-                               <div className="text-[12px] text-[var(--text4)] italic">لا توجد شواهد مرفقة لهذه الاستراتيجية حالياً.</div>
-                             )}
+                             <button
+                               className="py-1.5 px-3 rounded-lg bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[12px] font-bold text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all flex items-center gap-1.5"
+                               onClick={() => onAddEvClick(stratSection.id, group.name, group.id)}
+                             >
+                               <i className="ti ti-paperclip"></i> إرفاق دليل آخر
+                             </button>
                            </div>
-                         );
-                       })}
+
+                           <EvidenceList
+                             sectionId={stratSection.id}
+                             evidence={group.evidence}
+                             loading={false}
+                             onDelete={supabaseEv?.deleteEvidence ?? (async () => {})}
+                             onAddClick={() => onAddEvClick(stratSection.id, group.name, group.id)}
+                           />
+                         </div>
+                       ))}
                      </div>
+                   ) : (
+                     <div className="text-[12.5px] text-[var(--text4)] italic mb-2">لا توجد استراتيجيات موثّقة بدليل بعد.</div>
                    )}
 
-                   <button className="mt-4 inline-flex items-center gap-1.5 py-2 px-4 rounded-xl text-[12.5px] font-bold cursor-pointer border-[1.5px] border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/5 hover:bg-gradient-to-br hover:from-[var(--em4)] hover:to-[var(--em6)] hover:text-white hover:border-transparent hover:shadow-[0_6px_18px_rgba(42,122,68,.5)] hover:-translate-y-0.5 group transition-all duration-250" onClick={onAddStratClick}>
+                   <button className="mt-4 inline-flex items-center gap-1.5 py-2 px-4 rounded-xl text-[12.5px] font-bold cursor-pointer border-[1.5px] border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/5 hover:bg-gradient-to-br hover:from-[var(--em4)] hover:to-[var(--em6)] hover:text-white hover:border-transparent hover:shadow-[0_6px_18px_rgba(42,122,68,.5)] hover:-translate-y-0.5 group transition-all duration-250" onClick={onAddStrategyClick}>
                       <i className="ti ti-plus text-[15px] transition-transform duration-300 group-hover:scale-125 group-hover:rotate-[-5deg]"></i> إضافة استراتيجية جديدة
                    </button>
                 </div>
@@ -1977,8 +1951,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
           {/* بطاقة مستقلة لـ"مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي
               عادي ضمن القسم الهجين (استراتيجيات)، لكنه غير معروض إطلاقاً داخل
-              بطاقة الاستراتيجيات أعلاه (تلك تعرض فقط state.strats/مفاتيح
-              "strat:"). أدلة موثّقة فعلياً لهذا المؤشر عبر مسارات أخرى (تحويل
+              بطاقة الاستراتيجيات أعلاه (تلك تعرض فقط أدلة strategy_id غير
+              الفارغ). أدلة موثّقة فعلياً لهذا المؤشر عبر مسارات أخرى (تحويل
               رسم بياني، التقاط سريع) كانت غير مرئية هنا رغم وجودها في state.ev
               — بطاقة حالة بسيطة بلا عداد/شريط تقدم، قابلة للفتح لعرض الأدلة
               بنفس نمط أي مؤشر فرعي عادي مع تعديل/حذف طبيعي. */}
@@ -2219,7 +2193,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
         <div className="overflow-y-auto flex-1 p-5">
           <div className="grid grid-cols-2 gap-3">
-            {pickableSections.map(sec => (
+            {/* nonStratSections لا pickableSections — قسم 4 (isStrat) يستلزم
+                strategy_id إجبارياً الآن، فلا يظهر ضمن منتقي "إضافة شاهد عادي"
+                العام؛ له تدفّقه الخاص عبر onAddStrategyClick */}
+            {nonStratSections.map(sec => (
               <button
                 key={sec.id}
                 type="button"
@@ -2262,7 +2239,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           )}
           {!quickCapture.pendingSection ? (
             <div className="flex flex-col gap-1.5">
-              {pickableSections.map(sec => (
+              {/* nonStratSections — نفس استبعاد قسم 4 أعلاه، لنفس السبب */}
+              {nonStratSections.map(sec => (
                 <button
                   key={sec.id}
                   type="button"
@@ -2427,7 +2405,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                     </div>
                   </div>
                   <SectionReclassifyDropdown
-                    sections={pickableSections}
+                    sections={nonStratSections}
                     isOpen={openDropdownId === ev.id}
                     isBusy={isBusy}
                     onOpen={() => setOpenDropdownId(ev.id)}
@@ -2456,7 +2434,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         isOpen={isBulkImportReviewOpen}
         onClose={() => setIsBulkImportReviewOpen(false)}
         userId={userId}
-        sections={sections}
+        sections={nonStratSections}
+        stratSectionId={stratSection?.id}
         supabaseEv={supabaseEv}
         onAddEv={onAddEv}
         onToast={onToast}

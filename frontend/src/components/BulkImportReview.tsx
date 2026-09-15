@@ -4,7 +4,7 @@ import { SectionReclassifyDropdown } from './Dashboard';
 import { SelectDropdown } from './UI';
 import { supabase } from '../supabaseClient';
 import { useSaveEvidence } from '../hooks/useSaveEvidence';
-import type { SectionData, Evidence } from '../types';
+import type { SectionData } from '../types';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -37,7 +37,14 @@ interface BulkImportReviewProps {
   isOpen: boolean;
   onClose: () => void;
   userId?: string;
+  /** أقسام قابلة للاختيار يدوياً هنا فقط — لا تشمل قسم 4 (isStrat)، مُمرَّرة
+   *  من Dashboard.tsx مسبقاً الفلترة (nonStratSections). */
   sections: SectionData[];
+  /** معرّف قسم الاستراتيجيات (isStrat)، غير مُفلتر — يُستخدم فقط لمقارنة
+   *  suggested_section_id القادم من تصنيف الذكاء الاصطناعي (انظر getEdit
+   *  أدناه)، منفصل تماماً عن sections الظاهرة بالمنتقي حتى لا يعتمد التحقق
+   *  على قائمة مُفلترة أصلاً لا تحوي القيمة المطلوب مطابقتها. */
+  stratSectionId?: number;
   supabaseEv?: SupabaseEvidenceHook;
   onAddEv?: (
     sid: number,
@@ -45,7 +52,6 @@ interface BulkImportReviewProps {
     type: 'pdf' | 'img' | 'doc' | 'vid',
     name: string,
     url?: string,
-    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
     createdAt?: string
   ) => void;
   onToast?: (msg: string, icon?: string) => void;
@@ -61,7 +67,7 @@ const publicUrlFor = (filePath: string): string =>
  * "قبول الكل". صفوف 'failed' تُعالَج تلقائياً عند الفتح بلا أي تفاعل من
  * المستخدم (تُحفظ بلا قسم في evidence، نفس منطق فشل التصنيف الصوتي) ولا تُعرض هنا.
  */
-export default function BulkImportReview({ isOpen, onClose, userId, sections, supabaseEv, onAddEv, onToast }: BulkImportReviewProps) {
+export default function BulkImportReview({ isOpen, onClose, userId, sections, stratSectionId, supabaseEv, onAddEv, onToast }: BulkImportReviewProps) {
   // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تحديث state.ev
   // + monthly_progress عبر onAddEv (انظر useSaveEvidence.ts). لا يُستخدم في
   // resolveFailedRows أدناه (استثناء مقصود، انظر تعليقها).
@@ -76,8 +82,18 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, su
   // تُملأ عند أول ظهور لكل قسم (اقتراح مبدئي أو اختيار يدوي) لتفادي تكرار الجلب
   const [indicatorsBySection, setIndicatorsBySection] = useState<Record<number, Indicator[]>>({});
 
+  // قسم 4 (isStrat) يستلزم strategy_id إجبارياً عبر تدفّق "استراتيجيات
+  // التدريس" المخصّص — لا يمكن قبوله كاقتراح تصنيف تلقائي صامت هنا (لا يوجد
+  // منتقي استراتيجية بهذا التدفّق أصلاً)، فيُصفَّر لـnull (غير مصنَّف) بدل
+  // تمريره كافتراضي، حتى لو رجع من الذكاء الاصطناعي (process-bulk-queue يقرأ
+  // جدول sections بلا استثناء لهذا القسم حالياً).
+  const safeSuggestedSectionId = (row: ClassifiedRow): number | null =>
+    row.suggested_section_id != null && row.suggested_section_id === stratSectionId
+      ? null
+      : row.suggested_section_id;
+
   const getEdit = (row: ClassifiedRow): RowEdit =>
-    edits[row.id] ?? { sectionId: row.suggested_section_id, title: row.suggested_title ?? '', indicatorId: null };
+    edits[row.id] ?? { sectionId: safeSuggestedSectionId(row), title: row.suggested_title ?? '', indicatorId: null };
 
   const ensureIndicatorsLoaded = async (sectionId: number) => {
     if (indicatorsBySection[sectionId] || !supabase) return;
@@ -163,14 +179,16 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, su
       setEdits(prev => {
         const next = { ...prev };
         for (const row of list) {
-          if (!next[row.id]) next[row.id] = { sectionId: row.suggested_section_id, title: row.suggested_title ?? '', indicatorId: null };
+          if (!next[row.id]) next[row.id] = { sectionId: safeSuggestedSectionId(row), title: row.suggested_title ?? '', indicatorId: null };
         }
         return next;
       });
       // جلب مؤشرات كل قسم مقترح دفعة واحدة (بلا تكرار لنفس القسم) — حتى يظهر
-      // منتقي المؤشر جاهزاً فور فتح الصف، دون انتظار تفاعل المستخدم مع منتقي القسم
+      // منتقي المؤشر جاهزاً فور فتح الصف، دون انتظار تفاعل المستخدم مع منتقي القسم.
+      // نقرأ من نفس المصدر المصفَّى (safeSuggestedSectionId) حتى لا نجلب مؤشرات
+      // قسم 4 بلا داعٍ لصف سيُعرَض أصلاً كـ"غير مصنَّف".
       const uniqueSectionIds = Array.from(new Set(
-        list.map(r => r.suggested_section_id).filter((id): id is number => id != null)
+        list.map(r => safeSuggestedSectionId(r)).filter((id): id is number => id != null)
       ));
       uniqueSectionIds.forEach(id => ensureIndicatorsLoaded(id));
       setLoading(false);

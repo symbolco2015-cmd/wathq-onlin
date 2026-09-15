@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData } from '../types';
-import { calculatePointsLevel, getCompletionColor, getCompletionLabel } from '../utils';
+import { calculatePointsLevel, getCompletionColor, getCompletionLabel, supabaseEvidenceTypeToLocal } from '../utils';
 import { LESSON_PLAN_SECTION_ID } from '../data';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
@@ -62,6 +62,11 @@ interface PublicProps {
     generatedAt: string;
     pointsLevel: FrozenPointsLevel;
   };
+  /** اسم كل استراتيجية تدريس (id → name_ar) لحلّ evidence[].strategy_id إلى
+   *  اسم معروض ببطاقة القسم 4 — من useTeachingStrategies (معاينة المالك)،
+   *  usePublicTeachingStrategies (مسار ?share=)، أو snapshot.strategyNames
+   *  المُخبوز وقت التوليد (مسار ?report=). افتراضي {} إن غاب. */
+  strategyNames?: Record<string, string>;
 }
 
 /** يستخرج معرّف فيديو يوتيوب من أي صيغة رابط شائعة (watch؟v=, youtu.be/, embed/, shorts/)،
@@ -364,7 +369,11 @@ function SectionCard({ sec, isTop, onClick, style, lessonPlanSummary }: { sec: S
 /** onClick اختياري: يُستدعى بدلاً من فتح رابط خارجي مباشرة عند توفره (يُستخدم
  * لفتح نافذة معاينة/lightbox). الروابط الخارجية العامة (type: 'doc') تبقى
  * تفتح في تبويب جديد مباشرة دون معاينة. */
-function EvidenceThumb({ e, onClick }: { e: Evidence; onClick?: (e: Evidence) => void }) {
+/** شكل بنيوي أدنى تحتاجه EvidenceThumb — Evidence القديم يحقّقه تلقائياً، وكذلك
+ * أي SupabaseEvidence مُحوَّل يدوياً (انظر toThumbEvidence أدناه لبطاقة الاستراتيجيات). */
+type ThumbEvidence = { type: Evidence['type']; name: string; url?: string };
+
+function EvidenceThumb({ e, onClick }: { e: ThumbEvidence; onClick?: (e: ThumbEvidence) => void }) {
   const handleClick = (ev: React.MouseEvent) => {
     if (!onClick) return;
     ev.stopPropagation();
@@ -429,27 +438,6 @@ function EvidenceThumb({ e, onClick }: { e: Evidence; onClick?: (e: Evidence) =>
 
 /** الحقول السياقية الخمسة لدليل استراتيجية — تُعرض فقط إن وُجدت قيمة لها؛
  * الأدلة القديمة بلا هذي الحقول لا تُعرض لها أي شارة (لا "غير محدد" مكرّرة). */
-function EvidenceContextTags({ e }: { e: Evidence }) {
-  const hasContext = !!(e.stratDate || e.stratStage || e.stratGrade || e.stratPeriod != null || e.stratSubject);
-  if (!hasContext) return null;
-
-  const tag = (icon: string, label: string) => (
-    <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-[var(--text4)] bg-white/5 border border-white/10 rounded-md py-0.5 px-1.5">
-      <i className={`ti ${icon} text-[9.5px]`}></i> {label}
-    </span>
-  );
-
-  return (
-    <div className="flex flex-wrap gap-1 mt-1.5">
-      {e.stratDate && tag('ti-calendar', e.stratDate)}
-      {e.stratStage && tag('ti-school', e.stratStage)}
-      {e.stratGrade && tag('ti-users', e.stratGrade)}
-      {e.stratPeriod != null && tag('ti-clock', `الحصة ${e.stratPeriod}`)}
-      {e.stratSubject && tag('ti-book', e.stratSubject)}
-    </div>
-  );
-}
-
 /** نافذة معاينة مصغّرة (lightbox) خاصة بأدلة قسم الاستراتيجيات فقط — منفصلة
  * كلياً عن previewFile العام حتى لا تمتد التعديلات لأي قسم آخر في الصفحة.
  * ترتيب الفحص يطابق EvidenceThumb تماماً: صورة → يوتيوب → PDF → فيديو مباشر. */
@@ -592,7 +580,7 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
   );
 }
 
-export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, lessonPlanSummary }: PublicProps) {
+export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, lessonPlanSummary, strategyNames = {} }: PublicProps) {
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
@@ -615,10 +603,10 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // بطاقة "مراعاة الفروق الفردية بين المتعلمين" — طي/فتح مستقل عن بطاقة
   // الاستراتيجيات أعلاه (مطوية افتراضياً، نفس مبدأ stratCollapsed).
   const [indivDiffCollapsed, setIndivDiffCollapsed] = useState(true);
-  const toggleStratRow = (name: string) => {
+  const toggleStratRow = (strategyId: string) => {
     setClosedStrats(prev => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
+      if (next.has(strategyId)) next.delete(strategyId); else next.add(strategyId);
       return next;
     });
   };
@@ -700,9 +688,9 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   }, [frozenResultsComparisons, resultsAnalysis]);
 
   // "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي بالقسم الهجين،
-  // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط
-  // state.strats/مفاتيح "strat:"، فهذا المؤشر لا يظهر هناك رغم كونه جزءاً
-  // طبيعياً من subs — عرض مبسّط مستقل له (بلا أزرار تعديل، مطابق لباقي
+  // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط أدلة
+  // strategy_id غير الفارغ (stratGroups)، فهذا المؤشر لا يظهر هناك رغم كونه
+  // جزءاً طبيعياً من subs — عرض مبسّط مستقل له (بلا أزرار تعديل، مطابق لباقي
   // شواهد صفحة المشاركة).
   // يُحدَّد بالاسم لا بالترتيب (subs[0]) — نفس سبب Dashboard.tsx: ترتيب weight
   // بجدول section_indicators غير مضمون التطابق مع الترتيب القديم في data.ts.
@@ -713,6 +701,30 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // الخطأ من الجدول الحقيقي، فقد يسبب تبايناً صامتاً بين ما يظهر هنا وهناك.
   const indivDiffSub = stratSection?.indicators.find(i => i.name_ar.includes('الفروق الفردية'))?.name_ar;
   const indivDiffEvs = (stratSection && indivDiffSub) ? (state.ev[`${stratSection.id}|${indivDiffSub}`] || []) : [];
+
+  // بطاقة الاستراتيجيات — مُشتقّة من evidenceBySection[stratSection.id] (أدلة
+  // جدول evidence الحقيقية ذات strategy_id غير فارغ)، مجمَّعة حسب strategy_id
+  // واسمها محلول عبر strategyNames (بند 9 بـApp.tsx) — لا state.strats بعد الآن.
+  const toThumbEvidence = (e: SupabaseEvidence): ThumbEvidence => ({
+    type: supabaseEvidenceTypeToLocal(e.evidence_type),
+    name: e.title,
+    url: e.file_url ?? e.link_url ?? undefined,
+  });
+  const stratGroups = useMemo(() => {
+    if (!stratSection) return [];
+    const map = new Map<string, SupabaseEvidence[]>();
+    for (const e of evidenceBySection[stratSection.id] ?? []) {
+      if (!e.strategy_id) continue;
+      const arr = map.get(e.strategy_id) ?? [];
+      arr.push(e);
+      map.set(e.strategy_id, arr);
+    }
+    return Array.from(map.entries()).map(([id, evs]) => ({
+      id,
+      name: strategyNames[id] ?? '—',
+      evidence: evs,
+    }));
+  }, [stratSection, evidenceBySection, strategyNames]);
 
   const chartData = nonStratSections.map(sec => {
     const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
@@ -1090,9 +1102,9 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                   <h2 className="text-[18px] font-black text-white">استراتيجيات التدريس المتنوعة</h2>
                 </div>
                 <div className="flex items-center gap-2.5 print:hidden">
-                  {state.strats.length > 0 && (
+                  {stratGroups.length > 0 && (
                     <span className="text-[11px] font-black text-[#241a05] bg-[var(--gold)] px-2.5 py-1 rounded-full whitespace-nowrap">
-                      {state.strats.length} استراتيجيات
+                      {stratGroups.length} استراتيجيات
                     </span>
                   )}
                   <i className={`ti ti-chevron-down text-[var(--text3)] text-[18px] transition-transform duration-300 ${stratCollapsed ? '' : 'rotate-180'}`}></i>
@@ -1100,42 +1112,36 @@ export default function Public({ state, sections, isSharedView, continuity, evid
               </div>
 
               <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 print:!mt-6 ${stratCollapsed ? 'max-h-0 opacity-0' : 'max-h-[10000px] opacity-100 mt-6'}`}>
-                {state.strats.length === 0 ? (
+                {stratGroups.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 text-center">
                     <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
                       <i className="ti ti-bulb-off"></i>
                     </div>
-                    <p className="text-[var(--text3)] text-[13.5px]">لا توجد استراتيجيات مسجّلة بعد</p>
+                    <p className="text-[var(--text3)] text-[13.5px]">لا توجد استراتيجيات موثّقة بدليل بعد</p>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-5">
-                    {state.strats.map(name => {
-                      const evs = state.ev[`${stratSection.id}|strat:${name}`] || [];
-                      const rowOpen = !closedStrats.has(name);
+                    {stratGroups.map(group => {
+                      const rowOpen = !closedStrats.has(group.id);
                       return (
-                        <div key={name} className="bg-white/5 rounded-2xl p-4 border border-[var(--gold)]/10">
+                        <div key={group.id} className="bg-white/5 rounded-2xl p-4 border border-[var(--gold)]/10">
                           <div
                             className="flex items-center gap-2 mb-3 cursor-pointer select-none print:pointer-events-none"
-                            onClick={ev => { ev.stopPropagation(); toggleStratRow(name); }}
+                            onClick={ev => { ev.stopPropagation(); toggleStratRow(group.id); }}
                           >
                             <div className="w-2 h-2 rounded-full bg-[var(--gold)] shrink-0"></div>
-                            <span className="text-[14px] font-bold text-white flex-1">{name}</span>
-                            {evs.length > 0 && <span className="text-[11px] font-black text-[var(--gold)] bg-[var(--gold)]/10 px-2 py-0.5 rounded-md">{evs.length} شواهد</span>}
+                            <span className="text-[14px] font-bold text-white flex-1">{group.name}</span>
+                            <span className="text-[11px] font-black text-[var(--gold)] bg-[var(--gold)]/10 px-2 py-0.5 rounded-md">{group.evidence.length} شواهد</span>
                             <i className={`ti ti-chevron-down text-[var(--text4)] text-[13px] transition-transform duration-300 print:hidden ${rowOpen ? 'rotate-180' : ''}`}></i>
                           </div>
                           <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 ${rowOpen ? 'max-h-[4000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                            {evs.length > 0 ? (
-                              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                                {evs.map((e, idx) => (
-                                  <div key={idx}>
-                                    <EvidenceThumb e={e} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
-                                    <EvidenceContextTags e={e} />
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-[12px] text-[var(--text4)] italic">لا توجد شواهد مرفقة لهذه الاستراتيجية حالياً.</p>
-                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                              {group.evidence.map(e => (
+                                <div key={e.id}>
+                                  <EvidenceThumb e={toThumbEvidence(e)} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       );
@@ -1180,7 +1186,6 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                     {indivDiffEvs.map((e, idx) => (
                       <div key={idx}>
                         <EvidenceThumb e={e} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
-                        <EvidenceContextTags e={e} />
                       </div>
                     ))}
                   </div>
@@ -1279,7 +1284,6 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                           {g.evs.map((e, idx) => (
                             <div key={idx}>
                               <EvidenceThumb e={e} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
-                              <EvidenceContextTags e={e} />
                             </div>
                           ))}
                         </div>
@@ -1362,7 +1366,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                 </div>
                 <div>
                   <h3 className="text-[16px] font-black text-white">{selectedSecData.fullName}</h3>
-                  <p className="text-[12px] text-[var(--text3)] mt-0.5">{selectedSecData.isStrat ? 'الاستراتيجيات المفعلة' : 'الأدلة والشواهد الموثقة'}</p>
+                  <p className="text-[12px] text-[var(--text3)] mt-0.5">الأدلة والشواهد الموثقة</p>
                 </div>
               </div>
               <button
@@ -1374,66 +1378,11 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             </div>
 
             <div className="flex-1 overflow-y-auto p-6" dir="rtl">
-              {/* قسم الاستراتيجيات (isStrat) مُستثنى عمداً من sectionHasEvidence
-                  الموحّدة أعلاه: "فارغ" هنا يعني تحديداً "لا استراتيجيات مُختارة"
-                  (state.strats.length، قائمة تصنيف وليست أدلة)، لا "لا أدلة
-                  موثقة". وجود شواهد بـevidenceBySection[section.id] لهذا القسم
-                  لا يعني أن أي استراتيجية اختيرت فعلياً — والبطاقة أصلاً مبنية
-                  حول تجميع كل شاهد تحت اسم استراتيجيته (state.strats)، فلا يوجد
-                  مقابل معنوي لعرض شواهد evidenceBySection "يتيمة" هنا بلا
-                  استراتيجية تُنسَب إليها. لذلك يبقى الشرط أحادي المصدر كما كان. */}
-              {selectedSecData.isStrat ? (
-                state.strats.length > 0 ? (
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-wrap gap-2.5">
-                      {state.strats.map(s => (
-                        <span key={s} className="py-2 px-5 rounded-full text-[14px] font-bold bg-[var(--em7)]/10 text-[var(--em8)] border border-[var(--em7)]/15 flex items-center gap-2">
-                          <i className="ti ti-check text-[14px]"></i> {s}
-                        </span>
-                      ))}
-                    </div>
-                    {selectedSecData.evs.length > 0 && (
-                      <div className="mt-4">
-                        <div className="text-[14px] font-bold text-white mb-3 flex items-center gap-2">
-                          <i className="ti ti-files text-[var(--em8)]"></i> الشواهد المرفقة للاستراتيجيات:
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {selectedSecData.evs.map((e, idx) => {
-                            const t = EVT_CONFIG[e.type] || EVT_CONFIG.doc;
-                            return (
-                              <div
-                                key={idx}
-                                className={`flex items-center gap-3 py-3 px-4 bg-[var(--surf2)] rounded-xl border border-[var(--line)] transition-all duration-250 ${e.url ? 'cursor-pointer hover:border-[var(--em7)]/40 hover:bg-[var(--surf3)] hover:-translate-y-0.5' : ''}`}
-                                onClick={() => e.url && setPreviewFile({ name: e.name, url: e.url, type: e.type })}
-                                title={e.url ? 'انقر لمعاينة الدليل فوراً' : ''}
-                              >
-                                <div className={`w-[36px] h-[36px] rounded-lg text-[18px] flex items-center justify-center shrink-0 ${t.cls}`}>
-                                  <i className={`ti ${t.icon}`}></i>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-[13px] font-bold text-white truncate group-hover:text-[var(--em8)] transition-colors">{e.name}</div>
-                                  <div className="text-[11px] text-[var(--text4)] mt-1 truncate">
-                                    {e.sub} · {e.date}
-                                    {e.url && <span className="text-[var(--em8)] mr-1.5 font-bold"><i className="ti ti-eye"></i> معاينة</span>}
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-[24px] text-[var(--text4)] mb-3">
-                      <i className="ti ti-ghost"></i>
-                    </div>
-                    <p className="text-[var(--text3)] text-[14px]">لم يتم تحديد استراتيجيات بعد</p>
-                  </div>
-                )
-              ) : (
-                <>
+              {/* قسم الاستراتيجيات (isStrat) مُستبعد أصلاً من sectionsWithPct
+                  (مبنية من nonStratSections فقط) — selectedSecData لا يمكن أن
+                  يطابق قسم 4 إطلاقاً، فلا فرع خاص به هنا (له بطاقته المستقلة
+                  أعلى الصفحة، انظر stratGroups). */}
+              <>
                 {/* ملخص بند "إعداد خطة التعلم" بالذكاء الاصطناعي — الجملة كاملة،
                     يظهر فقط لهذا البند تحديداً وقبل عرض أي أدلة */}
                 {selectedSecData.id === LESSON_PLAN_SECTION_ID && lessonPlanSummary && (
@@ -1490,8 +1439,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                     />
                   </div>
                 )}
-                </>
-              )}
+              </>
             </div>
             <div className="p-4 border-t border-[var(--line)] bg-[var(--surf0)] flex justify-end">
               <button

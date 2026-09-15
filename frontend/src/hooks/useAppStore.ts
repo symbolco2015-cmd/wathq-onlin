@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import type { AppState, UserProfile, Announcement, AcademicDate, Evidence } from '../types';
+import type { AppState, UserProfile, Announcement, AcademicDate } from '../types';
 
 // ═══════════════════════════════════════════════════════════
 // قائمة المشرفين — أضف إيميلك هنا لمنح صلاحيات الأدمن
@@ -25,13 +25,11 @@ const defaultProfile: UserProfile = {
 
 const defaultState: AppState = {
   ev: {},
-  strats: ['الصف المقلوب', 'التعلم التعاوني', 'التعلم النشط'],
   csubs: {},
   notes: {},
   profile: defaultProfile,
   readAnnouncements: [],
   yearStartMonth: 9,
-  stratDates: {},
 };
 
 // إصدار تخزين localStorage — غيّره عند أي تصفير كامل لقاعدة البيانات لإبطال
@@ -356,8 +354,7 @@ export function useAppStore() {
     sub: string,
     type: 'pdf' | 'img' | 'doc' | 'vid',
     name: string,
-    url?: string,
-    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>
+    url?: string
   ) => {
     const k = `${sid}|${sub}`;
     const newEv = { ...state.ev };
@@ -367,7 +364,6 @@ export function useAppStore() {
       name,
       url,
       date: new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' }),
-      ...stratFields,
     });
     return saveState({ ...state, ev: newEv });
   };
@@ -379,30 +375,6 @@ export function useAppStore() {
       newEv[k].splice(i, 1);
       return saveState({ ...state, ev: newEv });
     }
-  };
-
-  const toggleStrat = (s: string) => {
-    const newStrats = [...state.strats];
-    const i = newStrats.indexOf(s);
-    const newStratDates = { ...state.stratDates };
-    if (i >= 0) {
-      newStrats.splice(i, 1);
-      delete newStratDates[s];
-    } else {
-      newStrats.push(s);
-      newStratDates[s] = new Date().toISOString();
-    }
-    return saveState({ ...state, strats: newStrats, stratDates: newStratDates });
-  };
-
-  const addStrat = (s: string) => {
-     if (s) {
-       return saveState({
-         ...state,
-         strats: [...state.strats, s],
-         stratDates: { ...state.stratDates, [s]: new Date().toISOString() },
-       });
-     }
   };
 
   const addSub = (sid: number, val: string) => {
@@ -473,11 +445,9 @@ export function useAppStore() {
     clearPasswordRecovery,
     addEv,
     delEv,
-    toggleStrat,
     addSub,
     delSub,
     updateNote,
-    addStrat,
     updateProfile,
     saveState,
     signOut,

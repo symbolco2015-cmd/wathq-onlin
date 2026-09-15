@@ -1,9 +1,11 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import type { Evidence, PageType, SectionData, UserProfile } from './types';
+import type { PageType, SectionData, UserProfile } from './types';
 import { useAppStore } from './hooks/useAppStore';
 import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
 import { usePublicEvidence } from './hooks/usePublicEvidence';
+import { useTeachingStrategies } from './hooks/useTeachingStrategies';
+import { usePublicTeachingStrategies } from './hooks/usePublicTeachingStrategies';
 import { usePublicResultsAnalysis } from './hooks/usePublicResultsAnalysis';
 import { usePublicLessonPlanSummary } from './hooks/usePublicLessonPlanSummary';
 import { useHarvestReport } from './hooks/useHarvestReport';
@@ -47,12 +49,10 @@ export default function App() {
     passwordRecovery,
     clearPasswordRecovery,
     addEv,
-    delEv, 
-    toggleStrat, 
-    addSub, 
+    delEv,
+    addSub,
     delSub,
     updateNote,
-    addStrat,
     updateProfile,
     saveState,
     signOut,
@@ -118,17 +118,33 @@ export default function App() {
     type: 'pdf' | 'img' | 'doc' | 'vid',
     name: string,
     url?: string,
-    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
     createdAt?: string
   ): Promise<boolean> => {
-    const ok = await addEv(sid, sub, type, name, url, stratFields);
+    const ok = await addEv(sid, sub, type, name, url);
     monthlyProgress.recordEvidence(sid, createdAt);
     return ok;
   };
 
-  const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string }>({
+  const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string; strategyId?: string }>({
     open: false, sectionId: 0, sub: '',
   });
+
+  // كتالوج استراتيجيات التدريس (بند 4) — عام + خاص بالمعلم الحالي، لتدفّق
+  // "إضافة استراتيجية" ولحلّ evidence[].strategy_id إلى اسم معروض بمعاينة
+  // المالك لملفه (Dashboard.tsx وPublic.tsx في وضع 'public' الداخلي).
+  const teachingStrategies = useTeachingStrategies(user?.id ?? null);
+  const strategyNames = useMemo(
+    () => Object.fromEntries(teachingStrategies.strategies.map(s => [s.id, s.name_ar])),
+    [teachingStrategies.strategies]
+  );
+
+  // نفس الحل لكن للعرض العام (?share=) عبر get_shared_teaching_strategies —
+  // RLS تمنع زوار الصفحة العامة من قراءة teaching_strategies الخاصة مباشرة.
+  const sharedTeachingStrategies = usePublicTeachingStrategies(shareUserId ?? null);
+  const sharedStrategyNames = useMemo(
+    () => Object.fromEntries((sharedTeachingStrategies ?? []).map(s => [s.id, s.name_ar])),
+    [sharedTeachingStrategies]
+  );
 
   // Load shared profile (only when ?share= param is present)
   const { state: sharedState, loading: sharedLoading, error: sharedError } = usePublicProfile(
@@ -310,8 +326,8 @@ export default function App() {
 
   const closeModal = () => setModalConfig(prev => ({ ...prev, isOpen: false }));
 
-  const openAddEvModal = (sid: number, sub: string) => {
-    setEvidenceModal({ open: true, sectionId: sid, sub });
+  const openAddEvModal = (sid: number, sub: string, strategyId?: string) => {
+    setEvidenceModal({ open: true, sectionId: sid, sub, strategyId });
   };
 
   const openAddSubModal = (sid: number) => {
@@ -347,35 +363,96 @@ export default function App() {
     });
   };
 
-  const openAddStratModal = () => {
-    let inputVal = '';
-    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => { inputVal = e.target.value; };
-    
+  // خطوة 1 من تدفّق "استراتيجيات التدريس" الجديد: اختيار استراتيجية من الكتالوج
+  // (عامة + خاصة بهذا المعلم) أو إضافة واحدة جديدة — لا حفظ فعلي هنا، فقط تحديد
+  // strategy_id/الاسم، ثم فتح نموذج الدليل الموحّد (خطوة 2، إجباري) عبر
+  // openAddEvModal(4, name, id). لا "إضافة استراتيجية بلا دليل" بعد الآن.
+  const openAddStrategyModal = () => {
+    let mode: 'pick' | 'new' = teachingStrategies.strategies.length > 0 ? 'pick' : 'new';
+    let selectedId = '';
+    let newName = '';
+
+    const Body = () => {
+      const [localMode, setLocalMode] = useState(mode);
+      const [localSelectedId, setLocalSelectedId] = useState('');
+      const [localNewName, setLocalNewName] = useState('');
+
+      const inputCls = 'w-full py-3.5 px-4 bg-white/5 border-[1.5px] border-[var(--line2)] rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15)]';
+
+      return (
+        <div className="mb-5 space-y-3.5">
+          {teachingStrategies.strategies.length > 0 && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { mode = 'pick'; setLocalMode('pick'); }}
+                className={`flex-1 py-2 rounded-lg text-[12.5px] font-bold cursor-pointer border ${localMode === 'pick' ? 'bg-[var(--em6)]/20 border-[var(--em6)]/40 text-[var(--em8)]' : 'border-[var(--line2)] text-[var(--text4)]'}`}
+              >من الكتالوج</button>
+              <button
+                type="button"
+                onClick={() => { mode = 'new'; setLocalMode('new'); }}
+                className={`flex-1 py-2 rounded-lg text-[12.5px] font-bold cursor-pointer border ${localMode === 'new' ? 'bg-[var(--em6)]/20 border-[var(--em6)]/40 text-[var(--em8)]' : 'border-[var(--line2)] text-[var(--text4)]'}`}
+              >+ استراتيجية جديدة</button>
+            </div>
+          )}
+
+          {localMode === 'pick' ? (
+            <div>
+              <div className="text-[12px] font-bold text-[var(--text3)] mb-2.5 flex items-center gap-2 tracking-wide uppercase">
+                <i className="ti ti-bulb text-[16px] text-[var(--em7)]"></i> اختر استراتيجية
+              </div>
+              <SelectDropdown
+                options={teachingStrategies.strategies.map(s => ({ value: s.id, label: s.name_ar }))}
+                value={localSelectedId}
+                onChange={v => { selectedId = v; setLocalSelectedId(v); }}
+                placeholder="— اختر —"
+                triggerClassName={inputCls + ' cursor-pointer'}
+              />
+            </div>
+          ) : (
+            <div>
+              <div className="text-[12px] font-bold text-[var(--text3)] mb-2.5 flex items-center gap-2 tracking-wide uppercase">
+                <i className="ti ti-bulb text-[16px] text-[var(--em7)]"></i> اسم الاستراتيجية الجديدة
+              </div>
+              <input
+                type="text"
+                autoFocus
+                className={inputCls}
+                placeholder="مثال: التعلم بالاستقصاء"
+                onChange={e => { newName = e.target.value; setLocalNewName(e.target.value); }}
+              />
+            </div>
+          )}
+        </div>
+      );
+    };
+
     setModalConfig({
       isOpen: true,
       title: 'إضافة استراتيجية',
-      subtitle: '',
+      subtitle: 'اختر ثم أضف دليلاً موثّقاً لها في الخطوة التالية',
       icon: 'ti-bulb',
-      body: (
-        <div className="mb-5">
-          <div className="text-[12px] font-bold text-[var(--text3)] mb-2.5 flex items-center gap-2 tracking-wide uppercase">
-            <i className="ti ti-bulb text-[16px] text-[var(--em7)]"></i> اسم الاستراتيجية
-          </div>
-          <input 
-            type="text" 
-            autoFocus 
-            className="w-full py-3.5 px-4 bg-white/5 border-[1.5px] border-[var(--line2)] rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15)]" 
-            placeholder="مثال: التعلم بالاستقصاء" 
-            onChange={handleInput} 
-          />
-        </div>
-      ),
-      onConfirm: () => {
-        if (inputVal.trim()) {
-          addStrat(inputVal.trim());
-          showToast('تم إضافة الاستراتيجية 💡', '💡');
+      body: <Body />,
+      onConfirm: async () => {
+        if (mode === 'pick') {
+          const s = teachingStrategies.strategies.find(x => x.id === selectedId);
+          if (!s) { showToast('يرجى اختيار استراتيجية', '⚠️'); return; }
           closeModal();
+          openAddEvModal(4, s.name_ar, s.id);
+          return;
         }
+        const name = newName.trim();
+        if (!name) { showToast('يرجى كتابة اسم الاستراتيجية', '⚠️'); return; }
+        const result = await teachingStrategies.addStrategy(name);
+        if ('error' in result) {
+          showToast(
+            result.error === 'duplicate' ? 'هذه الاستراتيجية مضافة لديك مسبقاً' : 'تعذّر إضافة الاستراتيجية، حاول مجدداً',
+            '❌'
+          );
+          return;
+        }
+        closeModal();
+        openAddEvModal(4, result.strategy.name_ar, result.strategy.id);
       }
     });
   };
@@ -922,7 +999,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={sections} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} lessonPlanSummary={sharedLessonPlanSummary} />
+          <Public state={sharedState} sections={sections} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} lessonPlanSummary={sharedLessonPlanSummary} strategyNames={sharedStrategyNames} />
         </main>
       </>
     );
@@ -959,6 +1036,7 @@ export default function App() {
             evidence={snapshot.evidence}
             resultsAnalysis={snapshot.resultsAnalysis}
             frozenResultsComparisons={snapshot.resultsComparisons}
+            strategyNames={snapshot.strategyNames}
             reportMeta={{
               periodLabel: snapshot.periodLabel,
               periodFrom: snapshot.periodFrom,
@@ -1017,10 +1095,10 @@ export default function App() {
             sections={sections}
             onAddEvClick={openAddEvModal}
             onAddSubClick={openAddSubModal}
-            onToggleStrat={toggleStrat}
             onUpdateNote={updateNote}
             onDeleteEv={handleDeleteEv}
-            onAddStratClick={openAddStratModal}
+            onAddStrategyClick={openAddStrategyModal}
+            strategyNames={strategyNames}
             onDelSub={delSub}
             announcements={announcements}
             onMarkAsRead={markAnnouncementAsRead}
@@ -1043,6 +1121,7 @@ export default function App() {
             evidence={supabaseEv.evidence}
             resultsAnalysis={ownResultsAnalysisPublic}
             lessonPlanSummary={ownLessonPlanSummary}
+            strategyNames={strategyNames}
           />
         )}
         
@@ -1082,6 +1161,7 @@ export default function App() {
         onClose={() => setEvidenceModal(prev => ({ ...prev, open: false }))}
         sectionId={evidenceModal.sectionId}
         sub={evidenceModal.sub}
+        strategyId={evidenceModal.strategyId}
         userId={user?.id}
         supabaseEv={supabaseEv}
         onAddEv={handleAddEv}

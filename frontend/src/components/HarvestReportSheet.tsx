@@ -11,7 +11,7 @@ interface HarvestReportSheetProps {
   isOpen: boolean;
   onClose: () => void;
   userId?: string;
-  state: Pick<AppState, 'profile' | 'strats' | 'yearStartMonth'>;
+  state: Pick<AppState, 'profile' | 'yearStartMonth'>;
   sections: SectionData[];
   academicDates?: AcademicDate[];
   onToast?: (msg: string, icon?: string) => void;
@@ -237,14 +237,31 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
       const totalPoints = activeMonths.reduce((sum, m) => sum + m.evidenceCount, 0);
       const pointsLevel = calculatePointsLevelFromTotal(totalPoints);
 
+      // 7) أسماء استراتيجيات التدريس (بند 4) المُشار إليها ضمن شواهد الفترة —
+      // تُخبَز هنا وقت التوليد (المولِّد هو المالك المسجَّل دخوله، RLS تسمح له
+      // بقراءة كتالوجه العام+الخاص مباشرة) لأن التقرير لقطة ثابتة بلا أي RPC
+      // حية وقت العرض لاحقاً (نفس مبدأ resultsAnalysis/pointsLevel أعلاه) —
+      // لا يمكن حلّ strategy_id إلى اسم حينها إلا بتجميده هنا مسبقاً.
+      const strategyIds = Array.from(
+        new Set(rawEvidence.map(e => e.strategy_id).filter((id): id is string => !!id))
+      );
+      const strategyNames: Record<string, string> = {};
+      if (strategyIds.length > 0) {
+        const { data: strategies } = await supabase
+          .from('teaching_strategies')
+          .select('id, name_ar')
+          .in('id', strategyIds);
+        (strategies || []).forEach((s: any) => { strategyNames[s.id] = s.name_ar; });
+      }
+
       const generatedAt = new Date().toISOString();
       const snapshot: HarvestSnapshot = {
         state: {
           ev,
-          strats: state.strats,
           csubs,
           profile: state.profile,
         },
+        strategyNames,
         continuity: {
           yearStartMonth: state.yearStartMonth ?? 9,
           activeMonths,

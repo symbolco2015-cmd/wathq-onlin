@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
 import type { EvidenceType } from '../hooks/useSupabaseEvidence';
-import type { Evidence } from '../types';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import { useSaveEvidence } from '../hooks/useSaveEvidence';
 import { AI_CONSENT_TEXT } from '../utils';
@@ -48,10 +47,14 @@ export interface EvidenceFormProps {
     type: 'pdf' | 'img' | 'doc' | 'vid',
     name: string,
     url?: string,
-    stratFields?: Pick<Evidence, 'stratDate' | 'stratStage' | 'stratGrade' | 'stratPeriod' | 'stratSubject'>,
     createdAt?: string
   ) => void;
   onToast: (msg: string, icon?: string) => void;
+  /** يُمرَّر فقط عند الإضافة لبند 4 (استراتيجيات التدريس) — معرّف الاستراتيجية
+   *  المختارة/المُنشأة حديثاً (teaching_strategies.id). وجوده يُشدّد شرط تفعيل
+   *  زر الحفظ (لا يُفعَّل قبل إرفاق ملف/رابط فعلي، بخلاف بقية الأقسام حيث
+   *  التحقق يحدث فقط عند الضغط). */
+  strategyId?: string;
   /** يُمرَّر فقط عند الإضافة من أرشيف شهر سابق — يربط الشاهد بذلك الشهر بدل
    *  تاريخ اليوم الفعلي، في جدول evidence وفي monthly_progress معاً */
   createdAt?: string;
@@ -120,7 +123,7 @@ const TYPE_CONFIG: {
  */
 export default function EvidenceForm({
   isOpen, onClose, sectionId, sub, userId, supabaseEv, onAddEv, onToast, createdAt,
-  aiConsentGiven, onGiveAiConsent, prefill,
+  aiConsentGiven, onGiveAiConsent, prefill, strategyId,
 }: EvidenceFormProps) {
   // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تحديث state.ev
   // + monthly_progress عبر onAddEv (انظر useSaveEvidence.ts)
@@ -145,14 +148,6 @@ export default function EvidenceForm({
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const isLessonPlanSection = sectionId === LESSON_PLAN_SECTION_ID;
   const isDistributionIndicator = isLessonPlanSection && indicatorId === LESSON_PLAN_DISTRIBUTION_INDICATOR_ID;
-
-  // ── حقول سياقية خاصة بأدلة الاستراتيجيات فقط (sub يبدأ بـ "strat:") ─────
-  const [stratDate,    setStratDate]    = useState('');
-  const [stratStage,   setStratStage]   = useState('');
-  const [stratGrade,   setStratGrade]   = useState('');
-  const [stratPeriod,  setStratPeriod]  = useState('');
-  const [stratSubject, setStratSubject] = useState('');
-  const isStratEvidence = sub.startsWith('strat:');
 
   // ── Upload state ─────────────────────────────────────────────
   const [fileUrl,        setFileUrl]        = useState('');
@@ -199,7 +194,6 @@ export default function EvidenceForm({
     setDescription(''); setImpact(''); setContextGrade('');
     setAcademicTerm(''); setSelfReflection(''); setLinkUrl('');
     setFileUrl(prefill?.fileUrl ?? ''); setFileName(prefill?.fileName ?? ''); setUploadSuccess(!!prefill);
-    setStratDate(''); setStratStage(''); setStratGrade(''); setStratPeriod(''); setStratSubject('');
     setContextSubject(''); setFrequency(''); setWriteFromScratch(false); setSelectedTemplateId('');
     setAiSelectedFile(null); setAiConsentPromptOpen(false); setAiLoading(false);
     setAiTitleSuggestion(''); setAiIndicatorSuggestion(null); setAiDescriptionSuggestion(''); setAiSuggestionAttempted(false);
@@ -498,17 +492,7 @@ export default function EvidenceForm({
     // فارغاً دوماً (انظر useEffect أعلاه) ويُعاد اختياره يدوياً من كل مؤشرات
     // القسم، لا مقيَّداً بمؤشر البطاقة الأصلية. عدم الاشتقاق يحفظ الشاهد فعلياً
     // تحت indicator_id واحد بينما يظهر محلياً (state.ev) تحت مفتاح "sub" آخر.
-    // مستثنى لأدلة الاستراتيجيات (isStratEvidence): مفتاحها "strat:اسم" اصطناعي
-    // بالكامل من state.strats ولا يقابله أي صف في section_indicators إطلاقاً،
-    // فلا يوجد name_ar يُشتَق منه — يبقى sub الأصلي هو المصدر الوحيد هناك.
-    const effectiveSub = isStratEvidence ? sub : (indicators.find(i => i.id === indicatorId)?.name_ar ?? sub);
-    const stratFields = isStratEvidence ? {
-      stratDate:    stratDate || undefined,
-      stratStage:   stratStage ? (stratStage as 'ابتدائي' | 'متوسط' | 'ثانوي') : undefined,
-      stratGrade:   stratGrade.trim() || undefined,
-      stratPeriod:  stratPeriod ? Number(stratPeriod) : undefined,
-      stratSubject: stratSubject.trim() || undefined,
-    } : undefined;
+    const effectiveSub = indicators.find(i => i.id === indicatorId)?.name_ar ?? sub;
 
     setSaving(true);
     try {
@@ -527,7 +511,7 @@ export default function EvidenceForm({
         link_url:        writeFromScratch ? undefined : (linkUrl.trim() || undefined),
         self_reflection: selfReflection.trim() || undefined,
         frequency:       isDistributionIndicator ? (frequency || undefined) : undefined,
-        stratFields,
+        strategy_id:     strategyId,
       }, createdAt);
 
       if (result) {
@@ -548,6 +532,17 @@ export default function EvidenceForm({
   const inputCls = INPUT_CLS;
   const labelCls = 'text-[11.5px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5 flex items-center gap-1.5';
 
+  // أدلة الاستراتيجيات (strategyId موجود) تشترط إرفاق ملف/رابط فعلي قبل تفعيل
+  // زر الحفظ نفسه — لا رسالة خطأ بعد الضغط فقط، كما بقية الأقسام. نوع "ملاحظة"
+  // (بلا ملف ولا رابط) يبقى معطَّلاً دوماً لهذا التدفّق تحديداً، بما أن المتطلب
+  // الفعلي هو ملف أو رابط حصراً.
+  const hasAttachment = writeFromScratch
+    ? true
+    : currentTypeConfig.hasFile ? uploadSuccess
+    : currentTypeConfig.hasLink ? linkUrl.trim().length > 0
+    : false;
+  const saveDisabled = saving || (!!strategyId && !hasAttachment);
+
   return (
     <>
       {/* Top accent line */}
@@ -560,7 +555,7 @@ export default function EvidenceForm({
         </div>
         <div className="flex-1">
           <div className="text-[18px] font-black text-white">إضافة شاهد جديد</div>
-          <div className="text-[12px] text-[var(--text4)] mt-0.5">{sub.startsWith('strat:') ? `استراتيجية: ${sub.replace('strat:', '')}` : sub}</div>
+          <div className="text-[12px] text-[var(--text4)] mt-0.5">{strategyId ? `استراتيجية: ${sub}` : sub}</div>
           {createdAt && (
             <div className="text-[11px] text-[var(--gold)] mt-1 flex items-center gap-1 font-bold">
               <i className="ti ti-history" /> سيُسجَّل هذا الشاهد ضمن أرشيف {new Date(createdAt).toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })}
@@ -661,50 +656,6 @@ export default function EvidenceForm({
               <i className={`ti ${writeFromScratch ? 'ti-file-upload' : 'ti-pencil'}`} />
               {writeFromScratch ? 'العودة لرفع ملف' : 'اكتب خطة من الصفر'}
             </button>
-          </div>
-        )}
-
-        {/* بيانات تطبيق الاستراتيجية — تظهر فقط عند إضافة دليل لاستراتيجية */}
-        {isStratEvidence && (
-          <div className="bg-[var(--gold)]/5 border border-[var(--gold)]/15 rounded-2xl p-4 space-y-3.5">
-            <div className="text-[11.5px] font-extrabold text-[var(--gold)] tracking-wide flex items-center gap-1.5">
-              <i className="ti ti-bulb" /> بيانات تطبيق الاستراتيجية
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className={labelCls}><i className="ti ti-calendar text-[var(--em7)]" /> تاريخ التطبيق</div>
-                <input type="date" className={inputCls} value={stratDate} onChange={e => setStratDate(e.target.value)} />
-              </div>
-              <div>
-                <div className={labelCls}><i className="ti ti-school text-[var(--em7)]" /> المرحلة الدراسية</div>
-                <SelectDropdown
-                  options={[
-                    { value: 'ابتدائي', label: 'ابتدائي' },
-                    { value: 'متوسط', label: 'متوسط' },
-                    { value: 'ثانوي', label: 'ثانوي' },
-                  ]}
-                  value={stratStage}
-                  onChange={setStratStage}
-                  placeholder="— اختر —"
-                  triggerClassName={inputCls + ' cursor-pointer'}
-                  allowClear
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className={labelCls}><i className="ti ti-users text-[var(--em7)]" /> الصف</div>
-                <input type="text" className={inputCls} placeholder="مثال: الثالث متوسط" value={stratGrade} onChange={e => setStratGrade(e.target.value)} />
-              </div>
-              <div>
-                <div className={labelCls}><i className="ti ti-clock text-[var(--em7)]" /> الحصة</div>
-                <input type="number" min={1} step={1} className={inputCls} placeholder="مثال: 3" value={stratPeriod} onChange={e => setStratPeriod(e.target.value)} />
-              </div>
-            </div>
-            <div>
-              <div className={labelCls}><i className="ti ti-book text-[var(--em7)]" /> اسم المادة</div>
-              <input type="text" className={inputCls} placeholder="مثال: الرياضيات" value={stratSubject} onChange={e => setStratSubject(e.target.value)} />
-            </div>
           </div>
         )}
 
@@ -1049,7 +1000,7 @@ export default function EvidenceForm({
         </button>
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saveDisabled}
           className="flex items-center gap-2 py-2.5 px-7 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[13.5px] font-extrabold shadow-[0_6px_20px_rgba(42,122,68,.45)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(42,122,68,.6)] transition-all duration-250 disabled:opacity-60 disabled:cursor-not-allowed font-[var(--font)] cursor-pointer"
         >
           {saving

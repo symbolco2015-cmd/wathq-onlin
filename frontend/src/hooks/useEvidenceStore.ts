@@ -38,8 +38,6 @@ interface UseEvidenceStoreOptions {
   sections: SectionData[];
   /** custom subsections per section index */
   csubs?: Record<number, string[]>;
-  /** globally selected teaching-strategy ids, used only for the isStrat section's stat */
-  strats?: string[];
 }
 
 export function buildEvKey(sectionId: number, sub: string): EvidenceKey {
@@ -54,7 +52,7 @@ export function parseEvKey(key: EvidenceKey): { sectionId: number; sub: string }
   };
 }
 
-export function useEvidenceStore({ ev, sections, csubs = {}, strats = [] }: UseEvidenceStoreOptions) {
+export function useEvidenceStore({ ev, sections, csubs = {} }: UseEvidenceStoreOptions) {
   /** flat list — every non-empty key with its parsed metadata */
   const entries = useMemo<EvidenceEntry[]>(() =>
     Object.entries(ev)
@@ -78,27 +76,11 @@ export function useEvidenceStore({ ev, sections, csubs = {}, strats = [] }: UseE
       }
     }
 
+    // قسم الاستراتيجيات (isStrat) لا فرع خاص له هنا بعد الآن — يُحسَب بنفس
+    // مسار أي قسم عادي (subs = مؤشراته الثلاثة الحقيقية من section_indicators).
+    // الرقم الناتج غير مستخدَم بصرياً لهذا القسم أصلاً (بطاقته مستبعدة كلياً من
+    // شبكة النسب/الترتيب في Dashboard.tsx/Public.tsx)، فتبسيطه هنا بلا أثر ظاهر.
     const bySections: SectionEvidenceStat[] = sections.map(s => {
-      // قسم الاستراتيجيات (isStrat) لا يملك "أدلة" عادية بل قائمة استراتيجيات
-      // مختارة في state.strats — احسب نسبته من هذه القائمة بدل subs العادية.
-      if (s.isStrat) {
-        const totalSubs = s.strats?.length ?? 0;
-        const filled = s.strats
-          ? strats.filter(id => s.strats!.includes(id)).length
-          : 0;
-        const completionPct = totalSubs > 0
-          ? Math.round((filled / totalSubs) * 100)
-          : 0;
-        return {
-          sectionId: s.id,
-          sectionTitle: s.ttl,
-          total: filled,
-          filledSubs: filled,
-          totalSubs,
-          completionPct,
-        };
-      }
-
       const allSubs = [...s.subs, ...(csubs[s.id] ?? [])];
       let secTotal = 0;
       let filled = 0;
@@ -123,7 +105,7 @@ export function useEvidenceStore({ ev, sections, csubs = {}, strats = [] }: UseE
     const filledSectionCount = bySections.filter(s => s.total > 0).length;
 
     return { total, byType, bySections, filledSectionCount };
-  }, [ev, entries, sections, csubs, strats]);
+  }, [ev, entries, sections, csubs]);
 
   /** get evidence list for a specific section + sub */
   function getEvidence(sectionId: number, sub: string): Evidence[] {

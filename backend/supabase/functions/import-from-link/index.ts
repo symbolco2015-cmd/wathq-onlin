@@ -69,6 +69,24 @@ const MIME_TO_EXT: Record<string, string> = {
   'image/webp': 'webp',
 };
 
+const EXT_TO_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+};
+
+// أنواع عامة يرجعها Drive أحياناً لملف صالح — يُستنتج النوع من امتداد اسم الملف بدلها
+const GENERIC_MIMES = new Set(['', 'application/octet-stream', 'binary/octet-stream', 'application/force-download']);
+
 const OLE2_SIGNATURE = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 const ZIP_SIGNATURE = [0x50, 0x4B, 0x03, 0x04];
 
@@ -260,6 +278,23 @@ function extractFileName(contentDisposition: string | null, ext: string): string
   return name || `imported.${ext}`;
 }
 
+function extensionFromContentDisposition(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null;
+  let name = '';
+  const star = contentDisposition.match(/filename\*\s*=\s*utf-8''([^;]+)/i);
+  if (star) {
+    try {
+      name = decodeURIComponent(star[1].trim());
+    } catch { /* يُجرَّب filename العادي */ }
+  }
+  if (!name) {
+    const plain = contentDisposition.match(/filename\s*=\s*"?([^";]+)"?/i);
+    if (plain) name = plain[1].trim();
+  }
+  const dot = name.lastIndexOf('.');
+  return dot === -1 ? null : name.slice(dot + 1).trim().toLowerCase();
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -317,6 +352,11 @@ Deno.serve(async (req: Request) => {
         throw new ImportError('not_public', 'الملف غير مشارَك علناً. اضبط المشاركة على "أي شخص لديه الرابط" ثم أعد المحاولة.');
       }
 
+      if (GENERIC_MIMES.has(mime)) {
+        const inferredExt = extensionFromContentDisposition(res.headers.get('content-disposition'));
+        if (inferredExt && Object.hasOwn(EXT_TO_MIME, inferredExt)) mime = EXT_TO_MIME[inferredExt];
+      }
+
       const declaredLength = Number(res.headers.get('content-length'));
       if (Number.isFinite(declaredLength) && declaredLength > MAX_BYTES) {
         await res.body?.cancel().catch(() => {});
@@ -325,6 +365,7 @@ Deno.serve(async (req: Request) => {
 
       const allowedExt = extensionForMime(mime);
       if (!allowedExt) {
+        console.error('[import-from-link] unsupported mime:', mime.slice(0, 100));
         await res.body?.cancel().catch(() => {});
         throw new ImportError('unsupported_type', 'نوع الملف غير مدعوم (PDF أو Office أو صورة فقط).');
       }

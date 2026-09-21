@@ -39,7 +39,7 @@ const INPUT_HOSTS = new Set([
 // مضيفات تنزيل المحتوى الفعلي التي تحوّل إليها Google/Microsoft بعد رابط المشاركة
 // (بدونها لا ينجح أي تنزيل). تُقبل كوجهة تحويلة فقط، لا كمدخل. لإرجاع الفحص
 // الصارم على القائمة الأربعية وحدها: أفرغ المجموعتين أدناه.
-const REDIRECT_EXTRA_HOSTS = new Set(['drive.usercontent.google.com']);
+const REDIRECT_EXTRA_HOSTS = new Set(['drive.usercontent.google.com', 'api.onedrive.com']);
 const REDIRECT_EXTRA_SUFFIXES = [
   '.googleusercontent.com',
   '.files.1drv.com',
@@ -186,11 +186,11 @@ function toDirectUrl(u: URL): URL {
     return out;
   }
 
-  // 1drv.ms / onedrive.live.com
-  const out = new URL(u.toString());
-  out.hash = '';
-  out.searchParams.set('download', '1');
-  return out;
+  // 1drv.ms / onedrive.live.com — عبر واجهة OneDrive Shares API
+  const shareUrl = new URL(u.toString());
+  shareUrl.hash = '';
+  const b64 = btoa(shareUrl.toString()).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return new URL('https://api.onedrive.com/v1.0/shares/u!' + b64 + '/root/content');
 }
 
 async function fetchFollowingRedirects(start: URL, signal: AbortSignal): Promise<Response> {
@@ -216,7 +216,6 @@ async function fetchFollowingRedirects(start: URL, signal: AbortSignal): Promise
         throw new ImportError('fetch_failed', 'تعذّر جلب الملف من الرابط.');
       }
       assertSafeUrl(next, true);
-      if (next.hostname === 'onedrive.live.com') next.searchParams.set('download', '1');
       current = next;
       continue;
     }
@@ -348,6 +347,7 @@ Deno.serve(async (req: Request) => {
       res = await fetchFollowingRedirects(directUrl, controller.signal);
 
       if (res.status === 401 || res.status === 403 || res.status === 404) {
+        console.error('[import-from-link] http status:', res.status, 'host:', new URL(res.url || directUrl.toString()).hostname);
         await res.body?.cancel().catch(() => {});
         throw new ImportError('not_public', 'تعذّر الوصول للملف: غير مشارَك علناً أو غير موجود.');
       }

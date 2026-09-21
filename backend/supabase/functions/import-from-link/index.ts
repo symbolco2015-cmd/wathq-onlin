@@ -260,6 +260,15 @@ function extensionForMime(mime: string): string | null {
   return Object.hasOwn(MIME_TO_EXT, mime) ? MIME_TO_EXT[mime] : null;
 }
 
+function fixLatin1Utf8(s: string): string {
+  if (!/[\x80-\xff]/.test(s) || /[^\x00-\xff]/.test(s)) return s;
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(s, c => c.charCodeAt(0)));
+  } catch {
+    return s;
+  }
+}
+
 function extractFileName(contentDisposition: string | null, ext: string): string {
   let name = '';
   if (contentDisposition) {
@@ -271,7 +280,7 @@ function extractFileName(contentDisposition: string | null, ext: string): string
     }
     if (!name) {
       const plain = contentDisposition.match(/filename\s*=\s*"?([^";]+)"?/i);
-      if (plain) name = plain[1].trim();
+      if (plain) name = fixLatin1Utf8(plain[1].trim());
     }
   }
   name = name.replace(/[\\/:*?"\x3C\x3E|\x00-\x1f]/g, '').trim().slice(0, 120);

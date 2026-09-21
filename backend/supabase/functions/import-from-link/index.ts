@@ -283,6 +283,7 @@ function extractFileName(contentDisposition: string | null, ext: string): string
       if (plain) name = fixLatin1Utf8(plain[1].trim());
     }
   }
+  name = name.replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '');
   name = name.replace(/[\\/:*?"\x3C\x3E|\x00-\x1f]/g, '').trim().slice(0, 120);
   return name || `imported.${ext}`;
 }

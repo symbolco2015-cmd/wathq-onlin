@@ -1,7 +1,7 @@
 // Supabase Edge Function: import-from-link
 //
-// تستورد ملفاً من رابط مشاركة عام (Google Drive / Google Docs / OneDrive) إلى
-// bucket evidence في مجلد المستخدم، وترجع الرابط العلني فقط. لا تكتب في جدول
+// تستورد ملفاً من رابط مشاركة عام (Google Drive / Google Docs فقط؛ OneDrive غير
+// مدعوم) إلى bucket evidence في مجلد المستخدم، وترجع الرابط العلني فقط. لا تكتب في جدول
 // evidence — إنشاء الشاهد يبقى مسؤولية الواجهة عبر saveEvidence.
 //
 // المدخل: { url: string }
@@ -28,30 +28,20 @@ const MAX_URL_LEN = 2048;
 const PLATFORM_DAILY_LIMIT = 300;
 const USER_DAILY_LIMIT = 20;
 
-// المضيفات المسموحة لرابط المدخل نفسه — بالضبط القائمة المطلوبة.
+// المضيفات المسموحة لرابط المدخل نفسه (Google فقط — OneDrive غير مدعوم).
 const INPUT_HOSTS = new Set([
   'drive.google.com',
   'docs.google.com',
-  '1drv.ms',
-  'onedrive.live.com',
 ]);
 
-// مضيفات تنزيل المحتوى الفعلي التي تحوّل إليها Google/Microsoft بعد رابط المشاركة
+// مضيفات تنزيل المحتوى الفعلي التي تحوّل إليها Google بعد رابط المشاركة
 // (بدونها لا ينجح أي تنزيل). تُقبل كوجهة تحويلة فقط، لا كمدخل. لإرجاع الفحص
-// الصارم على القائمة الأربعية وحدها: أفرغ المجموعتين أدناه.
-const REDIRECT_EXTRA_HOSTS = new Set(['drive.usercontent.google.com', 'api.onedrive.com']);
-const REDIRECT_EXTRA_SUFFIXES = [
-  '.googleusercontent.com',
-  '.files.1drv.com',
-  '.microsoftpersonalcontent.com',
-];
+// الصارم على INPUT_HOSTS وحدها: أفرغ المجموعتين أدناه.
+const REDIRECT_EXTRA_HOSTS = new Set(['drive.usercontent.google.com']);
+const REDIRECT_EXTRA_SUFFIXES = ['.googleusercontent.com'];
 
 // تحويلة إلى صفحة تسجيل دخول = الملف غير مشارَك علناً، لا "مضيف محظور" عادي.
-const LOGIN_HOSTS = new Set([
-  'accounts.google.com',
-  'login.live.com',
-  'login.microsoftonline.com',
-]);
+const LOGIN_HOSTS = new Set(['accounts.google.com']);
 
 const ID_RE = /^[A-Za-z0-9_-]{10,100}$/;
 
@@ -140,7 +130,7 @@ function assertSafeUrl(u: URL, isRedirect: boolean): void {
       isRedirect ? 'blocked_redirect' : 'unsupported_host',
       isRedirect
         ? 'حوّل الرابط إلى جهة غير مسموحة.'
-        : 'المضيف غير مدعوم. المسموح: Google Drive، Google Docs، OneDrive.',
+        : 'المضيف غير مدعوم. المسموح: Google Drive و Google Docs. لملفات OneDrive نزّل الملف وارفعه مباشرة.',
     );
   }
 }
@@ -186,11 +176,7 @@ function toDirectUrl(u: URL): URL {
     return out;
   }
 
-  // 1drv.ms / onedrive.live.com — عبر واجهة OneDrive Shares API
-  const shareUrl = new URL(u.toString());
-  shareUrl.hash = '';
-  const b64 = btoa(shareUrl.toString()).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
-  return new URL('https://api.onedrive.com/v1.0/shares/u!' + b64 + '/root/content');
+  throw new ImportError('unsupported_host', 'المضيف غير مدعوم.');
 }
 
 async function fetchFollowingRedirects(start: URL, signal: AbortSignal): Promise<Response> {

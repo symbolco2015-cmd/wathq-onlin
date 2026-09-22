@@ -886,6 +886,11 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   const previewExt = previewFile ? extensionFromUrl(previewFile.url) : '';
   const previewIsPdf = previewExt === 'pdf';
   const previewIsOfficeDoc = OFFICE_EXTENSIONS.includes(previewExt);
+  // حارس أخير: إن لم يتطابق أي فرع معروف (نادر — مثلاً شاهد نوعه 'pdf' لكن
+  // بامتداد غير pdf وغير Office)، تُعرض بطاقة فشل عامة بدل نافذة فارغة.
+  const previewMatchedKnownBranch = previewFile
+    ? previewFile.type === 'img' || previewIsPdf || previewFile.type === 'vid' || previewIsOfficeDoc
+    : true;
 
   return (
     <div>
@@ -1575,6 +1580,10 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                     تحميل مستند الشاهد
                   </a>
                 </div>
+              )}
+
+              {!previewMatchedKnownBranch && (
+                <PdfPreviewFallback url={previewFile.url} name={previewFile.name} />
               )}
             </div>
 

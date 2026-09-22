@@ -33,7 +33,7 @@ export function PdfPreviewFallback({ url, name }: { url: string; name: string })
       </div>
       <h4 className="text-[17px] font-black text-white mb-2.5">تعذّرت معاينة هذا الملف</h4>
       <p className="text-[13px] text-[var(--text4)] leading-relaxed mb-6">
-        بما أن هذا الملف مستند ميكروسوفت (Word/Excel)، فيرجى الضغط على زر تحميل أدناه لاستعراض كامل محتوياته على جهازك بكل يسر وسهولة.
+        يمكنك تحميل الملف مباشرة لاستعراض محتواه على جهازك.
       </p>
       <a
         href={url}

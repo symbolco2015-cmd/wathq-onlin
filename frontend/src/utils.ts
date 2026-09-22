@@ -149,6 +149,12 @@ export function supabaseEvidenceTypeToLocal(t: EvidenceType): 'pdf' | 'img' | 'd
   return 'doc';
 }
 
+/** الامتداد الفعلي (بحروف صغيرة) من مسار رابط ملف — يميّز PDF عن مستندات
+ * Office، خلافاً لـsupabaseEvidenceTypeToLocal التي تحوّل كليهما إلى 'pdf'. */
+export function extensionFromUrl(url: string): string {
+  try { return new URL(url).pathname.split('.').pop()?.toLowerCase() ?? ''; } catch { return ''; }
+}
+
 // calculateEvaluation() حُذفت (14 سبتمبر 2026) — كانت تحسب شارة "معلم متميز/موثّق
 // رسمياً/قيد الإنجاز" من state.ev القديم (نظام تخزين مهجور)، بالتوازي مع
 // overallPct الجديد من get_portfolio_completion (evidence.indicator_id) — نفس

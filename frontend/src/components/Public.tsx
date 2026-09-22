@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData } from '../types';
-import { calculatePointsLevel, getCompletionColor, getCompletionLabel, supabaseEvidenceTypeToLocal } from '../utils';
+import { calculatePointsLevel, getCompletionColor, getCompletionLabel, supabaseEvidenceTypeToLocal, extensionFromUrl } from '../utils';
 import { LESSON_PLAN_SECTION_ID } from '../data';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import EvidenceList from './EvidenceList';
+import PdfPreview, { PdfPreviewFallback } from './PdfPreview';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
 import { groupPublicAnalysesBySubject, buildPublicComparisonSeries, comparisonDelta } from './ResultsAnalysis/logic';
@@ -95,6 +96,11 @@ function getDomain(url: string): string {
     return url;
   }
 }
+
+/** امتدادات مستندات Office — تميّزها عن PDF ضمن شواهد النوع 'file' (كلاهما
+ * يُحوَّل إلى نفس Evidence['type'] المجمَّد 'pdf' عبر supabaseEvidenceTypeToLocal،
+ * فالتمييز الفعلي يحتاج فحص الامتداد الحقيقي في الرابط عبر extensionFromUrl). */
+const OFFICE_EXTENSIONS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
 
 const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   pdf: {icon: 'ti-file-type-pdf', cls: 'bg-gradient-to-br from-[#b91c1c]/20 to-[#b91c1c]/10 text-[#f87171] border border-[#b91c1c]/20', label: 'PDF'},
@@ -444,6 +450,9 @@ function EvidenceThumb({ e, onClick }: { e: ThumbEvidence; onClick?: (e: ThumbEv
 function StrategyLightbox({ item, onClose }: { item: { name: string; url: string; type: Evidence['type'] } | null; onClose: () => void }) {
   if (!item) return null;
   const ytId = item.type !== 'img' ? extractYouTubeId(item.url) : null;
+  const ext = extensionFromUrl(item.url);
+  const isPdf = ext === 'pdf';
+  const isOfficeDoc = OFFICE_EXTENSIONS.includes(ext);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -476,13 +485,34 @@ function StrategyLightbox({ item, onClose }: { item: { name: string; url: string
             </div>
           )}
 
-          {item.type === 'pdf' && !ytId && (
-            <div className="w-full h-[65vh] flex flex-col gap-3">
-              <iframe src={`${item.url}#toolbar=0`} className="w-full flex-1 border-none rounded-2xl bg-white" title={item.name} />
-              <a href={item.url} target="_blank" rel="noreferrer" className="self-center text-[12px] font-bold text-[var(--gold)] hover:underline flex items-center gap-1.5">
-                <i className="ti ti-external-link"></i> فتح الملف في تبويب جديد
+          {item.type === 'pdf' && !ytId && isPdf && (
+            <PdfPreview url={item.url} name={item.name} className="w-full h-[65vh]" />
+          )}
+
+          {item.type === 'pdf' && !ytId && !isPdf && isOfficeDoc && (
+            <div className="text-center p-8 max-w-md bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md shadow-2xl">
+              <div className="w-16 h-16 rounded-2xl bg-[#c4b5fd]/15 text-[#c4b5fd] flex items-center justify-center text-[34px] mx-auto mb-5 border border-[#c4b5fd]/20 animate-pulse">
+                <i className="ti ti-file-text"></i>
+              </div>
+              <h4 className="text-[17px] font-black text-white mb-2.5">معاينة هذا المستند غير متوفرة مباشرة</h4>
+              <p className="text-[13px] text-[var(--text4)] leading-relaxed mb-6">
+                بما أن هذا الملف مستند ميكروسوفت (Word/Excel)، فيرجى الضغط على زر تحميل أدناه لاستعراض كامل محتوياته على جهازك بكل يسر وسهولة.
+              </p>
+              <a
+                href={item.url}
+                download={item.name}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 py-3.5 px-7 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[14px] font-black transition-all duration-300 hover:-translate-y-[3px] hover:shadow-[0_6px_20px_rgba(42,122,68,.5)] no-underline cursor-pointer border-none"
+              >
+                <i className="ti ti-download text-[18px]"></i>
+                تحميل مستند الشاهد
               </a>
             </div>
+          )}
+
+          {item.type === 'pdf' && !ytId && !isPdf && !isOfficeDoc && (
+            <PdfPreviewFallback url={item.url} name={item.name} />
           )}
 
           {item.type === 'vid' && !ytId && (
@@ -849,6 +879,13 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // LESSON_PLAN_SECTION_ID (id:6) وحده. رسالة "لا توجد أدلة موثقة" أدناه
   // تظهر فقط إذا كان كلا المصدرين فارغين معاً لأي قسم.
   const showEmptyMessage = !selectedSecData || !sectionHasEvidence(selectedSecData);
+
+  // previewFile.type مجمَّد وقت الحفظ (state.ev القديم) وقد يكون خاطئاً لملف
+  // Office قديم مصنَّف 'pdf' — الفرع الفعلي يُختار من الامتداد الحقيقي في
+  // previewFile.url بدل previewFile.type، الذي يبقى فقط لاختيار أيقونة EVT_CONFIG.
+  const previewExt = previewFile ? extensionFromUrl(previewFile.url) : '';
+  const previewIsPdf = previewExt === 'pdf';
+  const previewIsOfficeDoc = OFFICE_EXTENSIONS.includes(previewExt);
 
   return (
     <div>
@@ -1504,14 +1541,8 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                 </div>
               )}
 
-              {previewFile.type === 'pdf' && (
-                <div className="w-full h-[68vh] rounded-2xl overflow-hidden bg-[var(--surf2)] shadow-inner">
-                  <iframe
-                    src={`${previewFile.url}#toolbar=0`}
-                    className="w-full h-full border-none rounded-2xl"
-                    title={previewFile.name}
-                  />
-                </div>
+              {previewIsPdf && (
+                <PdfPreview url={previewFile.url} name={previewFile.name} className="w-full h-[68vh]" />
               )}
 
               {previewFile.type === 'vid' && (
@@ -1524,7 +1555,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                 </div>
               )}
 
-              {previewFile.type === 'doc' && (
+              {(previewFile.type === 'doc' || previewIsOfficeDoc) && (
                 <div className="text-center p-8 max-w-md bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md shadow-2xl">
                   <div className="w-16 h-16 rounded-2xl bg-[#c4b5fd]/15 text-[#c4b5fd] flex items-center justify-center text-[34px] mx-auto mb-5 border border-[#c4b5fd]/20 animate-pulse">
                     <i className="ti ti-file-text"></i>

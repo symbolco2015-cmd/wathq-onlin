@@ -155,6 +155,12 @@ export default function EvidenceForm({
   const [uploading,      setUploading]      = useState(false);
   const [uploadSuccess,  setUploadSuccess]  = useState(false);
 
+  // ── استيراد من رابط (Beta) — تبويب "ملف" فقط، بديل لاختيار ملف من الجهاز ──
+  const [linkImportFeatureEnabled, setLinkImportFeatureEnabled] = useState(false);
+  const [showLinkImport,           setShowLinkImport]           = useState(false);
+  const [linkImportUrl,            setLinkImportUrl]            = useState('');
+  const [linkImportLoading,        setLinkImportLoading]        = useState(false);
+
   // ── Indicators ───────────────────────────────────────────────
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   /** 'error' يغطي فشل الاستعلام والنجاح-لكن-فارغ معاً: كلاهما يجعل الحفظ
@@ -264,6 +270,20 @@ export default function EvidenceForm({
         if (cancelled) return;
         if (error) { console.warn('[EvidenceForm] تعذّر التحقق من صلاحية ميزة التوثيق الصوتي:', error.message); setVoiceFeatureEnabled(false); return; }
         setVoiceFeatureEnabled(!!data);
+      });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  // بوابة صلاحية ميزة "استيراد من رابط" (Beta) — نفس آلية image_suggestion/voice_documentation بمفتاح مستقل
+  useEffect(() => {
+    if (!isOpen || !supabase) { setLinkImportFeatureEnabled(false); return; }
+    let cancelled = false;
+    supabase
+      .rpc('is_feature_enabled', { p_feature: 'link_import' })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.warn('[EvidenceForm] تعذّر التحقق من صلاحية ميزة الاستيراد من رابط:', error.message); setLinkImportFeatureEnabled(false); return; }
+        setLinkImportFeatureEnabled(!!data);
       });
     return () => { cancelled = true; };
   }, [isOpen]);
@@ -470,6 +490,37 @@ export default function EvidenceForm({
       setFileName('');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // ── استيراد من رابط (Beta) — تبويب "ملف" فقط ────────────────────
+  const handleLinkImport = async () => {
+    if (!linkImportUrl.trim() || !supabase) return;
+    setLinkImportLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('import-from-link', {
+        body: { url: linkImportUrl.trim() },
+      });
+      if (error) throw error;
+      if (data?.error === 'daily_limit_reached') {
+        onToast(data.message, '⏳');
+        return;
+      }
+      if (data?.error) {
+        onToast(data.message, '❌');
+        return;
+      }
+
+      setFileUrl(data.file_url);
+      setFileName(data.file_name);
+      setUploadSuccess(true);
+      setShowLinkImport(false);
+      setLinkImportUrl('');
+    } catch (err) {
+      console.warn('[EvidenceForm] تعذّر الاستيراد من الرابط:', err);
+      onToast('تعذّر الاستيراد، حاول مجدداً', '❌');
+    } finally {
+      setLinkImportLoading(false);
     }
   };
 
@@ -723,6 +774,54 @@ export default function EvidenceForm({
                 </div>
               )}
             </div>
+
+            {/* استيراد من رابط (Beta) — بديل لاختيار ملف من الجهاز، تبويب "ملف" فقط */}
+            {linkImportFeatureEnabled && (
+              !showLinkImport ? (
+                <button
+                  type="button"
+                  onClick={() => setShowLinkImport(true)}
+                  className="flex items-center gap-1.5 mt-2.5 text-[11.5px] font-bold text-[var(--text4)] hover:text-white transition-colors cursor-pointer"
+                >
+                  <i className="ti ti-brand-google-drive" /> أو استيراد من Google Drive / Docs
+                </button>
+              ) : (
+                <div className="mt-3 space-y-2.5">
+                  <input
+                    type="url"
+                    className={inputCls}
+                    placeholder="الصق رابط Google Drive أو Google Docs هنا"
+                    value={linkImportUrl}
+                    onChange={e => setLinkImportUrl(e.target.value)}
+                    dir="ltr"
+                    style={{ unicodeBidi: 'isolate' }}
+                  />
+                  {linkImportLoading ? (
+                    <div className="flex items-center gap-2 text-[12px] text-[var(--text3)] font-bold">
+                      <i className="ti ti-loader animate-spin text-[var(--em8)]" /> جارٍ الاستيراد...
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleLinkImport}
+                        disabled={!linkImportUrl.trim()}
+                        className="py-1.5 px-3.5 rounded-lg bg-[var(--em6)] text-white text-[11.5px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        استيراد
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowLinkImport(false); setLinkImportUrl(''); }}
+                        className="text-[11.5px] font-bold text-[var(--text4)] hover:text-white transition-colors cursor-pointer"
+                      >
+                        رجوع للرفع المباشر
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            )}
           </div>
         )}
 

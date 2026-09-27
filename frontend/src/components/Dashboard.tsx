@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { AppState, SectionData, Announcement, AcademicDate } from '../types';
+import type { AppState, SectionData, SectionIndicator, Announcement, AcademicDate } from '../types';
+import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import Sidebar from './Sidebar';
 import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT } from '../utils';
-import { useEvidenceStore } from '../hooks/useEvidenceStore';
+import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import { supabase } from '../supabaseClient';
@@ -48,7 +48,7 @@ interface DashboardProps {
   onAddEvClick: (sid: number, sub: string, strategyId?: string) => void;
   onAddSubClick: (sid: number) => void;
   onUpdateNote: (k: string, v: string) => void;
-  onDeleteEv: (sid: number, sub: string, idx: number) => void;
+  onDeleteEv: (evidenceId: string) => void;
   /** يفتح تدفّق "إضافة استراتيجية" (اختيار من الكتالوج أو إنشاء جديدة، ثم
    *  فتح نموذج الدليل الإجباري) — انظر openAddStrategyModal في App.tsx. */
   onAddStrategyClick: () => void;
@@ -81,6 +81,27 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   doc: {icon: 'ti-file-text', cls: 'bg-[linear-gradient(135deg,rgba(109,40,217,.2),rgba(109,40,217,.1))] text-[#c4b5fd] border border-[#6d28d9]/20', label: 'مستند'},
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
+
+// شكل العرض الذي كانت تستخدمه صفوف المؤشرات مع ev القديم في portfolios.state، مشتقّاً الآن
+// من صف evidence الحقيقي — نفس الـ JSX يبقى بلا تغيير في التصميم.
+function toEvRow(e: SupabaseEvidence) {
+  return {
+    id: e.id,
+    type: supabaseEvidenceTypeToLocal(e.evidence_type),
+    name: e.title,
+    date: new Date(e.created_at).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' }),
+    url: e.file_url ?? e.link_url ?? undefined,
+  };
+}
+
+// تحديد مؤشر خاص داخل قسم بجزء من اسمه — لتحديد المؤشر نفسه فقط؛ ربط الشواهد
+// به يتم بعدها بـ indicator_id حصراً.
+function findIndicatorByName(section: SectionData | null, nameFragment: string): SectionIndicator | undefined {
+  if (!section) return undefined;
+  const found = section.indicators.find(i => i.name_ar.includes(nameFragment));
+  if (!found) console.error(`[Dashboard] لم يُعثر على مؤشر "${nameFragment}" في القسم ${section.id}`);
+  return found;
+}
 
 interface SectionReclassifyDropdownProps {
   sections: SectionData[];
@@ -179,7 +200,7 @@ export function SectionReclassifyDropdown({
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onAddSubClick, onUpdateNote, onDeleteEv, onAddStrategyClick, strategyNames, onDelSub, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -238,7 +259,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
   // كل الأشهر التي بها شواهد فعلية في جدول evidence، عدا الشهر الحالي (معروض
   // طبيعياً بدون حاجة للأرشيف) — المصدر هو created_at الحقيقي لكل شاهد، لا
-  // الحقل النصي المحلي state.ev[].date غير القابل للفرز بثقة.
+  // حقل date النصي في ev القديم غير القابل للفرز بثقة.
   const archiveMonths = useMemo(() => {
     if (!supabaseEv || !monthlyProgress) return [];
     const seen = new Map<string, { year: number; month: number; label: string }>();
@@ -664,17 +685,39 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     }
   };
 
-  // ربط useEvidenceStore للحصول على نسب الاكتمال الحقيقية — pickableSections
-  // (لا sections الكاملة) حتى يستبعد stats.bySections/filledSectionCount بندي
-  // 5/10 مثل بقية النظام؛ قسم الاستراتيجيات يبقى مشمولاً عمداً (سلوكه الحالي
-  // غير مطلوب تغييره اليوم) — evStats.byType/total نفسه يبقى شاملاً لكل الأقسام
-  // الـ11 فعلياً لأن totalEvs (مساره الأساسي عبر supabaseEv) يحسب كل الأقسام
-  // بلا استثناء أصلاً، فهذا يطابقه بدل تعارضه.
-  const { stats: evStats, getSectionStat } = useEvidenceStore({
-    ev: state.ev,
-    sections: pickableSections,
-    csubs: state.csubs,
-  });
+  // إحصاءات الأدلة من جدول evidence مباشرة (بدل useEvidenceStore المبني على
+  // ev القديم في portfolios.state). bySections يُحسب على pickableSections (يستبعد بندي 5/10
+  // مثل بقية النظام)، والمؤشر المغطّى = مؤشر من section_indicators له دليل
+  // واحد على الأقل بنفس indicator_id. byType/total شاملان لكل الأقسام.
+  const allEvidence = supabaseEv?.evidence;
+  const evStats = useMemo(() => {
+    const list = allEvidence ?? [];
+    const byType = { pdf: 0, img: 0, doc: 0, vid: 0 };
+    const coveredIndicators = new Set<string>();
+    for (const e of list) {
+      byType[supabaseEvidenceTypeToLocal(e.evidence_type)]++;
+      if (e.indicator_id) coveredIndicators.add(e.indicator_id);
+    }
+    const bySections = pickableSections.map(s => {
+      const filledSubs = s.indicators.filter(ind => coveredIndicators.has(ind.id)).length;
+      const totalSubs = s.indicators.length;
+      return {
+        sectionId: s.id,
+        filledSubs,
+        totalSubs,
+        completionPct: totalSubs > 0 ? Math.round((filledSubs / totalSubs) * 100) : 0,
+      };
+    });
+    const sectionIdsWithEvidence = new Set(list.map(e => e.section_id));
+    return {
+      total: list.length,
+      byType,
+      bySections,
+      filledSectionCount: pickableSections.filter(s => sectionIdsWithEvidence.has(s.id)).length,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allEvidence, sections]);
+  const getSectionStat = (sectionId: number) => evStats.bySections.find(s => s.sectionId === sectionId);
 
   // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب/الترتيب/
   // التلوين — له بطاقة مخصّصة مثبّتة دائماً في آخر قائمة الأقسام (انظر أسفل).
@@ -729,17 +772,15 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // منفصل كلياً عن الاستراتيجيات أعلاه. بطاقة الاستراتيجيات تعرض فقط أدلة
   // strategy_id غير الفارغ (stratGroups)، فهذا المؤشر لا يظهر هناك إطلاقاً رغم
   // كونه جزءاً طبيعياً من subs — له بطاقة حالة مستقلة أدناه بنفس نمط أي مؤشر
-  // فرعي عادي (state.ev[sectionId|subName]).
-  // يُحدَّد بالاسم لا بالترتيب (subs[0]): القسم يحوي 3 مؤشرات من section_indicators
-  // بترتيب weight غير مضمون التطابق مع الترتيب القديم في data.ts — subs[0] كان
-  // يلتقط أحياناً مؤشراً مختلفاً تماماً ("توظيف استراتيجيات تدريس متنوعة" مثلاً)
-  // بدل هذا المؤشر تحديداً. غير موجود ⇐ إخفاء البطاقة (الشرط أدناه) لا كسر الصفحة.
-  // ⚠️ تنبيه: زر الحذف في هذه البطاقة يمرّ عبر onDeleteEv (App.tsx handleDeleteEv)،
-  // الذي يطابق السجل المقابل في جدول evidence الحقيقي بالعنوان النصي فقط
-  // (section_id + title)، لا بمعرّف مرتبط — عناوين متطابقة قد تحذف السجل
-  // الخطأ من الجدول الحقيقي، وأدلة بلا نظير حقيقي تُحذف من state.ev بصمت.
-  const indivDiffSub = stratSection?.indicators.find(i => i.name_ar.includes('الفروق الفردية'))?.name_ar;
-  const indivDiffEvs = (stratSection && indivDiffSub) ? (state.ev[`${stratSection.id}|${indivDiffSub}`] || []) : [];
+  // فرعي عادي (أدلته = evidence ذات indicator_id لهذا المؤشر).
+  // المؤشر نفسه يُحدَّد بالاسم لا بالترتيب (subs[0]): ترتيب weight في
+  // section_indicators غير مضمون. غير موجود ⇐ console.error وإخفاء البطاقة
+  // (الشرط أدناه) لا كسر الصفحة. الحذف بمعرّف الدليل (onDeleteEv(ev.id)).
+  const indivDiffIndicator = useMemo(() => findIndicatorByName(stratSection, 'الفروق الفردية'), [stratSection]);
+  const indivDiffSub = indivDiffIndicator?.name_ar;
+  const indivDiffEvs = indivDiffIndicator
+    ? (supabaseEv?.evidence ?? []).filter(e => e.indicator_id === indivDiffIndicator.id).map(toEvRow)
+    : [];
 
   // نسبة اكتمال البند بناءً على monthly_progress (عداد الشهر الحالي ÷ 3)
   const getMonthlyPct = (sectionId: number): number =>
@@ -791,8 +832,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? nonStratSections.filter(sec => {
         const q = searchQuery.toLowerCase();
         if (sec.ttl.includes(q)) return true;
-        const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
-        return allSubs.some(s => s.includes(q));
+        return sec.subs.some(s => s.includes(q));
       })
     : nonStratSections;
 
@@ -1501,14 +1541,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         {/* SECTIONS */}
         <div className="flex flex-col gap-2 sm:gap-3.5 pb-[100px] md:pb-0">
           {sortedFilteredSections.map((sec, i) => {
-            const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
-            const secTotalEvs = allSubs.reduce((acc, sub) => acc + (state.ev[`${sec.id}|${sub}`] || []).length, 0);
+            // كل أدلة القسم (section_id) بما فيها ما ليس له مؤشر
+            const secTotalEvs = supabaseEv?.getBySection(sec.id).length ?? 0;
             const isOpen = !!openSecs[sec.id];
             // completionPct: نشاط الشهر الحالي (يتحكم بالترتيب وتلوين الحدود — لا تغيير)
             const secStat = getSectionStat(sec.id);
             const completionPct = getMonthlyPct(sec.id);
             const filledSubs = secStat?.filledSubs ?? 0;
-            const totalSubs = secStat?.totalSubs ?? allSubs.length;
+            const totalSubs = secStat?.totalSubs ?? sec.indicators.length;
             // cumulativePct: نسبة الاكتمال التراكمية الحقيقية عبر كل الأدلة منذ البداية (secStat) — تُعرض كمعلومة إضافية فقط
             const cumulativePct = secStat?.completionPct ?? 0;
             // العمق الشهري = أدلة هذا الشهر ÷ عدد المؤشرات الفرعية المغطاة تراكمياً (filledSubs).
@@ -1684,15 +1724,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                     </div>
                   )}
 
-                  {allSubs.map((sub, idx) => {
-                     const isCustom = idx >= sec.subs.length;
-                     const k = `${sec.id}|${sub}`;
-                     const evs = state.ev[k] || [];
-                     const note = state.notes[k] || '';
+                  {sec.indicators.map(indicator => {
+                     const sub = indicator.name_ar;
+                     const evs = (supabaseEv?.evidence ?? []).filter(e => e.indicator_id === indicator.id).map(toEvRow);
 
-                     const isLessonPlanIndicator = sec.id === LESSON_PLAN_SECTION_ID && !isCustom;
+                     const isLessonPlanIndicator = sec.id === LESSON_PLAN_SECTION_ID;
                      const lessonPlanIndicatorId = isLessonPlanIndicator
-                       ? lessonPlanIndicators.find(ind => ind.name_ar === sub)?.id
+                       ? lessonPlanIndicators.find(ind => ind.id === indicator.id)?.id
                        : undefined;
                      const indicatorEvidence = lessonPlanIndicatorId
                        ? (supabaseEv?.evidence.filter(e => e.indicator_id === lessonPlanIndicatorId) ?? [])
@@ -1707,24 +1745,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                      const indicatorSummaryBusy = !!(lessonPlanIndicatorId && indicatorSummaryCooldown[lessonPlanIndicatorId]);
 
                      return (
-                        <div key={sub} className="py-5 px-6 border-b border-white/5 hover:bg-white/[0.015] transition-colors duration-200 last:border-b-0">
+                        <div key={indicator.id} className="py-5 px-6 border-b border-white/5 hover:bg-white/[0.015] transition-colors duration-200 last:border-b-0">
                            <div className="flex items-center justify-between mb-4">
                              <div className="flex items-center gap-3">
                                <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-gradient-to-br from-[var(--em6)] to-[var(--gold)] shadow-[0_0_8px_rgba(82,196,120,.5)]" style={{ animation: 'pulse 3s ease-in-out infinite' }}></div>
                                <div className="text-[15px] font-bold text-[var(--text2)]">{sub}</div>
                                {evs.length > 0 && <span className="text-[12px] font-extrabold text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em7),var(--gold))]">{evs.length}</span>}
-                               {isCustom && <span className="text-[11px] bg-[var(--gold)]/10 text-[var(--gold)] border border-[var(--gold)]/20 py-0.5 px-2 rounded-lg font-bold">جديد</span>}
                              </div>
                              <div className="flex gap-1.5">
-                                {isCustom && (
-                                  <button
-                                    className="inline-flex items-center gap-1 py-2 px-3 rounded-xl text-[12px] font-bold cursor-pointer border border-red-500/20 text-red-400 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500/40 transition-all duration-250"
-                                    onClick={() => onDelSub(sec.id, sub)}
-                                    title="حذف القسم الفرعي"
-                                  >
-                                    <i className="ti ti-trash text-[13px]"></i>
-                                  </button>
-                                )}
                                <button className="inline-flex items-center gap-1.5 py-2 px-4 rounded-xl text-[12.5px] font-bold cursor-pointer border-[1.5px] whitespace-nowrap border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/10 hover:bg-gradient-to-br hover:from-[var(--em4)] hover:to-[var(--em6)] hover:text-white hover:border-transparent hover:shadow-[0_6px_18px_rgba(42,122,68,.5)] hover:-translate-y-0.5 group transition-all duration-250 active:scale-95" onClick={() => onAddEvClick(sec.id, sub)}>
                                  <i className="ti ti-plus text-[15px] transition-transform duration-300 group-hover:scale-125 group-hover:rotate-[-5deg]"></i> إضافة دليل
                                </button>
@@ -1764,10 +1792,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
                            {evs.length > 0 && (
                              <div className="flex flex-col gap-2 mb-3">
-                               {evs.map((ev, ei) => {
+                               {evs.map(ev => {
                                  const t = EVT_CONFIG[ev.type] || EVT_CONFIG.doc;
                                  return (
-                                   <div key={ei} className="flex items-center gap-3.5 py-3 px-4 bg-white/5 rounded-xl border border-[var(--line)] transition-all duration-250 hover:bg-white/10 hover:border-[var(--line2)] hover:-translate-x-1 hover:shadow-[0_4px_20px_rgba(0,0,0,.3)] group" style={{ animation: 'slideR .3s var(--sp) both' }}>
+                                   <div key={ev.id} className="flex items-center gap-3.5 py-3 px-4 bg-white/5 rounded-xl border border-[var(--line)] transition-all duration-250 hover:bg-white/10 hover:border-[var(--line2)] hover:-translate-x-1 hover:shadow-[0_4px_20px_rgba(0,0,0,.3)] group" style={{ animation: 'slideR .3s var(--sp) both' }}>
                                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[20px] shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg] ${t.cls}`}>
                                        <i className={`ti ${t.icon}`}></i>
                                      </div>
@@ -1782,7 +1810,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                                           {ev.url && <span className="text-[var(--em8)] flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</span>}
                                         </div>
                                       </div>
-                                     <button className="bg-transparent border-none text-[var(--text4)] cursor-pointer p-2 rounded-lg text-[16px] shrink-0 transition-all duration-200 hover:text-red-400 hover:bg-red-400/10 hover:scale-115" onClick={() => onDeleteEv(sec.id, sub, ei)} title="حذف">
+                                     <button className="bg-transparent border-none text-[var(--text4)] cursor-pointer p-2 rounded-lg text-[16px] shrink-0 transition-all duration-200 hover:text-red-400 hover:bg-red-400/10 hover:scale-115" onClick={() => onDeleteEv(ev.id)} title="حذف">
                                        <i className="ti ti-trash"></i>
                                      </button>
                                    </div>
@@ -1797,23 +1825,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                               <span className="relative z-10">إرفاق ملف أو دليل...</span>
                            </button>
 
-                           <textarea 
-                             className="w-full p-4 mt-3 bg-white/5 border-[1.5px] border-[var(--line)] rounded-xl text-[13px] font-[var(--font)] text-white outline-none resize-none transition-all duration-250 leading-relaxed placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/30 focus:shadow-[0_0_0_4px_rgba(42,122,68,.1)]" 
-                             rows={2} 
-                             placeholder="ملاحظة أو وصف..." 
-                             value={note} 
-                             onChange={(e) => onUpdateNote(k, e.target.value)}
-                           ></textarea>
-
                         </div>
                      )
                   })}
-                  
-                  <div className="py-3.5 px-6 border-t border-[var(--line)]">
-                    <button className="flex items-center gap-2 py-2.5 px-4 rounded-xl border-[1.5px] border-dashed border-[var(--line2)] bg-transparent text-[var(--text4)] text-[13px] cursor-pointer transition-all duration-250 group hover:border-[var(--em7)]/30 hover:text-[var(--em7)] hover:bg-[var(--em7)]/5" onClick={() => onAddSubClick(sec.id)}>
-                      <i className="ti ti-folder-plus text-[18px] transition-transform duration-300 group-hover:rotate-90"></i> إضافة قسم فرعي جديد
-                    </button>
-                  </div>
 
                   {/* ── قائمة الشواهد من Supabase ── */}
                   {supabaseEv && (
@@ -1953,7 +1967,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               عادي ضمن القسم الهجين (استراتيجيات)، لكنه غير معروض إطلاقاً داخل
               بطاقة الاستراتيجيات أعلاه (تلك تعرض فقط أدلة strategy_id غير
               الفارغ). أدلة موثّقة فعلياً لهذا المؤشر عبر مسارات أخرى (تحويل
-              رسم بياني، التقاط سريع) كانت غير مرئية هنا رغم وجودها في state.ev
+              رسم بياني، التقاط سريع) كانت غير مرئية هنا رغم وجودها في ev القديم
               — بطاقة حالة بسيطة بلا عداد/شريط تقدم، قابلة للفتح لعرض الأدلة
               بنفس نمط أي مؤشر فرعي عادي مع تعديل/حذف طبيعي. */}
           {stratSection && indivDiffSub && (
@@ -1978,10 +1992,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 <div className="py-5 px-6">
                   {indivDiffEvs.length > 0 && (
                     <div className="flex flex-col gap-2 mb-3">
-                      {indivDiffEvs.map((ev, ei) => {
+                      {indivDiffEvs.map(ev => {
                         const t = EVT_CONFIG[ev.type] || EVT_CONFIG.doc;
                         return (
-                          <div key={ei} className="flex items-center gap-3.5 py-3 px-4 bg-white/5 rounded-xl border border-[var(--line)] transition-all duration-250 hover:bg-white/10 hover:border-[var(--line2)] hover:-translate-x-1 hover:shadow-[0_4px_20px_rgba(0,0,0,.3)] group" style={{ animation: 'slideR .3s var(--sp) both' }}>
+                          <div key={ev.id} className="flex items-center gap-3.5 py-3 px-4 bg-white/5 rounded-xl border border-[var(--line)] transition-all duration-250 hover:bg-white/10 hover:border-[var(--line2)] hover:-translate-x-1 hover:shadow-[0_4px_20px_rgba(0,0,0,.3)] group" style={{ animation: 'slideR .3s var(--sp) both' }}>
                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[20px] shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg] ${t.cls}`}>
                               <i className={`ti ${t.icon}`}></i>
                             </div>
@@ -1996,7 +2010,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                                 {ev.url && <span className="text-[var(--em8)] flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</span>}
                               </div>
                             </div>
-                            <button className="bg-transparent border-none text-[var(--text4)] cursor-pointer p-2 rounded-lg text-[16px] shrink-0 transition-all duration-200 hover:text-red-400 hover:bg-red-400/10 hover:scale-115" onClick={() => onDeleteEv(stratSection.id, indivDiffSub, ei)} title="حذف">
+                            <button className="bg-transparent border-none text-[var(--text4)] cursor-pointer p-2 rounded-lg text-[16px] shrink-0 transition-all duration-200 hover:text-red-400 hover:bg-red-400/10 hover:scale-115" onClick={() => onDeleteEv(ev.id)} title="حذف">
                               <i className="ti ti-trash"></i>
                             </button>
                           </div>

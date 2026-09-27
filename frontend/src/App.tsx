@@ -803,7 +803,7 @@ export default function App() {
   // openEvalModal() حُذفت (14 سبتمبر 2026) مع calculateEvaluation() — كانت تفتح
   // مودال تفصيلي (50/30/20 نقطة) لنفس الشارة المهجورة المحذوفة من utils.ts.
 
-  const handleDeleteEv = (sid: number, sub: string, idx: number) => {
+  const handleDeleteEv = (evidenceId: string) => {
     setModalConfig({
       isOpen: true,
       title: 'تأكيد الحذف',
@@ -817,22 +817,15 @@ export default function App() {
           <p className="text-[14px] text-[var(--text3)] text-center">سيتم حذف الدليل نهائياً من ملفك ولا يمكن استرجاعه.</p>
         </div>
       ),
-      onConfirm: () => {
-        // حذف من جدول evidence في Supabase إذا وُجد سجل مطابق
-        const k = `${sid}|${sub}`;
-        const evEntry = state.ev[k]?.[idx];
-        if (supabaseEv && evEntry) {
-          const match = supabaseEv.evidence.find(
-            e => e.section_id === sid && e.title === evEntry.name
-          );
-          if (match) {
-            supabaseEv.deleteEvidence(match.id).catch(err =>
-              console.error('[handleDeleteEv] Supabase evidence delete failed:', err)
-            );
-          }
+      onConfirm: async () => {
+        // الحذف بمعرّف الدليل في جدول evidence فقط — رسالة النجاح بعد نجاحه فعلياً
+        try {
+          await supabaseEv.deleteEvidence(evidenceId);
+          showToast('تم حذف الدليل 🗑️', '🗑️');
+        } catch (err) {
+          console.error('[handleDeleteEv] Supabase evidence delete failed:', err);
+          showToast('تعذّر حذف الدليل، حاول مجدداً', '⚠️');
         }
-        delEv(sid, sub, idx);
-        showToast('تم حذف الدليل 🗑️', '🗑️');
         closeModal();
       }
     });

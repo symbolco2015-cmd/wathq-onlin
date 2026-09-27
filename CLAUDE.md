@@ -1,25 +1,52 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this
+repository. **Last rewritten 14 September 2026** — the previous version
+described June 2026 architecture and was significantly stale (wrong state
+model, wrong evaluation system, wrong section count, missing half the
+features). Everything below was verified against the live repository and
+live production database on that date; re-verify anything load-bearing
+before relying on it in a future session, the same way this rewrite did.
 
 ## Project Overview
 
-**Wathq Online** is an Arabic-first professional portfolio platform for teachers in Saudi Arabia. Teachers document evidence of professional achievement across 11 evaluated teaching categories. Portfolios are shareable via URL and exportable to PDF. The UI is entirely RTL (right-to-left).
+**Wathq (وثّق)** is an Arabic-first professional portfolio platform for
+teachers in Saudi Arabia, hosted at `wathq.online`. Teachers document
+evidence of professional achievement across 8 core evaluated categories
+plus a strategies section and two results-analysis sections. Portfolios
+are shareable via URL (`?share=<user-id>`) and exportable to PDF. The UI
+is entirely RTL (right-to-left). The platform is pre-launch as of this
+writing, with the sole developer as the only active test user.
 
 ---
 
 ## Repository Layout
 
-This is a monorepo with two **independent** npm projects (separate `package.json`, separate `node_modules`, no workspaces):
-
 ```
-frontend/            # React + Vite SPA — see src/ paths below (rooted at frontend/src/)
+frontend/            # React + Vite SPA — all paths below are relative to
+                      # frontend/, e.g. src/hooks/useAppStore.ts means
+                      # frontend/src/hooks/useAppStore.ts
 backend/
-  api-server/        # Express proxy for Gemini calls (server.js)
-  supabase/          # SQL run manually in the Supabase SQL editor (migrations/, admin/)
+  api-server/        # Dead code — confirmed 14 September 2026, not just a
+                      # code-search inference. Zero references from the
+                      # frontend (no /api/* calls, no localhost:3001). AI
+                      # features run entirely through Supabase Edge
+                      # Functions now (see below). Safe to ignore when
+                      # reasoning about how AI features work; a candidate
+                      # for deletion in a future cleanup pass, not
+                      # something to build on or route new work through.
+  supabase/
+    functions/       # Edge Functions (Deno) — see "Edge Functions" below
+    migrations/       # Some schema changes are tracked here, but NOT all —
+                      # several tables/columns/cron jobs were created via
+                      # one-off SQL run directly in the Supabase SQL editor
+                      # and are NOT reflected in any migration file. Never
+                      # assume the migrations/ folder is a complete picture
+                      # of the live schema — query the live database
+                      # directly (Supabase MCP tools, or the dashboard) to
+                      # confirm anything schema-related before relying on
+                      # a migration file's account of it.
 ```
-
-All `src/...` paths referenced elsewhere in this file are relative to `frontend/`, e.g. `src/hooks/useAppStore.ts` means `frontend/src/hooks/useAppStore.ts`.
 
 ---
 
@@ -27,38 +54,55 @@ All `src/...` paths referenced elsewhere in this file are relative to `frontend/
 
 ```bash
 # Frontend (run from frontend/)
-npm run dev       # Start Vite dev server on port 3000
-npm run build     # Production build (outputs to frontend/dist/)
-npm run lint      # Type-check with tsc --noEmit (no test suite exists)
+npm run dev       # Vite dev server, port 3000
+npm run build     # Production build → frontend/dist/
+npm run lint      # tsc --noEmit (no test suite exists)
 npm run preview   # Preview the production build locally
 npm run clean     # Remove dist/
-
-# Backend (run from backend/api-server/)
-npm run server    # Start Express Gemini proxy on port 3001 (required for AI features)
 ```
 
-For development with AI features, run `npm run dev` (in `frontend/`) and `npm run server` (in `backend/api-server/`) in two separate terminals. The Vite dev server proxies `/api/*` to `localhost:3001`.
+No test framework is configured. `npm run lint` + `npm run build` are the
+only automated verification steps — always run both before considering a
+frontend change complete, and treat `npm run build` as separate from
+`npm run lint` passing (both must succeed independently, `lint` does not
+catch every build-time issue).
 
-There is no test framework configured. `npm run lint` (in `frontend/`) is the only automated code verification step.
+Edge Functions have **no local dev/build command** documented in this
+repo, and **no CI pipeline deploys them automatically** — deployment is
+manual: `supabase functions deploy <name> --project-ref <ref>` via the
+Supabase CLI. If the CLI isn't installed in the current environment,
+deployment must happen through the Supabase dashboard's function editor,
+or via the `deploy_edge_function` Supabase MCP tool if available.
+**A `git push` alone never deploys an Edge Function** — this has caused
+confusion before. If a commit only touches `backend/supabase/functions/`,
+Netlify will typically report "no changes detected in base directory" and
+skip its build entirely (expected, not a failure) — the Edge Function
+still needs its own separate deploy step.
 
 ---
 
 ## Environment Variables
 
-Each project has its own `.env.example` to copy and populate:
-
 ```
-# frontend/.env.example
-VITE_SUPABASE_URL=       # Supabase project URL
-VITE_SUPABASE_ANON_KEY=  # Supabase anon public key
-
-# backend/api-server/.env.example
-GEMINI_API_KEY=          # Google Gemini API key — server-side only (server.js)
-APP_URL=                 # App host (used for CORS in server.js and OAuth callbacks)
-SERVER_PORT=3001         # Port for the Express proxy server
+# frontend/.env.example — safe to expose, Supabase anon key is intentionally public
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
 ```
 
-`GEMINI_API_KEY` must **never** be prefixed with `VITE_` and must **not** appear in `vite.config.ts` define. It is read exclusively by `backend/api-server/server.js`. The Vite dev server proxies `/api/*` to `http://localhost:3001`. In production, route `/api/*` through a reverse proxy to the Node.js server.
+Edge Function secrets (Supabase Dashboard → Edge Functions → Secrets, not
+in any `.env` file, and **not readable back once set** — write-only):
+`GEMINI_API_KEY`, `AI_MODEL_NAME`, `BULK_IMPORT_SERVICE_KEY`,
+`PORTFOLIO_SUMMARY_SERVICE_KEY`, plus `SUPABASE_URL`,
+`SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (these three are
+auto-provided to every Edge Function by Supabase — never set manually,
+and always prefer `SUPABASE_SERVICE_ROLE_KEY` over any custom secret
+when a function needs a full-privilege database client — see "Known
+pitfalls" below for why this matters).
+
+`backend/api-server/.env.example` still exists (`GEMINI_API_KEY`,
+`SERVER_PORT`, `APP_URL`) but the server it configures is dead code (see
+Repository Layout above) — these variables are not read by anything
+currently in use.
 
 ---
 
@@ -66,114 +110,214 @@ SERVER_PORT=3001         # Port for the Express proxy server
 
 ### Tech Stack
 
-- **Frontend**: React 19 + TypeScript + Vite 6
-- **Styling**: Tailwind CSS 4 + custom CSS design tokens (no component library)
-- **Backend/DB**: Supabase (PostgreSQL + Auth + Storage + Realtime)
-- **Key libs**: `@google/genai`, `recharts`, `jspdf`, `html-to-image`, `qrcode.react`, `motion`
+- **Frontend**: React 19 + TypeScript + Vite 6, Tailwind CSS 4 (no
+  component library)
+- **Backend/DB**: Supabase (PostgreSQL + Auth + Storage + Realtime + Edge
+  Functions + `pg_cron` + `pg_net`)
+- **Deployment**: Netlify (frontend static build + `frontend/netlify/edge-functions/og-share.ts`
+  for social-preview meta tags), Supabase (database + Edge Functions,
+  deployed separately from Netlify)
+- **Key libs**: `@supabase/supabase-js`, `recharts`, `jspdf`,
+  `html-to-image`, `qrcode.react`, `@imgly/background-removal`,
+  `browser-image-compression`
 
 ### Page Routing
 
-There is no router library. `App.tsx` manages pages with a simple state variable (`page: 'dashboard' | 'public' | 'admin'`). The `?share=USER_ID` query param triggers public portfolio view mode.
+No router library. `App.tsx` manages pages with a state variable
+(`currentPage: 'dashboard' | 'public' | 'admin'`). Three query params
+switch modes: `?share=<user-id>` → public portfolio view for that user,
+`?report=<id>` → a "harvest report" view (`useHarvestReport` hook — a
+distinct feature from the share view; read `useHarvestReport.ts` before
+assuming its shape matches `usePublicProfile`), no param + logged in →
+dashboard.
 
-### State Management
+### State Management — two eras, both currently live
 
-All application state lives in two custom hooks:
+The app is mid-migration between an old JSONB-blob model and a normalized
+Supabase-table model. Both are real and in use; do not assume one has
+fully replaced the other without checking the specific field.
 
-- **`src/hooks/useAppStore.ts`** — Auth, user state, portfolio data, announcements. Returns the full `AppState` object plus mutation methods (`addEv`, `delEv`, `toggleStrat`, `addSub`, `delSub`, `updateNote`, `updateProfile`, etc.).
-- **`src/hooks/useAdminStore.ts`** — Admin operations only; accepts `isAdmin: boolean` guard. Provides user management, analytics aggregation, announcement CRUD, and CSV export.
-- **`src/hooks/usePublicProfile.ts`** — Fetches a public portfolio by user ID for the share view.
+**Legacy (`state.ev`/`state.strats`/`state.csubs`, in `useAppStore.ts`)**:
+a single `portfolios.state` JSONB column held the entire app state,
+keyed as `"${sectionId}|${subsectionName}"` for evidence. Several UI
+paths still read from this (e.g. `state.strats` for selected teaching
+strategies) — it has **not** been fully retired. Before assuming a given
+piece of data lives in the new table, check whether the specific
+component reads `state.X` or the new hook.
 
-### Database Schema
+**Current (`evidence` table + `indicator_id`, primarily via
+`useSupabaseEvidence.ts`/`useEvidenceStore.ts`/`useSaveEvidence.ts`)**:
+each documented evidence item is a row in `evidence`, with a **`NOT
+NULL`** `indicator_id` foreign key — this constraint is enforced at the
+DB level and all insertion paths (manual form, quick capture, voice
+transcription, bulk import) go through the same unified save path
+(`useSaveEvidence.ts`) specifically to guarantee this. `indicator_id`
+values come from `section_indicators`, itself sourced from the DB (see
+`useSections.ts`) rather than any hardcoded list.
 
-One `portfolios` table holds **the entire app state as a single JSONB column** (`state`). The schema:
+Other hooks: `useAdminStore.ts` (admin operations, gated by `isAdmin`),
+`useSections.ts` (merges `data.ts` metadata with live `section_indicators`
+from the DB — **`data.ts`'s hardcoded section list is metadata only, not
+the source of truth for indicators**), `useMonthlyProgress.ts` (a
+deliberately separate monthly-momentum counter, untouched by the
+`indicator_id` unification below), `useBulkImport.ts`, `useQuickCapture.ts`,
+`useVoiceRecording.ts` (**feature currently disabled**, see below),
+`usePublicProfile.ts`/`usePublicEvidence.ts`/`usePublicMonthlyProgress.ts`/
+`usePublicLessonPlanSummary.ts`/`usePublicResultsAnalysis.ts` (public
+share-view data fetchers, each via its own `get_shared_*` RPC),
+`useHarvestReport.ts` (the separate `?report=` feature).
 
-```sql
-portfolios (id UUID FK→auth.users, state JSONB, created_at, updated_at)
-admin_users (user_id UUID FK→auth.users, created_at)
-announcements (id UUID, title, content, category, attachment_url, created_by FK→auth.users, created_at)
-```
+### Database Schema — verify live, this list is a snapshot
 
-The `state` JSONB shape (defined in `src/types.ts`):
-```typescript
-{
-  ev: Record<string, Evidence[]>       // keyed by "sectionId|subsectionName"
-  strats: string[]                      // selected teaching strategy IDs
-  csubs: Record<number, string[]>       // custom subsections per section index
-  notes: Record<string, string>         // notes keyed by section
-  profile: UserProfile
-  readAnnouncements?: string[]
-}
-```
+Core tables: `portfolios` (id, legacy `state` JSONB, `share_enabled`,
+`ai_summary`, `ai_top_achievement_evidence_id`, `ai_summary_stale`,
+`ai_summary_generated_at`), `evidence` (`indicator_id` NOT NULL,
+`evidence_type` — currently `file`/`image`/`link`/`note`/`audio`/`video`),
+`sections` (`section_type`: `core`/`strategy`/`results` — replaces any
+hardcoded section-ID list in code), `section_indicators`,
+`monthly_progress`, `bulk_import_queue`, `admin_users`, `announcements`,
+`feature_flags`, `portfolio_feature_overrides`, `grade_bands` (student
+result grading tiers, unrelated to teacher portfolio scoring —
+`ResultsAnalysis/` feature only), `academic_dates`, `lesson_plan_templates`,
+`results_analysis`, `indicator_ai_summaries`, `section_ai_summaries`,
+`ai_usage_log`.
 
-The full SQL schema is in `backend/supabase/migrations/supabase_setup_complete.sql`.
+**Known orphaned/legacy objects** (confirmed zero code references as of
+this rewrite — candidates for cleanup, not for building on top of):
+`user_portfolios` table, `evidence_sections` table (RLS enabled with no
+policies — silently denies everything), `archive_20260904` schema
+(a backup snapshot, not a working table).
 
-### Dual Persistence Strategy
-
-Every state mutation saves to **both** Supabase and `localStorage`. On startup, if Supabase is unavailable or credentials are missing, the app falls back to localStorage only. `supabaseClient.ts` exports `null` when env vars are absent so all Supabase calls must null-check the client.
+Key RPCs (SECURITY DEFINER — check `get_advisors` for the current full
+list before assuming this one is exhaustive): `get_portfolio_completion`
+(the authoritative readiness percentage, reads `evidence.indicator_id`
+across `core` sections only — does **not** include `strategy` or
+`results` sections by design), `get_section_completion`,
+`get_shared_portfolio`, `get_shared_evidence`,
+`get_shared_results_analysis`, `check_and_log_ai_usage`, `is_admin`.
 
 ### Admin Access
 
-Admin status is determined by a hardcoded email list inside `useAppStore.ts` — **not** a database query. The `is_admin()` PostgreSQL function (SECURITY DEFINER) is used only for RLS policies, not for frontend gating. To grant admin access to a new user, both the `admin_users` table **and** the email list in `useAppStore.ts` must be updated.
+Two independent mechanisms, both must be kept in sync manually: a
+hardcoded `ADMIN_EMAILS` list inside `useAppStore.ts` (drives
+`isAdmin`, computed client-side, gates the `admin` page) **and** the
+`admin_users` table + `is_admin()` SECURITY DEFINER function (used for
+RLS policies server-side). Adding an admin requires updating both.
 
-### RLS Policies
+### RLS
 
-- `portfolios`: public read (required for share feature), owner/admin write/delete
-- `announcements`: public read, admin write/update/delete
-- `admin_users`: users can only read their own row (prevents privilege escalation)
+Most tables have RLS enabled. Before assuming a table is protected,
+check specifically — `evidence_sections` is a real example of a table
+with RLS *enabled* but *zero policies*, which silently denies all access
+rather than erroring loudly. Run `get_advisors` (security) periodically;
+it has caught real gaps before.
 
 ---
 
-## Key Data: Teaching Categories
+## Edge Functions
 
-Defined in `src/data.ts` as `SECS` — an array of 11 objects, each with `id`, `name` (Arabic), `icon`, `color`, and `subs` (subsection array). The section index in `SECS` is used as the key in `csubs`. The composite key `"${section.id}|${subsectionName}"` is used throughout as the evidence map key (`ev`).
+All in `backend/supabase/functions/`, all Deno, all sharing
+`_shared/ai-provider.ts` for Gemini calls (`callAIProvider`/
+`callAIProviderMultiImage`/`callAIProviderText` — the only file that
+knows Gemini's request shape; swap providers there only).
 
-### Scoring System (`src/utils.ts` → `calculateEvaluation()`)
-
-| Component | Max Points | Condition |
+| Function | Trigger | Purpose |
 |---|---|---|
-| Section completion | 50 pts | % of sections with ≥1 evidence |
-| Evidence count | 30 pts | Capped at 15 evidences |
-| Teaching strategies | 20 pts | Capped at 4 strategies |
-| **Total** | **100 pts** | |
+| `suggest-from-image` | manual, from evidence form | Suggests a section for an uploaded image |
+| `transcribe-voice` | manual, from voice capture (currently disabled) | Transcribes + classifies a voice note |
+| `process-bulk-queue` | immediate (fire-and-forget, no `await`) + daily `pg_cron` backup | Classifies queued bulk-import images |
+| `generate-portfolio-summaries` | weekly GitHub Action + manual refresh button | Generates the public-share-page AI summary + "أبرز إنجاز" |
+| `generate-indicator-summary` | manual, per-indicator button (lesson-plan indicators specifically) | Per-indicator AI summary |
+| `generate-section-summary` | manual | Per-section AI summary (superseded the indicator-level approach for the "lesson plan" section specifically — both still coexist, by design, see inline comments in `generate-indicator-summary`) |
 
-Certification levels: ≥85 → Distinguished (Gold), 50–84 → Officially Documented (Green), <50 → In Progress (Grey).
+### Known pitfall — custom secret vs. Supabase API key (learned the hard way, 13 September 2026)
+
+`process-bulk-queue` and `generate-portfolio-summaries` both accept two
+call modes: a trusted batch caller (`pg_cron` or GitHub Actions, sending
+a custom secret in a custom header — `X-Bulk-Import-Key` /
+`X-Portfolio-Summary-Key`) and an authenticated end-user call
+(`Authorization: Bearer <user JWT>`). **The custom secret is only ever
+valid for the header comparison. It is never a valid argument to
+`createClient(supabaseUrl, <key>)`.** Both functions independently had
+the same bug: the custom secret variable got reused as the Supabase
+client's API key, causing every database query inside the trusted-batch
+branch to fail with `Invalid API key` — while the function itself still
+returned HTTP 200 with an empty/zero result, because the internal error
+was caught and swallowed rather than thrown. This meant GitHub Actions
+showed a green ✓ for every run, and `cron.job_run_details` showed
+`'succeeded'` for every run, for weeks, while the feature did nothing.
+**A green checkmark on a scheduled trigger only means the HTTP request
+completed — it says nothing about whether the function's actual work
+succeeded.** When debugging a "why isn't this batch feature doing
+anything" report, always read the actual response body / `function_logs`,
+never trust the trigger's own pass/fail indicator alone. When writing a
+new batch-mode Edge Function, use `SUPABASE_SERVICE_ROLE_KEY` (always
+auto-available, never a custom secret) for the database client, and keep
+the custom secret strictly for the caller-identity comparison.
+
+### Known pitfall — `pg_cron` jobs are not in any migration file
+
+At least one `pg_cron` job (the `process-bulk-queue` daily backup) was
+created via one-off SQL in the dashboard and is invisible to any
+migration-file search. If a scheduled job's behavior seems wrong, query
+`cron.job` and `cron.job_run_details` directly rather than searching the
+repo for its definition.
 
 ---
 
 ## UI Conventions
 
-- **RTL throughout**: `index.html` sets `lang="ar" dir="rtl"`. All layout assumptions are RTL.
-- **Design tokens**: Custom CSS variables in `src/index.css` — use `--em0`–`--em9` for emerald greens, `--gold`/`--gold2`/`--gold3` for gold accents, `--surf0`–`--surf5` for surface depths. Do not hardcode color values; reference these tokens.
-- **Tailwind v4**: Uses the new `@import "tailwindcss"` syntax (not `@tailwind base/components/utilities`).
-- **Icons**: Tabler Icons via CDN (`<i class="ti ti-*">`), not npm package. Lucide React is also installed for component icons.
-- **Typography**: Tajawal (geometric) and Noto Naskh Arabic (serif) from Google Fonts.
-- **No modal/toast library**: `src/components/UI.tsx` exports custom `Modal` and `Toast` components used app-wide.
+- **RTL throughout**: `index.html` sets `lang="ar" dir="rtl"`.
+- **Design tokens**: Custom CSS variables in `src/index.css`
+  (`--em0`–`--em9` emerald greens, `--gold`/`--gold2`/`--gold3`, `--surf0`–`--surf5`).
+  Reference these, don't hardcode colors.
+- **Tailwind v4**: `@import "tailwindcss"` syntax, not the old `@tailwind` directives.
+- **Icons**: Tabler Icons via CDN (`<i class="ti ti-*">`), plus Lucide React for component icons.
+- **Typography**: Tajawal + Noto Naskh Arabic (Google Fonts).
+- **No modal/toast library**: `src/components/UI.tsx` exports the app-wide `Modal`/`Toast`.
 
 ---
 
 ## Component Responsibilities
 
-| File | Role |
+| File/Folder | Role |
 |---|---|
-| `src/App.tsx` | Top-level layout, page switching, modal state, announcements banner |
-| `src/components/Dashboard.tsx` | Portfolio editor — all section/evidence/strategy interactions |
-| `src/components/Public.tsx` | Read-only shared portfolio view, PDF export, QR code |
+| `src/App.tsx` | Top-level layout, page switching, modal state, announcements |
+| `src/components/Dashboard.tsx` | Portfolio editor |
+| `src/components/Public.tsx` | Read-only shared portfolio view, PDF export, QR code, AI summary display |
 | `src/components/Auth.tsx` | Login, register, password reset |
-| `src/components/Admin/AdminDashboard.tsx` | Admin panel — user management, analytics charts, announcements CRUD |
-| `src/components/Nav.tsx` | Navigation bar with page switcher |
-| `src/components/Sidebar.tsx` | Desktop-only progress sidebar (hidden on mobile) |
-| `src/components/Background.tsx` | Animated background gradient orbs |
+| `src/components/Onboarding.tsx` | First-run profile setup |
+| `src/components/Admin/AdminDashboard.tsx` | Admin panel |
+| `src/components/BulkImportPicker.tsx` / `BulkImportReview.tsx` | Bulk image import flow — **note**: the review screen currently only queries `status='failed'` and `status='classified'` rows; `status='pending'` rows (e.g. a stuck/failed classification) are invisible in this UI |
+| `src/components/ResultsAnalysis/` | Student results analysis — upload, parse, chart, convert to evidence (merged into the official "results" sections, not a standalone feature) |
+| `src/components/HarvestReportSheet.tsx` | The separate `?report=` feature |
+| `src/components/Sidebar.tsx` | Desktop-only progress sidebar |
+| `src/components/Nav.tsx`, `Background.tsx` | Navigation, animated background |
 
 ---
 
 ## Working with Evidence
 
-Evidence objects (`Evidence` type in `src/types.ts`) are stored by composite key. When adding evidence, the key is always `"${sectionId}|${subsectionName}"`. File uploads go to Supabase Storage; if unavailable, files are stored as base64 in localStorage (size-limited).
+Prefer the `evidence` table path (`useSaveEvidence.ts` and friends) for
+anything new — it's the one with the `indicator_id` guarantee. The
+legacy `state.ev` composite-key map (`"${sectionId}|${subsectionName}"`)
+still exists and is still read in places (check the specific component),
+but treat it as something to migrate away from, not build on.
 
-Evidence supports four types: `pdf`, `image`, `document`, `video`.
+Evidence types: `file`, `image`, `link`, `note`, `audio`, `video` (DB
+column `evidence_type` on the `evidence` table — do not confuse with the
+older, narrower `pdf`/`img`/`doc`/`vid` local type used in some legacy
+UI code, see `supabaseEvidenceTypeToLocal()` in `utils.ts` for the
+mapping between them).
+
+**Voice capture is currently disabled** (`VOICE_CAPTURE_ENABLED = false`
+in `useQuickCapture.ts`) — the UI shows an "under development" sheet
+instead. Don't assume it's live without checking that flag first.
 
 ---
 
 ## Supabase Realtime
 
-Announcements use a Supabase Realtime channel subscription in `useAppStore.ts`. When adding features that need live updates, follow the same pattern: subscribe in `useEffect`, return cleanup that calls `.unsubscribe()`.
+Announcements use a Realtime channel subscription in `useAppStore.ts`.
+Follow the same pattern for new live-update features: subscribe in
+`useEffect`, clean up with `.unsubscribe()`.

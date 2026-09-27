@@ -1,3 +1,9 @@
+@AGENTS.md
+
+> تنبيه: عند أي تعارض بين هذا الملف و`AGENTS.md` أو `docs/design/DESIGN.md`، فهما المرجع.
+> وصف `state.ev` و`csubs` و`notes` هنا يشرح نظاماً يُزال في المرحلة 0، فلا تبنِ عليه.
+> هذا الملف يُحدَّث في الخطوة 0.4.
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code when working with code in this
@@ -222,7 +228,7 @@ All in `backend/supabase/functions/`, all Deno, all sharing
 knows Gemini's request shape; swap providers there only).
 
 | Function | Trigger | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `suggest-from-image` | manual, from evidence form | Suggests a section for an uploaded image |
 | `transcribe-voice` | manual, from voice capture (currently disabled) | Transcribes + classifies a voice note |
 | `process-bulk-queue` | immediate (fire-and-forget, no `await`) + daily `pg_cron` backup | Classifies queued bulk-import images |
@@ -281,7 +287,7 @@ repo for its definition.
 ## Component Responsibilities
 
 | File/Folder | Role |
-|---|---|
+| --- | --- |
 | `src/App.tsx` | Top-level layout, page switching, modal state, announcements |
 | `src/components/Dashboard.tsx` | Portfolio editor |
 | `src/components/Public.tsx` | Read-only shared portfolio view, PDF export, QR code, AI summary display |

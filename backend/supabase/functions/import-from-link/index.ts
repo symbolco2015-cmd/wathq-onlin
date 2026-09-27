@@ -191,7 +191,7 @@ async function fetchFollowingRedirects(start: URL, signal: AbortSignal): Promise
 
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location');
-      await res.body?.cancel().catch(() => {});
+      await res.body?.cancel().catch(() => { });
       if (!location) throw new ImportError('fetch_failed', 'تعذّر جلب الملف من الرابط.');
       if (hop === MAX_REDIRECTS) throw new ImportError('too_many_redirects', 'الرابط يحوّل أكثر من اللازم.');
 
@@ -221,7 +221,7 @@ async function readBodyLimited(res: Response): Promise<Uint8Array> {
     if (done) break;
     total += value.byteLength;
     if (total > MAX_BYTES) {
-      await reader.cancel().catch(() => {});
+      await reader.cancel().catch(() => { });
       throw new ImportError('too_large', 'حجم الملف يتجاوز الحد المسموح (10 MB).');
     }
     chunks.push(value);
@@ -334,17 +334,17 @@ Deno.serve(async (req: Request) => {
 
       if (res.status === 401 || res.status === 403 || res.status === 404) {
         console.error('[import-from-link] http status:', res.status, 'host:', new URL(res.url || directUrl.toString()).hostname);
-        await res.body?.cancel().catch(() => {});
+        await res.body?.cancel().catch(() => { });
         throw new ImportError('not_public', 'تعذّر الوصول للملف: غير مشارَك علناً أو غير موجود.');
       }
       if (!res.ok) {
-        await res.body?.cancel().catch(() => {});
+        await res.body?.cancel().catch(() => { });
         throw new ImportError('fetch_failed', 'تعذّر جلب الملف من الرابط.');
       }
 
       mime = normalizeMime(res.headers.get('content-type'));
       if (mime === 'text/html' || mime === 'application/xhtml+xml') {
-        await res.body?.cancel().catch(() => {});
+        await res.body?.cancel().catch(() => { });
         throw new ImportError('not_public', 'الملف غير مشارَك علناً. اضبط المشاركة على "أي شخص لديه الرابط" ثم أعد المحاولة.');
       }
 
@@ -355,14 +355,14 @@ Deno.serve(async (req: Request) => {
 
       const declaredLength = Number(res.headers.get('content-length'));
       if (Number.isFinite(declaredLength) && declaredLength > MAX_BYTES) {
-        await res.body?.cancel().catch(() => {});
+        await res.body?.cancel().catch(() => { });
         throw new ImportError('too_large', 'حجم الملف يتجاوز الحد المسموح (10 MB).');
       }
 
       const allowedExt = extensionForMime(mime);
       if (!allowedExt) {
         console.error('[import-from-link] unsupported mime:', mime.slice(0, 100));
-        await res.body?.cancel().catch(() => {});
+        await res.body?.cancel().catch(() => { });
         throw new ImportError('unsupported_type', 'نوع الملف غير مدعوم (PDF أو Office أو صورة فقط).');
       }
       ext = allowedExt;
@@ -413,7 +413,7 @@ Deno.serve(async (req: Request) => {
     } catch { /* urlOk يبقى false */ }
     if (!urlOk) {
       console.error('[import-from-link] صيغة الرابط العلني غير متوقعة');
-      await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+      await supabase.storage.from(BUCKET).remove([path]).catch(() => { });
       return jsonResponse({ error: 'upload_failed', message: 'تعذّر حفظ الملف.' }, 500);
     }
 

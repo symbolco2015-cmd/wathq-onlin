@@ -7,3 +7,9 @@ coverage/
 .env*
 !.env.example
 claude-skills/
+
+# Supabase CLI local files
+/supabase/
+
+# Claude Code personal settings
+.claude/settings.local.json

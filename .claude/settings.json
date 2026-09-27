@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm audit *)",
+      "Bash(mkdir -p src/components/ResultsAnalysis && ls src/components/ResultsAnalysis)",
+      "Bash(git push *)",
+      "Bash(git status *)"
+    ],
+    "additionalDirectories": [
+      "D:\\wateq\\wathq-main\\frontend\\src\\components"
+    ]
+  }
+}

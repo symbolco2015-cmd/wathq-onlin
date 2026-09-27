@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData } from '../types';
+import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
 import { calculatePointsLevel, getCompletionColor, getCompletionLabel, supabaseEvidenceTypeToLocal, extensionFromUrl } from '../utils';
 import { LESSON_PLAN_SECTION_ID } from '../data';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
-import EvidenceList from './EvidenceList';
+import { findIndicatorByName, toEvRow, type EvRow } from '../indicators';
 import PdfPreview, { PdfPreviewFallback } from './PdfPreview';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
@@ -112,7 +112,7 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
 type SectionWithPct = SectionData & {
   fullName: string;
   evCount: number;
-  evs: (Evidence & { sub: string })[];
+  evs: (EvRow & { sub: string })[];
   pct: number;
 };
 
@@ -641,12 +641,12 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     });
   };
 
-  // totalEvs: عدد الأدلة الفعلي من جدول evidence (لا state.ev القديم) —
+  // totalEvs: عدد الأدلة الفعلي من جدول evidence —
   // calculateEvaluation() حُذفت 14 سبتمبر 2026، راجع utils.ts للتفاصيل.
   const totalEvs = evidence?.length ?? 0;
 
-  // تجميع شواهد جدول evidence الجديد (الغني) حسب section_id — لعرضها كقائمة
-  // إضافية في نافذة تفاصيل البند العادي (لا يمسّ قسم الاستراتيجيات إطلاقاً).
+  // تجميع شواهد جدول evidence حسب section_id — المصدر الوحيد لشواهد الصفحة
+  // (نسب البنود، نافذة البند، والبطاقات الخاصة).
   const evidenceBySection = useMemo(() => {
     const map: Record<number, SupabaseEvidence[]> = {};
     (evidence ?? []).forEach(e => {
@@ -700,7 +700,6 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   const resultsSections = sections.filter(s => s.isResultsSection);
   const improvementSection = resultsSections.find(s => s.id === 5) ?? null;
   const analysisSection = resultsSections.find(s => s.id === 10) ?? null;
-  const nonStratSections = sections.filter(s => !s.isStrat && !s.isResultsSection);
 
   // عناصر المقارنة التلقائية لبطاقة بند 10 — مادة واحدة لكل مجموعة subject
   // بها تحليلان فأكثر (نفس شرط تبويب "مقارنة" بلوحة التحكم)، بالشكل المبسَّط
@@ -724,13 +723,17 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // شواهد صفحة المشاركة).
   // يُحدَّد بالاسم لا بالترتيب (subs[0]) — نفس سبب Dashboard.tsx: ترتيب weight
   // بجدول section_indicators غير مضمون التطابق مع الترتيب القديم في data.ts.
-  // غير موجود ⇐ إخفاء البطاقة (الشرط أدناه) لا كسر الصفحة.
-  // ⚠️ تنبيه: لا حذف هنا (عرض فقط)، لكن الحذف المقابل بلوحة التحكم (Dashboard.tsx
-  // onDeleteEv) يطابق السجل في جدول evidence الحقيقي بالعنوان النصي فقط
-  // (section_id + title)، لا بمعرّف مرتبط — عناوين متطابقة قد تحذف السجل
-  // الخطأ من الجدول الحقيقي، فقد يسبب تبايناً صامتاً بين ما يظهر هنا وهناك.
-  const indivDiffSub = stratSection?.indicators.find(i => i.name_ar.includes('الفروق الفردية'))?.name_ar;
-  const indivDiffEvs = (stratSection && indivDiffSub) ? (state.ev[`${stratSection.id}|${indivDiffSub}`] || []) : [];
+  // غير موجود ⇐ console.error وإخفاء البطاقة (الشرط أدناه) لا كسر الصفحة.
+  // أدلته = evidence ذات indicator_id لهذا المؤشر حصراً.
+  const evidenceForIndicator = (indicator: SectionIndicator | undefined) =>
+    indicator ? (evidence ?? []).filter(e => e.indicator_id === indicator.id).map(toEvRow) : [];
+  const indivDiffIndicator = useMemo(() => findIndicatorByName(stratSection, 'الفروق الفردية'), [stratSection]);
+  const indivDiffSub = indivDiffIndicator?.name_ar;
+  const indivDiffEvs = evidenceForIndicator(indivDiffIndicator);
+
+  // مؤشر بند 5 "خطط علاجية وإثرائية" — بالاسم لتحديد المؤشر فقط، ثم الربط
+  // بـ indicator_id (انظر بطاقة بند 5 أدناه).
+  const remedialIndicator = useMemo(() => findIndicatorByName(improvementSection, 'خطط علاجية'), [improvementSection]);
 
   // بطاقة الاستراتيجيات — مُشتقّة من evidenceBySection[stratSection.id] (أدلة
   // جدول evidence الحقيقية ذات strategy_id غير فارغ)، مجمَّعة حسب strategy_id
@@ -756,44 +759,37 @@ export default function Public({ state, sections, isSharedView, continuity, evid
     }));
   }, [stratSection, evidenceBySection, strategyNames]);
 
-  const chartData = nonStratSections.map(sec => {
-    const allSubs = [...sec.subs, ...(state.csubs[sec.id] || [])];
-    const evs = allSubs.flatMap(s => (state.ev[`${sec.id}|${s}`] || []).map(e => ({ ...e, sub: s })));
+  // البنود الثمانية (بلا الاستراتيجيات وبندي 5/10): شواهد كل بند من
+  // evidenceBySection مجمّعة حسب المؤشر بترتيب sec.indicators، والربط
+  // بـ indicator_id حصراً. pct = المؤشرات التي لها شاهد واحد على الأقل ÷ عدد
+  // مؤشرات القسم — نفس completionPct في Dashboard.tsx (evStats) تماماً.
+  // شاهد لا يطابق أي مؤشر من مؤشرات قسمه لا يُعرض (console.error).
+  const sectionsWithPct: SectionWithPct[] = useMemo(() => {
+    return sections.filter(s => !s.isStrat && !s.isResultsSection).map(sec => {
+      const secEvidence = evidenceBySection[sec.id] ?? [];
+      const evs = sec.indicators.flatMap(ind =>
+        secEvidence.filter(e => e.indicator_id === ind.id).map(e => ({ ...toEvRow(e), sub: ind.name_ar }))
+      );
+      if (evs.length !== secEvidence.length) {
+        const known = new Set(sec.indicators.map(i => i.id));
+        const orphans = secEvidence.filter(e => !e.indicator_id || !known.has(e.indicator_id)).map(e => e.id);
+        console.error(`[Public] شواهد في القسم ${sec.id} لا تطابق أي مؤشر من مؤشراته:`, orphans);
+      }
+      const filled = sec.indicators.filter(ind => secEvidence.some(e => e.indicator_id === ind.id)).length;
+      const total = sec.indicators.length;
+      return {
+        ...sec,
+        fullName: sec.ttl,
+        evCount: evs.length,
+        evs,
+        pct: total > 0 ? Math.round((filled / total) * 100) : 0,
+      };
+    });
+  }, [sections, evidenceBySection]);
 
-    return {
-      ...sec,
-      name: sec.ttl.split(' ')[0] + (sec.ttl.split(' ')[1] ? ' ' + sec.ttl.split(' ')[1] : ''),
-      fullName: sec.ttl,
-      evCount: evs.length,
-      evs,
-    };
-  });
-
-  // المستويات الثلاثة (البند 3) تُبنى جميعها من نفس حساب pct لكل قسم — منطق
-  // التغطية نفسه المستخدم سابقاً (target/filled/maxTarget) بلا أي تغيير، فقط
-  // محسوب مرة واحدة هنا بدل تكراره في كل من شبكة البطاقات والدوائر القديمة.
-  // (قسم الاستراتيجيات isStrat مُستبعد أصلاً من nonStratSections أعلاه)
-  // ⚠️ pct الرقمي نفسه يبقى محسوباً من state.ev حصراً كما كان دائماً — لا
-  // علاقة له بـevidenceBySection إطلاقاً، هذا خارج نطاق التوحيد أدناه عمداً.
-  const sectionsWithPct: SectionWithPct[] = chartData.map(data => {
-    const target = data.subs.length + (state.csubs[data.id] || []).length;
-    const allSubs = [...data.subs, ...(state.csubs[data.id] || [])];
-    const filled = allSubs.filter(s => (state.ev[`${data.id}|${s}`] || []).length > 0).length;
-    const maxTarget = Math.max(target, filled, 1);
-    const pct = Math.min(100, Math.round((filled / maxTarget) * 100));
-    return { ...data, pct };
-  });
-
-  // دالة موحّدة: هل يملك القسم أي دليل موثّق عبر أي من المصدرين معاً (النظام
-  // القديم state.ev/evs، أو الجدول الحقيقي evidenceBySection)؟ نفس المنطق
-  // المزدوج المطبَّق سابقاً حصراً على بند "إعداد خطة التعلم" (id:6)، معمَّم
-  // الآن لكل أقسام sectionsWithPct (لا يشمل قسم الاستراتيجيات isStrat، المستبعد
-  // أصلاً من nonStratSections أعلاه — له تحقّق منفصل خاص به، انظر تعليقه أدناه
-  // عند selectedSecData.isStrat). تُستخدم فقط لتصنيف "فارغ/غير فارغ" لأغراض
-  // العرض (activeSecs/emptySecs + رسالة المودال) — لا تمسّ حساب pct الرقمي
-  // إطلاقاً.
-  const sectionHasEvidence = (sec: Pick<SectionWithPct, 'id' | 'evs'>): boolean =>
-    sec.evs.length > 0 || (evidenceBySection[sec.id]?.length ?? 0) > 0;
+  // هل يملك القسم أي دليل موثّق؟ يُستخدم لتصنيف "فارغ/غير فارغ" لأغراض
+  // العرض (activeSecs/emptySecs + رسالة المودال).
+  const sectionHasEvidence = (sec: Pick<SectionWithPct, 'evs'>): boolean => sec.evs.length > 0;
 
   // مؤشر الجاهزية الإجمالي (المستوى 1) — من get_portfolio_completion (عبر
   // get_shared_portfolio)، موحَّد مع نفس الرقم المعروض في Dashboard.tsx، بدل
@@ -801,12 +797,8 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   // لم يُحدَّث بعد) ⇐ 0% بدل انهيار الصفحة أو undefined.
   const overallPct = state.completion?.overall_pct ?? 0;
 
-  // تنازلياً بـpct، وعند التساوي (شائع بسبب سقف maxTarget أعلاه) يُرجَّح القسم
-  // الأعلى إجمالي أدلة تراكمية (evCount) — يعكس عمق التوثيق الفعلي رغم تساوي النسبة.
-  // التصنيف نشط/فارغ نفسه أصبح عبر sectionHasEvidence (مزدوج المصدر) بدل pct
-  // وحده — قسم بلا أدلة بالنظام القديم لكن بأدلة حقيقية بـevidenceBySection
-  // يُصنَّف الآن "نشط" ويظهر في الشبكة الرئيسية رغم أن شارة pct المعروضة عليه
-  // قد تبقى 0% (الرقم نفسه غير متأثر بهذا التغيير، انظر تعليق sectionsWithPct أعلاه).
+  // تنازلياً بـpct، وعند التساوي يُرجَّح القسم الأعلى إجمالي أدلة تراكمية
+  // (evCount) — يعكس عمق التوثيق الفعلي رغم تساوي النسبة.
   const activeSecs = sectionsWithPct.filter(s => sectionHasEvidence(s)).sort((a, b) => {
     const pctDiff = b.pct - a.pct;
     if (pctDiff !== 0) return pctDiff;
@@ -873,15 +865,11 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
   const selectedSecData = selectedSecId ? sectionsWithPct.find(c => c.id === selectedSecId) : null;
 
-  // اختبار وجود أدلة فعلية عبر النظامين معاً (القديم selectedSecData.evs +
-  // الغني evidenceBySection) — نفس sectionHasEvidence المستخدمة أعلاه لتصنيف
-  // activeSecs/emptySecs، معمَّمة الآن لكل الأقسام بدل اقتصارها سابقاً على
-  // LESSON_PLAN_SECTION_ID (id:6) وحده. رسالة "لا توجد أدلة موثقة" أدناه
-  // تظهر فقط إذا كان كلا المصدرين فارغين معاً لأي قسم.
+  // نفس sectionHasEvidence المستخدمة أعلاه لتصنيف activeSecs/emptySecs.
   const showEmptyMessage = !selectedSecData || !sectionHasEvidence(selectedSecData);
 
-  // previewFile.type مجمَّد وقت الحفظ (state.ev القديم) وقد يكون خاطئاً لملف
-  // Office قديم مصنَّف 'pdf' — الفرع الفعلي يُختار من الامتداد الحقيقي في
+  // previewFile.type مشتق من evidence_type ('file' ⇐ 'pdf' لملفات PDF وOffice
+  // معاً) — الفرع الفعلي يُختار من الامتداد الحقيقي في
   // previewFile.url بدل previewFile.type، الذي يبقى فقط لاختيار أيقونة EVT_CONFIG.
   const previewExt = previewFile ? extensionFromUrl(previewFile.url) : '';
   const previewIsPdf = previewExt === 'pdf';
@@ -1282,7 +1270,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
           )}
 
           {/* بطاقة بند 5 "تحسين نتائج المتعلمين" — عرض قراءة فقط لشواهد فعلية
-              موثّقة (state.ev بمفتاحي REMEDIAL_SUB/HONOR_SUB)، بلا أي تنبيهات
+              موثّقة (evidence بمعرّف مؤشر الخطط العلاجية والإثرائية)، بلا أي تنبيهات
               خام إطلاقاً (تلك أداة تخطيط داخلية للمعلم وحده، ليست محتوى عرض
               لمشرف خارجي). فارغ بشكل محايد تماماً كأي قسم فارغ آخر لو صفر شواهد.
               شريط اللون البنفسجي (--violet) يطابق بطاقتَي التحليل/التحسين في
@@ -1295,11 +1283,11 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                 <h2 className="text-[18px] font-black text-white">{improvementSection.ttl}</h2>
               </div>
               {(() => {
-                const remedialEvs = state.ev[`${improvementSection.id}|خطط علاجية وإثرائية`] || [];
-                const honorEvs = state.ev[`${improvementSection.id}|تكريم المتميزين`] || [];
+                const remedialEvs = evidenceForIndicator(remedialIndicator);
+                // كتلة "تكريم المتميزين" مخفية: لا يوجد مؤشر مقابل في
+                // section_indicators، والقرار مؤجل للمرحلة 3.
                 const groups = [
                   { label: 'خطط علاجية وإثرائية', evs: remedialEvs },
-                  { label: 'تكريم المتميزين', evs: honorEvs },
                 ].filter(g => g.evs.length > 0);
 
                 if (groups.length === 0) {
@@ -1421,7 +1409,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
             <div className="flex-1 overflow-y-auto p-6" dir="rtl">
               {/* قسم الاستراتيجيات (isStrat) مُستبعد أصلاً من sectionsWithPct
-                  (مبنية من nonStratSections فقط) — selectedSecData لا يمكن أن
+                  (تستبعد isStrat وisResultsSection) — selectedSecData لا يمكن أن
                   يطابق قسم 4 إطلاقاً، فلا فرع خاص به هنا (له بطاقته المستقلة
                   أعلى الصفحة، انظر stratGroups). */}
               <>
@@ -1464,21 +1452,6 @@ export default function Public({ state, sections, isSharedView, continuity, evid
                       <i className="ti ti-folder-open"></i>
                     </div>
                     <p className="text-[var(--text3)] text-[14px]">لا توجد أدلة موثقة في هذا القسم</p>
-                  </div>
-                )}
-                {(evidenceBySection[selectedSecData.id]?.length ?? 0) > 0 && (
-                  <div className="mt-6 pt-6 border-t border-[var(--line)]">
-                    <div className="text-[14px] font-bold text-white mb-3 flex items-center gap-2">
-                      <i className="ti ti-files text-[var(--em8)]"></i> الشواهد الموثّقة
-                    </div>
-                    <EvidenceList
-                      sectionId={selectedSecData.id}
-                      evidence={evidenceBySection[selectedSecData.id] ?? []}
-                      loading={false}
-                      onDelete={async () => {}}
-                      onAddClick={() => {}}
-                      readOnly
-                    />
                   </div>
                 )}
               </>

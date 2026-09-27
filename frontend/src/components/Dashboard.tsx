@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { AppState, SectionData, SectionIndicator, Announcement, AcademicDate } from '../types';
-import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
+import type { AppState, SectionData, Announcement, AcademicDate } from '../types';
+import { findIndicatorByName, toEvRow } from '../indicators';
 import Sidebar from './Sidebar';
 import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
@@ -81,27 +81,6 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   doc: {icon: 'ti-file-text', cls: 'bg-[linear-gradient(135deg,rgba(109,40,217,.2),rgba(109,40,217,.1))] text-[#c4b5fd] border border-[#6d28d9]/20', label: 'مستند'},
   vid: {icon: 'ti-video', cls: 'bg-[linear-gradient(135deg,rgba(180,83,9,.2),rgba(180,83,9,.1))] text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
 };
-
-// شكل العرض الذي كانت تستخدمه صفوف المؤشرات مع ev القديم في portfolios.state، مشتقّاً الآن
-// من صف evidence الحقيقي — نفس الـ JSX يبقى بلا تغيير في التصميم.
-function toEvRow(e: SupabaseEvidence) {
-  return {
-    id: e.id,
-    type: supabaseEvidenceTypeToLocal(e.evidence_type),
-    name: e.title,
-    date: new Date(e.created_at).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { year: 'numeric', month: 'short', day: 'numeric' }),
-    url: e.file_url ?? e.link_url ?? undefined,
-  };
-}
-
-// تحديد مؤشر خاص داخل قسم بجزء من اسمه — لتحديد المؤشر نفسه فقط؛ ربط الشواهد
-// به يتم بعدها بـ indicator_id حصراً.
-function findIndicatorByName(section: SectionData | null, nameFragment: string): SectionIndicator | undefined {
-  if (!section) return undefined;
-  const found = section.indicators.find(i => i.name_ar.includes(nameFragment));
-  if (!found) console.error(`[Dashboard] لم يُعثر على مؤشر "${nameFragment}" في القسم ${section.id}`);
-  return found;
-}
 
 interface SectionReclassifyDropdownProps {
   sections: SectionData[];

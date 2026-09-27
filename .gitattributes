@@ -1,0 +1,19 @@
+# توحيد نهايات الأسطر في المستودع
+* text=auto eol=lf
+
+# ملفات Windows
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ملفات ثنائية
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.zip binary

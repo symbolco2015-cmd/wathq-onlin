@@ -226,7 +226,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   });
 
   // أقسام قابلة للاختيار من أي منتقي قسم عام (BottomSheet إضافة شاهد، التقاط
-  // سريع، إعادة تصنيف شاهد غير مصنّف، أرشيف الأشهر) — تشمل قسم الاستراتيجيات
+  // سريع، أرشيف الأشهر) — تشمل قسم الاستراتيجيات
   // (له مؤشر فرعي عادي "مراعاة الفروق الفردية" يصح إضافة شاهد له من هنا)
   // لكن تستبعد بندي 5/10 (isResultsSection): لا مؤشرات فرعية عادية متبقية
   // فيهما يمكن الكتابة إليها بلا سياق — لهما مسارات إضافة شاهد مخصّصة بدلاً من ذلك.
@@ -274,13 +274,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     return map;
   }, [supabaseEv, archiveMonth]);
 
-  // شواهد "غير مصنّفة" — section_id === null (تدفّق FAB الصوتي عندما يعجز
-  // الذكاء الاصطناعي عن اختيار قسم بثقة كافية، بدل fallback عشوائي سابقاً)
-  const unclassifiedEvidence = useMemo(() => {
-    if (!supabaseEv) return [];
-    return supabaseEv.evidence.filter(e => e.section_id === null);
-  }, [supabaseEv]);
-
   // الشهر القابل للتعديل: تُعرض كل الأقسام (لإتاحة إضافة شاهد لأي قسم حتى لو
   // كان بلا شواهد بعد). الشهر المقفل (read-only): تُعرض فقط الأقسام التي بها
   // شواهد فعلية — لا فائدة من عرض بطاقات قسم فارغة لا يمكن التفاعل معها.
@@ -327,26 +320,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     setMobileSheet({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' });
   };
 
-  // إعادة تصنيف شاهد "غير مصنّف" — قائمة/حالة BottomSheet مستقلة عن اختيار
-  // القسم أعلاه (ذاك لإضافة شاهد جديد، هذا لتصنيف شاهد محفوظ مسبقاً بلا قسم)
-  const [unclassifiedSheetOpen, setUnclassifiedSheetOpen] = useState(false);
-  const [reclassifyingId, setReclassifyingId] = useState<string | null>(null);
-  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-  const handleReclassify = async (evidenceId: string, sectionIdRaw: string) => {
-    const newSectionId = Number(sectionIdRaw);
-    if (!supabaseEv || !sectionIdRaw || Number.isNaN(newSectionId)) return;
-    setReclassifyingId(evidenceId);
-    const ok = await supabaseEv.reclassifyEvidence(evidenceId, newSectionId);
-    setReclassifyingId(null);
-    if (ok) {
-      onToast?.('تم تصنيف الشاهد بنجاح ✅', '✅');
-    } else {
-      onToast?.('فشل التصنيف، حاول مرة أخرى ❌', '❌');
-    }
-  };
-
-  // الاستيراد الجماعي — مستقل تماماً عن تصنيف "غير مصنّف" أعلاه (مصدر البيانات
-  // مختلف: bulk_import_queue وليس evidence)
+  // الاستيراد الجماعي — مصدر البيانات bulk_import_queue وليس evidence
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImportReviewOpen, setIsBulkImportReviewOpen] = useState(false);
   const [bulkImportReadyCount, setBulkImportReadyCount] = useState(0);
@@ -378,7 +352,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     return () => { cancelled = true; };
   }, []);
 
-  // عدد ملفات الاستيراد الجماعي الجاهزة للمراجعة (status='classified') — يُجلب
+  // عدد ملفات الاستيراد الجماعي الجاهزة للمراجعة (status='classified' أو 'failed'
+  // — الفاشل يُصنَّف يدوياً في شاشة المراجعة نفسها، فبدونه لا يصل معلم كل صوره
+  // فاشلة إلى المراجعة أبداً) — يُجلب
   // مرة واحدة عند تحميل لوحة التحكم (بنفس توقيت باقي بيانات Dashboard)، ويُعاد
   // جلبه أيضاً بعد اكتمال أي تصنيف بالخلفية (انظر onClassificationSettled بالأسفل)
   // — لا يوجد أي polling/setInterval هنا، التحديث مرتبط بأحداث فعلية فقط
@@ -388,7 +364,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       .from('bulk_import_queue')
       .select('id', { count: 'exact', head: true })
       .eq('portfolio_id', userId)
-      .eq('status', 'classified')
+      .in('status', ['classified', 'failed'])
       .then(({ count, error }) => {
         if (error) { console.warn('[Dashboard] تعذّر التحقق من صفوف الاستيراد الجماعي الجاهزة:', error.message); return; }
         setBulkImportReadyCount(count ?? 0);
@@ -977,36 +953,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           </div>
         )}
 
-        {/* بانر: أدلة تحتاج تصنيف (section_id === null) — أعلى بطاقة "الخطوة التالية" مباشرة */}
-        {unclassifiedEvidence.length > 0 && (
-          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold-dim)] via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
-            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
-            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[22px] text-[var(--gold3)]">
-                  <i className="ti ti-folder-question" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] font-bold text-[var(--gold3)] tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
-                    <i className="ti ti-alert-circle text-[12px]" /> يحتاج تصنيف
-                  </div>
-                  <div className="text-[15px] font-extrabold text-white leading-snug">
-                    {unclassifiedEvidence.length} {unclassifiedEvidence.length === 1 ? 'شاهد بحاجة إلى تصنيف' : 'أدلة بحاجة إلى تصنيف'}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setUnclassifiedSheetOpen(true)}
-                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
-              >
-                <i className="ti ti-list-check text-[15px]" /> تصنيف الآن
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* بانر: استيراد جماعي جاهز للمراجعة (bulk_import_queue بحالة classified) —
-            مستقل تماماً عن بانر "أدلة تحتاج تصنيف" أعلاه، مصدر البيانات مختلف تماماً */}
+        {/* بانر: استيراد جماعي جاهز للمراجعة (bulk_import_queue بحالة classified أو failed) */}
         {bulkImportReadyCount > 0 && (
           <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold-dim)] via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
             <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
@@ -1035,7 +982,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         )}
 
         {/* بانر: ملخص الملف العام بالذكاء الاصطناعي — مستقل تماماً عن البانرات
-            الثلاثة أعلاه (مصدر البيانات: عمودا ai_summary_stale/ai_summary_generated_at
+            أعلاه (مصدر البيانات: عمودا ai_summary_stale/ai_summary_generated_at
             على portfolios، وليس evidence أو bulk_import_queue). يظهر دائماً طالما
             summaryStatus محمَّل — حتى لمن لم يفعّل المشاركة العامة بعد، مع
             summaryHelperText يوجّهه لتفعيلها أولاً، بدل إخفاء الميزة كلياً. */}
@@ -2315,63 +2262,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
       </BottomSheet>
 
-      {/* Bottom Sheet — إعادة تصنيف الأدلة "غير المصنّفة" (section_id === null) */}
-      <BottomSheet isOpen={unclassifiedSheetOpen} onClose={() => setUnclassifiedSheetOpen(false)}>
-        <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[18px] text-[var(--gold3)]">
-              <i className="ti ti-folder-question" />
-            </div>
-            <div className="text-[16px] font-black text-white">أدلة تحتاج تصنيف</div>
-          </div>
-          <button
-            onClick={() => setUnclassifiedSheetOpen(false)}
-            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
-          >
-            <i className="ti ti-x" />
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1 p-5 space-y-2.5">
-          {unclassifiedEvidence.length === 0 ? (
-            <p className="text-[13px] text-[var(--text4)] text-center py-6">لا توجد أدلة بحاجة تصنيف حالياً</p>
-          ) : (
-            unclassifiedEvidence.map(ev => {
-              const isImg = ev.evidence_type === 'image' && !!ev.file_url;
-              const date = new Date(ev.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' });
-              const isBusy = reclassifyingId === ev.id;
-              return (
-                <div key={ev.id} className="flex items-center gap-3 py-3 px-4 bg-white/[0.03] rounded-xl border border-[var(--line)]">
-                  <div className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-[16px] border border-[var(--gold)]/20 bg-[var(--gold)]/10 text-[var(--gold3)] overflow-hidden">
-                    {isImg ? (
-                      <img src={ev.file_url!} alt={ev.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <i className={`ti ${ev.evidence_type === 'audio' ? 'ti-microphone' : ev.evidence_type === 'video' ? 'ti-video' : ev.evidence_type === 'link' ? 'ti-link' : 'ti-file-text'}`} />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold text-white truncate leading-snug">{ev.title}</div>
-                    <div className="text-[11px] text-[var(--text4)] flex items-center gap-1 mt-0.5">
-                      <i className="ti ti-calendar text-[11px]" /> {date}
-                    </div>
-                  </div>
-                  <SectionReclassifyDropdown
-                    sections={nonStratSections}
-                    isOpen={openDropdownId === ev.id}
-                    isBusy={isBusy}
-                    onOpen={() => setOpenDropdownId(ev.id)}
-                    onClose={() => setOpenDropdownId(null)}
-                    onSelect={(sectionId) => {
-                      setOpenDropdownId(null);
-                      handleReclassify(ev.id, sectionId);
-                    }}
-                  />
-                </div>
-              );
-            })
-          )}
-        </div>
-      </BottomSheet>
-
       {/* Bottom Sheets — استيراد جماعي: اختيار الصور ثم مراجعة التصنيف */}
       <BulkImportPicker
         isOpen={isBulkImportOpen}
@@ -2382,7 +2272,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       />
       <BulkImportReview
         isOpen={isBulkImportReviewOpen}
-        onClose={() => setIsBulkImportReviewOpen(false)}
+        onClose={() => { setIsBulkImportReviewOpen(false); refetchBulkImportReadyCount(); }}
         userId={userId}
         sections={nonStratSections}
         stratSectionId={stratSection?.id}

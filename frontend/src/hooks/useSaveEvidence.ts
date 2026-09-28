@@ -9,9 +9,8 @@ export type OnEvidenceSavedFn = (sectionId: number, createdAt?: string) => Promi
 
 /** حمولة saveEvidence — indicator_id إلزامي هنا على مستوى TypeScript (خلافاً
  * لـaddEvidence الأصلي في useSupabaseEvidence، حيث يبقى اختيارياً عمداً —
- * مساران خارج هذا التوحيد، resolveFailedRows في BulkImportReview.tsx وتدفّق
- * التسجيل الصوتي المعطَّل في useQuickCapture.ts، ما زالا يحفظان شواهد بلا
- * مؤشر عبر addEvidence مباشرة). */
+ * تدفّق التسجيل الصوتي المعطَّل في useQuickCapture.ts ما زال خارج هذا التوحيد
+ * ويستدعي addEvidence مباشرة بلا مؤشر). */
 export interface SaveEvidencePayload {
   section_id: number;
   indicator_id: string;

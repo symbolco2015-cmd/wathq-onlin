@@ -97,7 +97,7 @@ export default function App() {
     yearStartMonth: state.yearStartMonth ?? 9,
   });
 
-  const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence, monthlyProgress.recordEvidence);
+  const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence);
 
   // نسبة الجاهزية العامة (تراكمية) — مصدر واحد للوحة التحكم ولمعاينة المالك
   // لصفحته العامة، يُعاد جلبها تلقائياً كلما تغيّرت الشواهد (انظر الهوك).

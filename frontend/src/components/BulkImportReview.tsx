@@ -22,11 +22,6 @@ interface ClassifiedRow {
   created_at: string;
 }
 
-interface FailedRow {
-  id: string;
-  file_path: string;
-}
-
 interface RowEdit {
   sectionId: number | null;
   title: string;
@@ -55,16 +50,18 @@ const publicUrlFor = (filePath: string): string =>
   supabase!.storage.from('evidence').getPublicUrl(filePath).data.publicUrl;
 
 /**
- * BottomSheet "مراجعة الاستيراد الجماعي": صفوف bulk_import_queue بحالة
- * 'classified' فقط — كل صف قابل للتعديل (القسم عبر SectionReclassifyDropdown
- * الموجود مسبقاً، والعنوان بحقل نص) قبل اعتماده فردياً أو دفعة واحدة عبر
- * "قبول الكل". صفوف 'failed' تُعالَج تلقائياً عند الفتح بلا أي تفاعل من
- * المستخدم (تُحفظ بلا قسم في evidence، نفس منطق فشل التصنيف الصوتي) ولا تُعرض هنا.
+ * BottomSheet "مراجعة الاستيراد الجماعي": صفوف bulk_import_queue بحالتَي
+ * 'classified' و'failed' معاً — كل صف قابل للتعديل (القسم عبر
+ * SectionReclassifyDropdown الموجود مسبقاً، والمؤشر، والعنوان بحقل نص) قبل
+ * اعتماده فردياً أو دفعة واحدة عبر "قبول الكل". الصف الفاشل (فشل تصنيفه
+ * بالذكاء الاصطناعي) يُعرض بلا قسم مقترح وبعنوان فارغ، ويختار المعلم قسمه
+ * ومؤشره يدوياً. كل الصفوف تُحفظ عبر saveEvidence بمؤشر إلزامي، ولا يُحذف صف
+ * من الطابور إلا بعد نجاح إدخاله. صف تعذّر تحميل صورته لا يمكن اعتماده، حتى
+ * لا يُحفظ شاهد برابط معطوب.
  */
 export default function BulkImportReview({ isOpen, onClose, userId, sections, stratSectionId, supabaseEv, onEvidenceSaved, onToast }: BulkImportReviewProps) {
   // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تسجيل الشاهد في
-  // monthly_progress عبر onEvidenceSaved (انظر useSaveEvidence.ts). لا يُستخدم في
-  // resolveFailedRows أدناه (استثناء مقصود، انظر تعليقها).
+  // monthly_progress عبر onEvidenceSaved (انظر useSaveEvidence.ts).
   const { saveEvidence } = useSaveEvidence(supabaseEv?.addEvidence, onEvidenceSaved);
 
   const [rows, setRows] = useState<ClassifiedRow[]>([]);
@@ -75,6 +72,9 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
   // مؤشرات section_indicators مجلوبة لكل قسم ظهر بين الصفوف — مفتاحها section_id،
   // تُملأ عند أول ظهور لكل قسم (اقتراح مبدئي أو اختيار يدوي) لتفادي تكرار الجلب
   const [indicatorsBySection, setIndicatorsBySection] = useState<Record<number, Indicator[]>>({});
+  // صفوف فشل تحميل مصغّرتها في المتصفح (onError) — الصورة غالباً غير موجودة في
+  // التخزين (مثل صف فشل بـ download_failed)، فلا يُسمح باعتمادها
+  const [brokenImageIds, setBrokenImageIds] = useState<Record<string, true>>({});
 
   // قسم 4 (isStrat) يستلزم strategy_id إجبارياً عبر تدفّق "استراتيجيات
   // التدريس" المخصّص — لا يمكن قبوله كاقتراح تصنيف تلقائي صامت هنا (لا يوجد
@@ -104,35 +104,6 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
     setIndicatorsBySection(prev => ({ ...prev, [sectionId]: data ?? [] }));
   };
 
-  const resolveFailedRows = async (failedRows: FailedRow[]) => {
-    if (!supabase || !userId || failedRows.length === 0) return;
-    // استثناء مقصود من مسار saveEvidence الموحّد: هذه الصفوف تُحفظ بلا قسم
-    // (section_id null) للتصنيف اليدوي لاحقاً من قائمة "غير مصنّف" — بلا قسم
-    // لا يوجد مؤشر ممكن أصلاً (indicator_id يتبع section_id)، فلا يمكن إلزامها
-    // بمؤشر. تبقى INSERT مباشرة كما كانت تماماً، ولا يُحدَّث monthly_progress
-    // هنا (نفس السلوك السابق) لأنها غير مصنَّفة بقسم بعد.
-    const dateLabel = new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
-    const payload = failedRows.map(r => ({
-      portfolio_id: userId,
-      section_id: null,
-      title: `شاهد من الاستيراد الجماعي - ${dateLabel}`,
-      evidence_type: 'image' as const,
-      file_url: publicUrlFor(r.file_path),
-    }));
-
-    const { error: insertErr } = await supabase.from('evidence').insert(payload);
-    if (insertErr) {
-      console.error('[BulkImportReview] تعذّر حفظ الشواهد الفاشلة بلا قسم:', insertErr.message);
-      return; // اترك صفوف الطابور كما هي لمحاولة لاحقة — لا تحذف قبل نجاح الإدخال
-    }
-
-    const { error: delErr } = await supabase.from('bulk_import_queue').delete().in('id', failedRows.map(r => r.id));
-    if (delErr) {
-      console.error('[BulkImportReview] تعذّر حذف صفوف الطابور الفاشلة بعد حفظها:', delErr.message);
-    }
-    await supabaseEv?.refetch();
-  };
-
   useEffect(() => {
     if (!isOpen || !userId || !supabase) return;
     let cancelled = false;
@@ -140,29 +111,19 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
     (async () => {
       setLoading(true);
 
-      // 1) صفوف "failed" تُعالَج فوراً وتلقائياً — بلا عرض وبلا حاجة لتفاعل المستخدم
-      const { data: failedRows } = await supabase
-        .from('bulk_import_queue')
-        .select('id, file_path')
-        .eq('portfolio_id', userId)
-        .eq('status', 'failed');
-      if (cancelled) return;
-      if (failedRows && failedRows.length > 0) {
-        await resolveFailedRows(failedRows as FailedRow[]);
-      }
-      if (cancelled) return;
-
-      // 2) الصفوف الجاهزة فعلياً للمراجعة اليدوية
+      // الصفوف المصنّفة والفاشلة معاً — الفاشل يصل بلا suggested_section_id ولا
+      // suggested_title (process-bulk-queue لا يكتبهما عند الفشل)، فيُعرض كصف
+      // بلا قسم مقترح ويُصنَّف يدوياً مثل أي صف آخر
       const { data, error } = await supabase
         .from('bulk_import_queue')
         .select('id, file_path, suggested_section_id, suggested_title, created_at')
         .eq('portfolio_id', userId)
-        .eq('status', 'classified')
+        .in('status', ['classified', 'failed'])
         .order('created_at', { ascending: true });
       if (cancelled) return;
 
       if (error) {
-        console.error('[BulkImportReview] تعذّر جلب الشواهد المصنّفة:', error.message);
+        console.error('[BulkImportReview] تعذّر جلب صفوف المراجعة:', error.message);
         setRows([]);
         setLoading(false);
         return;
@@ -203,7 +164,8 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
       const succeededIds: string[] = [];
       for (const row of targetRows) {
         const edit = getEdit(row);
-        if (edit.sectionId == null || !edit.indicatorId) continue; // احتياط إضافي — الأزرار مُعطَّلة أصلاً لهذه الحالة
+        // احتياط إضافي — الأزرار مُعطَّلة أصلاً لهذه الحالات
+        if (edit.sectionId == null || !edit.indicatorId || brokenImageIds[row.id]) continue;
 
         const result = await saveEvidence({
           section_id: edit.sectionId,
@@ -241,15 +203,18 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
     }
   };
 
-  const acceptAll = () => confirmRows(rows, 'all');
+  // صفوف الصورة المعطوبة مستبعدة من "قبول الكل" كلياً — لا تمنع اعتماد الباقي
+  const acceptableRows = rows.filter(r => !brokenImageIds[r.id]);
+  const acceptAll = () => confirmRows(acceptableRows, 'all');
   const acceptOne = (row: ClassifiedRow) => confirmRows([row], row.id);
 
   const isBusy = confirmingKey !== null;
   const isRowReady = (row: ClassifiedRow): boolean => {
+    if (brokenImageIds[row.id]) return false;
     const edit = getEdit(row);
     return edit.sectionId != null && !!edit.indicatorId;
   };
-  const allRowsReady = rows.length > 0 && rows.every(isRowReady);
+  const allRowsReady = acceptableRows.length > 0 && acceptableRows.every(isRowReady);
 
   return (
     <BottomSheet isOpen={isOpen} onClose={isBusy ? () => {} : onClose}>
@@ -289,7 +254,7 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
               {confirmingKey === 'all' ? (
                 <><i className="ti ti-loader animate-spin" /> جارٍ الاعتماد...</>
               ) : (
-                <><i className="ti ti-checks" /> قبول الكل ({rows.length})</>
+                <><i className="ti ti-checks" /> قبول الكل ({acceptableRows.length})</>
               )}
             </button>
 
@@ -301,8 +266,17 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
                 return (
                   <div key={row.id} className="flex flex-col gap-2.5 p-3.5 bg-white/[0.03] rounded-xl border border-[var(--line)]">
                     <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 rounded-lg shrink-0 overflow-hidden border border-[var(--gold)]/20 bg-[var(--gold)]/10">
-                        <img src={publicUrlFor(row.file_path)} alt="" className="w-full h-full object-cover" />
+                      <div className="w-14 h-14 rounded-lg shrink-0 overflow-hidden border border-[var(--gold)]/20 bg-[var(--gold)]/10 flex items-center justify-center">
+                        {brokenImageIds[row.id] ? (
+                          <span className="text-[12px] text-[var(--text4)] text-center leading-tight px-1">تعذّر تحميل الصورة</span>
+                        ) : (
+                          <img
+                            src={publicUrlFor(row.file_path)}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={() => setBrokenImageIds(prev => ({ ...prev, [row.id]: true }))}
+                          />
+                        )}
                       </div>
                       <input
                         type="text"
@@ -356,7 +330,7 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
                         type="button"
                         disabled={rowBusy || !isRowReady(row)}
                         onClick={() => acceptOne(row)}
-                        title={!isRowReady(row) ? 'اختر القسم والمؤشر الفرعي أولاً' : undefined}
+                        title={brokenImageIds[row.id] ? 'تعذّر تحميل الصورة' : !isRowReady(row) ? 'اختر القسم والمؤشر الفرعي أولاً' : undefined}
                         className="py-2 px-3.5 text-[12px] font-bold rounded-lg bg-[var(--em7)]/15 text-[var(--em8)] border border-[var(--em7)]/25 hover:bg-[var(--em7)]/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
                       >
                         {rowBusy ? <i className="ti ti-loader animate-spin text-[13px]" /> : <><i className="ti ti-check text-[13px]" /> قبول</>}

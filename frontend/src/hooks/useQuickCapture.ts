@@ -280,7 +280,7 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
           onToast(`تم حفظ الشاهد الصوتي في "${sectionMeta.ttl}" ✅`, '✅');
         } else {
           // لم يتمكّن الذكاء الاصطناعي من التصنيف بثقة — يُحفظ بلا قسم (section_id
-          // null) دون تحديث عدّاد شهري، ويظهر لاحقاً في قائمة "غير مصنّف"
+          // null) دون تحديث عدّاد شهري
           onToast('تم حفظ الشاهد، يحتاج تصنيف 📋', '📋');
         }
         setVoiceSheetOpen(false);

@@ -28,6 +28,7 @@ import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
 import { useMonthlyProgress } from './hooks/useMonthlyProgress';
 import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
 import { useSections } from './hooks/useSections';
+import { usePortfolioCompletion } from './hooks/usePortfolioCompletion';
 import type { ContinuityData } from './types';
 
 export default function App() {
@@ -97,6 +98,10 @@ export default function App() {
   });
 
   const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence, monthlyProgress.recordEvidence);
+
+  // نسبة الجاهزية العامة (تراكمية) — مصدر واحد للوحة التحكم ولمعاينة المالك
+  // لصفحته العامة، يُعاد جلبها تلقائياً كلما تغيّرت الشواهد (انظر الهوك).
+  const portfolioCompletion = usePortfolioCompletion(user?.id ?? null, supabaseEv.evidence);
 
   // يسجّل الشاهد في monthly_progress بعد نجاح إدراجه في evidence (يستدعيه
   // useSaveEvidence فقط بعد النجاح). createdAt اختياري: يُمرَّر فقط عند الإضافة
@@ -1041,6 +1046,8 @@ export default function App() {
             academicDates={academicDates}
             supabaseEv={supabaseEv}
             monthlyProgress={monthlyProgress}
+            completion={portfolioCompletion.completion}
+            completionError={portfolioCompletion.error}
             userId={user?.id}
             onEvidenceSaved={onEvidenceSaved}
             onToast={showToast}
@@ -1051,7 +1058,7 @@ export default function App() {
 
         {currentPage === 'public' && (
           <Public
-            state={{ ...state, ai_summary: aiSummary, ai_top_achievement_evidence_id: aiTopAchievementEvidenceId }}
+            state={{ ...state, ai_summary: aiSummary, ai_top_achievement_evidence_id: aiTopAchievementEvidenceId, completion: portfolioCompletion.completion ?? undefined }}
             sections={sections}
             continuity={ownContinuity}
             evidence={supabaseEv.evidence}

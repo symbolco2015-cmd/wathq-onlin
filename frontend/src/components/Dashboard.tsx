@@ -11,6 +11,7 @@ import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSE
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
+import type { PortfolioCompletion } from '../hooks/usePortfolioCompletion';
 import { supabase } from '../supabaseClient';
 import { LESSON_PLAN_SECTION_ID } from '../data';
 import BulkImportPicker from './BulkImportPicker';
@@ -58,6 +59,9 @@ interface DashboardProps {
   onMarkAsRead?: (id: string) => void;
   academicDates?: AcademicDate[];
   monthlyProgress?: MonthlyProgressData;
+  /** نسبة الجاهزية العامة التراكمية — من usePortfolioCompletion في App.tsx */
+  completion?: PortfolioCompletion | null;
+  completionError?: boolean;
   /** الحقول التالية تُستخدم فقط لعرض BottomSheet إضافة الشاهد على الجوال */
   userId?: string;
   /** يسجّل الشاهد في عدّاد الشهر بعد نجاح إدراجه — انظر onEvidenceSaved في App.tsx */
@@ -171,7 +175,7 @@ export function SectionReclassifyDropdown({
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -427,44 +431,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   useEffect(() => {
     refetchSummaryStatus();
   }, [refetchSummaryStatus]);
-
-  // نسبة الجاهزية العامة الموحّدة — من get_portfolio_completion (RPC)، المصدر
-  // الوحيد الآن لـoverallPct/completed_sections/total_sections. تعتمد على
-  // تغطية evidence.indicator_id تراكمياً (بلا علاقة بالشهر الحالي)، بنفس منطق
-  // completion الذي ترجعه get_shared_portfolio للعرض العام (Public.tsx) — رقم
-  // واحد موحّد بين اللوحة والمشاركة. لا علاقة لها بـgetMonthlyPct/nonStratSections
-  // أدناه (تلك تبقى لعداد "الشهر الحالي" المستقل لكل بند على حدة).
-  const [completion, setCompletion] = useState<{
-    overall_pct: number;
-    completed_sections: number;
-    total_sections: number;
-  } | null>(null);
-  const [completionError, setCompletionError] = useState(false);
-
-  const refetchCompletion = useCallback(() => {
-    if (!supabase || !userId) { setCompletion(null); setCompletionError(false); return; }
-    supabase
-      .rpc('get_portfolio_completion', { p_portfolio_id: userId })
-      .then(({ data, error }) => {
-        const row = Array.isArray(data) ? data[0] : data;
-        if (error || !row) {
-          console.warn('[Dashboard] تعذّر جلب نسبة الجاهزية:', error?.message);
-          setCompletion(null);
-          setCompletionError(true);
-          return;
-        }
-        setCompletionError(false);
-        setCompletion({
-          overall_pct: row.overall_pct ?? 0,
-          completed_sections: row.completed_sections ?? 0,
-          total_sections: row.total_sections ?? 0,
-        });
-      });
-  }, [userId]);
-
-  useEffect(() => {
-    refetchCompletion();
-  }, [refetchCompletion]);
 
   const SUMMARY_COOLDOWN_DAYS = 7;
   const summaryDaysSince = summaryStatus?.generatedAt
@@ -756,7 +722,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const getMonthlyPct = (sectionId: number): number =>
     Math.min(100, Math.round(((monthlyProgress?.getSectionMonthCount(sectionId) ?? 0) / 3) * 100));
 
-  // التقدم العام = get_portfolio_completion (RPC أعلاه) — تراكمي عبر تغطية
+  // التقدم العام = completion من usePortfolioCompletion (props) — تراكمي عبر تغطية
   // evidence.indicator_id، موحَّد مع نفس الرقم المعروض بالمشاركة العامة
   // (Public.tsx عبر get_shared_portfolio). خطأ الجلب ⇐ 0% + رسالة بدل قيمة وهمية.
   const overallPct = completionError ? 0 : (completion?.overall_pct ?? 0);

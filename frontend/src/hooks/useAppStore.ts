@@ -234,7 +234,7 @@ export function useAppStore() {
             const initialProfile = {
               ...defaultProfile,
               name: user.user_metadata?.full_name || user.email?.split('@')[0] || defaultProfile.name,
-              email: user.email || defaultProfile.email,
+              email: defaultProfile.email,
             };
             const initialStateWithProfile = {
               ...defaultState,

@@ -218,6 +218,14 @@ with RLS *enabled* but *zero policies*, which silently denies all access
 rather than erroring loudly. Run `get_advisors` (security) periodically;
 it has caught real gaps before.
 
+**`portfolios`**: SELECT is allowed only to the owner (`auth.uid() = id`)
+and admins (`is_admin()`) — there is no direct public read. Public
+sharing goes exclusively through the SECURITY DEFINER RPCs
+`get_shared_portfolio` and `get_shared_evidence`, both gated on
+`share_enabled = true`. `get_shared_portfolio` returns `profile` built
+from an explicit field list (not the whole object), so a new profile
+field never becomes public unless it is added to that list.
+
 ---
 
 ## Edge Functions

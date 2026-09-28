@@ -641,10 +641,12 @@ export default function App() {
             <div>
               <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">رقم الجوال</div>
               <input type="text" value={localP.phone} onChange={e => handleUpdate('phone', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="05XXXXXXXX" />
+              <div className="text-[12px] text-[var(--text4)] mt-1.5">يظهر في صفحتك العامة عند تفعيل المشاركة</div>
             </div>
             <div>
               <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">البريد الإلكتروني</div>
               <input type="email" value={localP.email} onChange={e => handleUpdate('email', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="email@example.com" />
+              <div className="text-[12px] text-[var(--text4)] mt-1.5">يظهر في صفحتك العامة عند تفعيل المشاركة</div>
             </div>
           </div>
           <div className="text-[12.5px] font-bold text-[var(--em8)] mt-2 border-b border-[var(--line2)] pb-2 mb-1">حسابات التواصل الاجتماعي</div>

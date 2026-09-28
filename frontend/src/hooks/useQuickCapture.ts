@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import type { SectionData } from '../types';
 import { useVoiceRecording } from './useVoiceRecording';
 import { useSaveEvidence } from './useSaveEvidence';
+import type { OnEvidenceSavedFn } from './useSaveEvidence';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('./useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -35,7 +36,7 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
 interface UseQuickCaptureOptions {
   userId: string | undefined;
   supabaseEv: SupabaseEvidenceHook | undefined;
-  onAddEv: (sid: number, sub: string, type: 'pdf' | 'img' | 'doc' | 'vid', name: string, url?: string) => void;
+  onEvidenceSaved: OnEvidenceSavedFn;
   onToast: (msg: string, icon?: string) => void;
   /** لازمة فقط لتدفّق "تسجيل صوتي سريع" — قائمة الأقسام لاقتراح القسم الأنسب ولتحديد اسم البند الفرعي عند الحفظ */
   sections?: SectionData[];
@@ -47,10 +48,10 @@ interface UseQuickCaptureOptions {
  * يحصر منطق تدفّق "التقاط سريع": صورة فوراً ← اختيار بند ← حفظ بعنوان تلقائي،
  * بنفس آلية الضغط/الرفع المستخدمة في EvidenceForm (دون تعديل ذلك الملف).
  */
-export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections, aiConsentGiven, onGiveAiConsent }: UseQuickCaptureOptions) {
-  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تحديث state.ev
-  // + monthly_progress عبر onAddEv (انظر useSaveEvidence.ts)
-  const { saveEvidence } = useSaveEvidence(supabaseEv?.addEvidence, onAddEv);
+export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, sections, aiConsentGiven, onGiveAiConsent }: UseQuickCaptureOptions) {
+  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تسجيل الشاهد في
+  // monthly_progress عبر onEvidenceSaved (انظر useSaveEvidence.ts)
+  const { saveEvidence } = useSaveEvidence(supabaseEv?.addEvidence, onEvidenceSaved);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -157,13 +158,9 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
       }
 
       const title = `شاهد سريع - ${new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}`;
-      // sub = اسم المؤشر المختار فعلياً (indicator.name_ar)، لا subs[0] الثابت —
-      // حتى يُصنَّف الشاهد محلياً (state.ev) تحت نفس المؤشر المسجَّل في evidence
-      // عبر indicator_id، بدل الانحياز دائماً لأول مؤشر بالقسم بصرف النظر عن اختيار المستخدم
       const result = await saveEvidence({
         section_id: sec.id,
         indicator_id: indicator.id,
-        sub: indicator.name_ar,
         title,
         evidence_type: 'image',
         file_url: fileUrl,
@@ -172,12 +169,6 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
       if (!result) {
         onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', '❌');
         setSaving(false);
-        return;
-      }
-
-      if (!result.localSyncOk) {
-        onToast('تم حفظ الشاهد، لكن تعذّر تحديث العرض المحلي — يرجى تحديث الصفحة', '⚠️');
-        reset();
         return;
       }
 
@@ -285,7 +276,7 @@ export function useQuickCapture({ userId, supabaseEv, onAddEv, onToast, sections
         }
 
         if (sectionMeta) {
-          onAddEv(sectionMeta.id, sectionMeta.subs[0] ?? 'عام', 'doc', title, fileUrl);
+          onEvidenceSaved(sectionMeta.id);
           onToast(`تم حفظ الشاهد الصوتي في "${sectionMeta.ttl}" ✅`, '✅');
         } else {
           // لم يتمكّن الذكاء الاصطناعي من التصنيف بثقة — يُحفظ بلا قسم (section_id

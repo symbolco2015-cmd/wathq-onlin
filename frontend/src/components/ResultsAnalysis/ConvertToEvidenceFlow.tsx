@@ -16,7 +16,7 @@ interface ConvertToEvidenceFlowProps {
   sections: SectionData[];
   userId: string | undefined;
   supabaseEv: SupabaseEvidenceHook;
-  onAddEv: EvidenceFormProps['onAddEv'];
+  onEvidenceSaved: EvidenceFormProps['onEvidenceSaved'];
   onToast: (msg: string, icon?: string) => void;
   onClose: () => void;
 }
@@ -27,7 +27,7 @@ interface ConvertToEvidenceFlowProps {
  * الـDOM قبل الالتقاط عبر html-to-image — لا تعديل بكسلي لاحق، فالصورة
  * الناتجة إما تحوي قائمة الأسماء أو لا تحويها إطلاقاً حسب حالته وقت الالتقاط.
  */
-export default function ConvertToEvidenceFlow({ analysis, bands, sections, userId, supabaseEv, onAddEv, onToast, onClose }: ConvertToEvidenceFlowProps) {
+export default function ConvertToEvidenceFlow({ analysis, bands, sections, userId, supabaseEv, onEvidenceSaved, onToast, onClose }: ConvertToEvidenceFlowProps) {
   const [includeNames, setIncludeNames] = useState(false);
   const [sectionId, setSectionId] = useState('');
   const [sub, setSub] = useState('');
@@ -82,7 +82,7 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
         sub={effectiveSub}
         userId={userId}
         supabaseEv={supabaseEv}
-        onAddEv={onAddEv}
+        onEvidenceSaved={onEvidenceSaved}
         onToast={onToast}
         prefill={prefill}
       />

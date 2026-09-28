@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import type { AppState, Announcement } from '../types';
+import { pickAppStateFields } from './useAppStore';
 
 export interface AdminUser {
   id: string;
@@ -87,16 +88,21 @@ export function useAdminStore(isAdmin: boolean) {
         Array.from(strategyIdsByPortfolio.entries()).map(([id, set]) => [id, set.size])
       );
 
+      // عدد الشواهد لكل معلم من جدول evidence مباشرة (عدد الصفوف لكل portfolio_id)
+      const { data: evidenceRows, error: evidenceError } = await supabase
+        .from('evidence')
+        .select('portfolio_id');
+      if (evidenceError) throw evidenceError;
+      const evidenceCountByPortfolio = new Map<string, number>();
+      (evidenceRows || []).forEach((row: any) => {
+        evidenceCountByPortfolio.set(row.portfolio_id, (evidenceCountByPortfolio.get(row.portfolio_id) ?? 0) + 1);
+      });
+
       // Map portfolios to AdminUser objects
       const mapped: AdminUser[] = portfolios.map((p: any) => {
         const state: AppState = p.state || {};
         const profile = state.profile || {} as any;
-        const ev = state.ev || {};
-
-        const evidenceCount = Object.values(ev).reduce(
-          (sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0),
-          0
-        );
+        const evidenceCount = evidenceCountByPortfolio.get(p.id) ?? 0;
 
         return {
           id: p.id,
@@ -291,7 +297,7 @@ export function useAdminStore(isAdmin: boolean) {
     }
   };
 
-  // Reset a user's portfolio data (keep profile, clear evidence/notes)
+  // Reset a user's portfolio data (keep profile)
   const resetUserPortfolio = async (userId: string): Promise<boolean> => {
     if (!supabase) return false;
     try {
@@ -303,13 +309,10 @@ export function useAdminStore(isAdmin: boolean) {
         .single();
       if (fetchError) throw fetchError;
 
-      const currentState = (data?.state || {}) as any;
-      const resetState = {
-        ...currentState,
-        ev: {},
-        csubs: {},
-        notes: {},
-      };
+      // TODO المرحلة 1: الحذف الفعلي عبر دالة خادم
+      // حالياً يُعاد حفظ حقول AppState المعروفة فقط (تسقط حقول النظام القديم
+      // إن وُجدت)، ولا يُحذف أي صف من جدول evidence.
+      const resetState = pickAppStateFields((data?.state || {}) as any);
 
       const { error } = await supabase
         .from('portfolios')

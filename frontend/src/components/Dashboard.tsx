@@ -10,6 +10,7 @@ import EvidenceModal from './EvidenceModal';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
+import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
 import { supabase } from '../supabaseClient';
 import { LESSON_PLAN_SECTION_ID } from '../data';
 import BulkImportPicker from './BulkImportPicker';
@@ -46,8 +47,6 @@ interface DashboardProps {
   sections: SectionData[];
   supabaseEv?: SupabaseEvidenceHook;
   onAddEvClick: (sid: number, sub: string, strategyId?: string) => void;
-  onAddSubClick: (sid: number) => void;
-  onUpdateNote: (k: string, v: string) => void;
   onDeleteEv: (evidenceId: string) => void;
   /** يفتح تدفّق "إضافة استراتيجية" (اختيار من الكتالوج أو إنشاء جديدة، ثم
    *  فتح نموذج الدليل الإجباري) — انظر openAddStrategyModal في App.tsx. */
@@ -55,21 +54,14 @@ interface DashboardProps {
   /** اسم كل استراتيجية تدريس (id → name_ar) لحلّ evidence[].strategy_id إلى
    *  اسم معروض ببطاقة القسم 4 — من useTeachingStrategies في App.tsx. */
   strategyNames: Record<string, string>;
-  onDelSub: (sid: number, subName: string) => void;
   announcements?: Announcement[];
   onMarkAsRead?: (id: string) => void;
   academicDates?: AcademicDate[];
   monthlyProgress?: MonthlyProgressData;
   /** الحقول التالية تُستخدم فقط لعرض BottomSheet إضافة الشاهد على الجوال */
   userId?: string;
-  onAddEv?: (
-    sid: number,
-    sub: string,
-    type: 'pdf' | 'img' | 'doc' | 'vid',
-    name: string,
-    url?: string,
-    createdAt?: string
-  ) => void;
+  /** يسجّل الشاهد في عدّاد الشهر بعد نجاح إدراجه — انظر onEvidenceSaved في App.tsx */
+  onEvidenceSaved?: OnEvidenceSavedFn;
   onToast?: (msg: string, icon?: string) => void;
   aiConsentGiven?: boolean;
   onGiveAiConsent?: () => void;
@@ -179,7 +171,7 @@ export function SectionReclassifyDropdown({
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onAddEv, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -362,7 +354,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const quickCapture = useQuickCapture({
     userId,
     supabaseEv,
-    onAddEv: onAddEv ?? (() => {}),
+    onEvidenceSaved: onEvidenceSaved ?? (() => {}),
     onToast: onToast ?? (() => {}),
     sections,
     aiConsentGiven,
@@ -664,8 +656,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     }
   };
 
-  // إحصاءات الأدلة من جدول evidence مباشرة (بدل useEvidenceStore المبني على
-  // ev القديم في portfolios.state). bySections يُحسب على pickableSections (يستبعد بندي 5/10
+  // إحصاءات الأدلة من جدول evidence مباشرة. bySections يُحسب على pickableSections (يستبعد بندي 5/10
   // مثل بقية النظام)، والمؤشر المغطّى = مؤشر من section_indicators له دليل
   // واحد على الأقل بنفس indicator_id. byType/total شاملان لكل الأقسام.
   const allEvidence = supabaseEv?.evidence;
@@ -2030,7 +2021,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               analyses={resultsAnalysis.analyses}
               loading={resultsAnalysis.loading}
               saveAnalysis={resultsAnalysis.saveAnalysis}
-              onAddEv={onAddEv}
+              onEvidenceSaved={onEvidenceSaved}
               onToast={onToast}
               isOpen={!!openSecs[analysisSection.id]}
               onToggle={() => toggleSec(analysisSection.id)}
@@ -2048,7 +2039,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               analyses={resultsAnalysis.analyses}
               loading={resultsAnalysis.loading}
               runSmartCheck={resultsAnalysis.runSmartCheck}
-              onAddEv={onAddEv}
+              onEvidenceSaved={onEvidenceSaved}
               onToast={onToast}
               isOpen={!!openSecs[improvementSection.id]}
               onToggle={() => toggleSec(improvementSection.id)}
@@ -2430,7 +2421,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         sections={nonStratSections}
         stratSectionId={stratSection?.id}
         supabaseEv={supabaseEv}
-        onAddEv={onAddEv}
+        onEvidenceSaved={onEvidenceSaved}
         onToast={onToast}
       />
 
@@ -2454,7 +2445,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             sub={mobileSheet.sub}
             userId={userId}
             supabaseEv={supabaseEv}
-            onAddEv={onAddEv ?? (() => {})}
+            onEvidenceSaved={onEvidenceSaved ?? (() => {})}
             onToast={onToast ?? (() => {})}
             aiConsentGiven={aiConsentGiven}
             onGiveAiConsent={onGiveAiConsent}
@@ -2471,7 +2462,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           sub={archiveAddTarget.sub}
           userId={userId}
           supabaseEv={supabaseEv}
-          onAddEv={onAddEv ?? (() => {})}
+          onEvidenceSaved={onEvidenceSaved ?? (() => {})}
           onToast={onToast ?? (() => {})}
           createdAt={archiveCreatedAt}
           aiConsentGiven={aiConsentGiven}

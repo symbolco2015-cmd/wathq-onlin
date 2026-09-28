@@ -1,8 +1,6 @@
 @AGENTS.md
 
 > تنبيه: عند أي تعارض بين هذا الملف و`AGENTS.md` أو `docs/design/DESIGN.md`، فهما المرجع.
-> وصف `state.ev` و`csubs` و`notes` هنا يشرح نظاماً يُزال في المرحلة 0، فلا تبنِ عليه.
-> هذا الملف يُحدَّث في الخطوة 0.4.
 
 # CLAUDE.md
 
@@ -137,29 +135,31 @@ distinct feature from the share view; read `useHarvestReport.ts` before
 assuming its shape matches `usePublicProfile`), no param + logged in →
 dashboard.
 
-### State Management — two eras, both currently live
+### State Management
 
-The app is mid-migration between an old JSONB-blob model and a normalized
-Supabase-table model. Both are real and in use; do not assume one has
-fully replaced the other without checking the specific field.
+**`portfolios.state` (JSONB, via `useAppStore.ts`)** holds only the
+teacher's profile and small settings (`AppState`: `profile`,
+`readAnnouncements`, `yearStartMonth`, `aiSuggestConsentAt`). It holds
+**no evidence**. Older rows or localStorage may still contain the retired
+evidence fields; `pickAppStateFields()` copies only the known fields on
+load, so those old fields are ignored and never written back.
 
-**Legacy (`state.ev`/`state.strats`/`state.csubs`, in `useAppStore.ts`)**:
-a single `portfolios.state` JSONB column held the entire app state,
-keyed as `"${sectionId}|${subsectionName}"` for evidence. Several UI
-paths still read from this (e.g. `state.strats` for selected teaching
-strategies) — it has **not** been fully retired. Before assuming a given
-piece of data lives in the new table, check whether the specific
-component reads `state.X` or the new hook.
+**Evidence (`evidence` table, via `useSupabaseEvidence.ts` /
+`useSaveEvidence.ts`)**: the single source of truth. Each evidence item
+is a row in `evidence`, grouped by its **`NOT NULL`** `indicator_id`
+foreign key. The manual form, quick capture, bulk import and
+results-chart conversion all save through `useSaveEvidence.ts`. The
+disabled voice flow and bulk-import `resolveFailedRows` insert directly,
+with no indicator. `indicator_id` values come from `section_indicators`,
+loaded from the DB by `useSections.ts`, not from any hardcoded list.
 
-**Current (`evidence` table + `indicator_id`, primarily via
-`useSupabaseEvidence.ts`/`useEvidenceStore.ts`/`useSaveEvidence.ts`)**:
-each documented evidence item is a row in `evidence`, with a **`NOT
-NULL`** `indicator_id` foreign key — this constraint is enforced at the
-DB level and all insertion paths (manual form, quick capture, voice
-transcription, bulk import) go through the same unified save path
-(`useSaveEvidence.ts`) specifically to guarantee this. `indicator_id`
-values come from `section_indicators`, itself sourced from the DB (see
-`useSections.ts`) rather than any hardcoded list.
+**Monthly counter (`monthly_progress`, via `useMonthlyProgress.ts`)**:
+separate from the cumulative completion, which comes from
+`get_portfolio_completion` over `evidence`. After a successful insert,
+`saveEvidence` calls `onEvidenceSaved(sectionId, createdAt?)` (defined in
+`App.tsx`), which calls `recordEvidence`. `createdAt` is set when adding
+from a past month's archive. Deletions decrement it through
+`useSupabaseEvidence`'s `onEvRemoved` → `removeEvidence`.
 
 Other hooks: `useAdminStore.ts` (admin operations, gated by `isAdmin`),
 `useSections.ts` (merges `data.ts` metadata with live `section_indicators`
@@ -175,7 +175,7 @@ share-view data fetchers, each via its own `get_shared_*` RPC),
 
 ### Database Schema — verify live, this list is a snapshot
 
-Core tables: `portfolios` (id, legacy `state` JSONB, `share_enabled`,
+Core tables: `portfolios` (id, `state` JSONB — profile/settings only, `share_enabled`,
 `ai_summary`, `ai_top_achievement_evidence_id`, `ai_summary_stale`,
 `ai_summary_generated_at`), `evidence` (`indicator_id` NOT NULL,
 `evidence_type` — currently `file`/`image`/`link`/`note`/`audio`/`video`),
@@ -304,17 +304,17 @@ repo for its definition.
 
 ## Working with Evidence
 
-Prefer the `evidence` table path (`useSaveEvidence.ts` and friends) for
-anything new — it's the one with the `indicator_id` guarantee. The
-legacy `state.ev` composite-key map (`"${sectionId}|${subsectionName}"`)
-still exists and is still read in places (check the specific component),
-but treat it as something to migrate away from, not build on.
+Save new evidence through `useSaveEvidence.ts`: it inserts into
+`evidence` with a required `indicator_id`. Only after a successful insert
+does it call `onEvidenceSaved` to update the monthly counter. Read
+evidence from the `evidence` table, grouped by `indicator_id`, and read
+indicators from `section_indicators`.
 
 Evidence types: `file`, `image`, `link`, `note`, `audio`, `video` (DB
-column `evidence_type` on the `evidence` table — do not confuse with the
-older, narrower `pdf`/`img`/`doc`/`vid` local type used in some legacy
-UI code, see `supabaseEvidenceTypeToLocal()` in `utils.ts` for the
-mapping between them).
+column `evidence_type` on the `evidence` table). Do not confuse this with
+the narrower `pdf`/`img`/`doc`/`vid` display type (`Evidence['type']` in
+`types.ts`), which only chooses thumbnails. `supabaseEvidenceTypeToLocal()`
+in `utils.ts` maps between them.
 
 **Voice capture is currently disabled** (`VOICE_CAPTURE_ENABLED = false`
 in `useQuickCapture.ts`) — the UI shows an "under development" sheet

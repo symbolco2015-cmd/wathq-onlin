@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import BottomSheet from './BottomSheet';
 import { supabase } from '../supabaseClient';
-import { calculatePointsLevelFromTotal, supabaseEvidenceTypeToLocal } from '../utils';
-import type { AcademicDate, AppState, Evidence, HarvestSnapshot, SectionData } from '../types';
+import { calculatePointsLevelFromTotal } from '../utils';
+import type { AcademicDate, AppState, HarvestSnapshot, SectionData } from '../types';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { ResultsAnalysisRow } from './ResultsAnalysis/types';
 import { toPublicResultsAnalysisRow, groupPublicAnalysesBySubject, buildPublicComparisonSeries } from './ResultsAnalysis/logic';
@@ -82,7 +82,7 @@ function buildSemesterOptions(academicDates: AcademicDate[]): SemesterOption[] {
  * إطلاقاً — يقرأ evidence/monthly_progress مباشرة بصلاحية المعلم العادية (RLS
  * الحالي كافٍ، هذه استعلامات مالك على جدوله الخاص).
  */
-export default function HarvestReportSheet({ isOpen, onClose, userId, state, sections, academicDates, onToast }: HarvestReportSheetProps) {
+export default function HarvestReportSheet({ isOpen, onClose, userId, state, academicDates, onToast }: HarvestReportSheetProps) {
   const semesterOptions = useMemo(() => buildSemesterOptions(academicDates || []), [academicDates]);
   const [selectedKey, setSelectedKey] = useState<string>('custom');
   const [customFrom, setCustomFrom] = useState('');
@@ -151,45 +151,7 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
         self_reflection: null,
       }));
 
-      // 2) أسماء المؤشرات (section_indicators — قراءة عامة مفعّلة) لبناء مفاتيح
-      // ev/csubs ذات معنى بدل تجميع كل شواهد القسم تحت مفتاح واحد عام.
-      const indicatorIds = Array.from(
-        new Set(rawEvidence.map(e => e.indicator_id).filter((id): id is string => !!id))
-      );
-      const indicatorNames = new Map<string, string>();
-      if (indicatorIds.length > 0) {
-        const { data: indicators } = await supabase
-          .from('section_indicators')
-          .select('id, name_ar')
-          .in('id', indicatorIds);
-        (indicators || []).forEach((i: any) => indicatorNames.set(i.id, i.name_ar));
-      }
-
-      // 3) ev/csubs اصطناعيان مبنيان فقط من شواهد الفترة (وليس state.ev الحية،
-      // التي تمثل كامل عمر الملف بلا حدود زمنية) — بهذا تعكس بطاقات "أقسام
-      // الملف" ونسب الاكتمال في Public.tsx تغطية الفترة المختارة فعلياً.
-      const ev: Record<string, Evidence[]> = {};
-      const csubs: Record<number, string[]> = {};
-      rawEvidence.forEach(row => {
-        if (row.section_id == null) return; // مستبعد أصلاً بالاستعلام، حراسة إضافية فقط
-        const subName = (row.indicator_id && indicatorNames.get(row.indicator_id)) || 'أدلة أخرى';
-        const secStatic = sections.find(s => s.id === row.section_id);
-        const isKnownSub = secStatic?.subs.includes(subName);
-        if (!isKnownSub) {
-          if (!csubs[row.section_id]) csubs[row.section_id] = [];
-          if (!csubs[row.section_id].includes(subName)) csubs[row.section_id].push(subName);
-        }
-        const key = `${row.section_id}|${subName}`;
-        if (!ev[key]) ev[key] = [];
-        ev[key].push({
-          type: supabaseEvidenceTypeToLocal(row.evidence_type),
-          name: row.title,
-          url: row.file_url ?? row.link_url ?? undefined,
-          date: new Date(row.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' }),
-        });
-      });
-
-      // 4) monthly_progress ضمن المدى — نفس تجميع get_shared_monthly_progress
+      // 2) monthly_progress ضمن المدى — نفس تجميع get_shared_monthly_progress
       // (مجموع evidence_count لكل year/month عبر كل الأقسام)، مبني هنا من
       // صفوف المالك المباشرة (RLS تسمح، لسنا في مسار مشاركة عام).
       const { data: monthlyRows, error: mpErr } = await supabase
@@ -211,7 +173,7 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
       });
       const activeMonths = Array.from(monthTotals.values()).filter(m => m.evidenceCount > 0);
 
-      // 5) بند 10 (تحليل نتائج المتعلمين) ضمن الفترة — استعلام مالك مباشر على
+      // 3) بند 10 (تحليل نتائج المتعلمين) ضمن الفترة — استعلام مالك مباشر على
       // results_analysis (RLS تسمح، بلا أي RPC)، بنفس شرط المدى الزمني أعلاه.
       // الصف الخام summary يحوي أسماء الطلاب؛ يُحوَّل فوراً لنفس الشكل المبسَّط
       // الآمن الذي تُرجعه get_shared_results_analysis عبر toPublicResultsAnalysisRow
@@ -231,13 +193,13 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
         .filter(([, rows]) => rows.length >= 2)
         .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(resultsAnalysis, subject) }));
 
-      // 6) شارة اللقب/النقاط — من مجموع شواهد الفترة فقط، وليس نافذة "آخر 3
+      // 4) شارة اللقب/النقاط — من مجموع شواهد الفترة فقط، وليس نافذة "آخر 3
       // أشهر تقويمية" المعتادة في calculatePointsLevel (تلك مرتبطة بـ"اليوم"،
       // غير مناسبة لتقرير عن فترة قد تكون منتهية منذ زمن).
       const totalPoints = activeMonths.reduce((sum, m) => sum + m.evidenceCount, 0);
       const pointsLevel = calculatePointsLevelFromTotal(totalPoints);
 
-      // 7) أسماء استراتيجيات التدريس (بند 4) المُشار إليها ضمن شواهد الفترة —
+      // 5) أسماء استراتيجيات التدريس (بند 4) المُشار إليها ضمن شواهد الفترة —
       // تُخبَز هنا وقت التوليد (المولِّد هو المالك المسجَّل دخوله، RLS تسمح له
       // بقراءة كتالوجه العام+الخاص مباشرة) لأن التقرير لقطة ثابتة بلا أي RPC
       // حية وقت العرض لاحقاً (نفس مبدأ resultsAnalysis/pointsLevel أعلاه) —
@@ -257,8 +219,6 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
       const generatedAt = new Date().toISOString();
       const snapshot: HarvestSnapshot = {
         state: {
-          ev,
-          csubs,
           profile: state.profile,
         },
         strategyNames,

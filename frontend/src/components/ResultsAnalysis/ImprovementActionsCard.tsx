@@ -16,7 +16,7 @@ interface ImprovementActionsCardProps {
   analyses: ResultsAnalysisRow[];
   loading: boolean;
   runSmartCheck: (analysis: ResultsAnalysisRow, kind: 'remedial' | 'honor') => Promise<SmartCheckResult>;
-  onAddEv?: EvidenceFormProps['onAddEv'];
+  onEvidenceSaved?: EvidenceFormProps['onEvidenceSaved'];
   onToast?: (msg: string, icon?: string) => void;
   isOpen: boolean;
   onToggle: () => void;
@@ -43,7 +43,7 @@ function checkKey(analysisId: string, kind: CheckKind) {
  */
 export default function ImprovementActionsCard({
   section, userId, supabaseEv, gradeBands, analyses, loading, runSmartCheck,
-  onAddEv, onToast, isOpen, onToggle, onViewInAnalysis,
+  onEvidenceSaved, onToast, isOpen, onToggle, onViewInAnalysis,
 }: ImprovementActionsCardProps) {
   const [checks, setChecks] = useState<ChecksMap>({});
   const [addEvidenceTarget, setAddEvidenceTarget] = useState<{ open: boolean; sub: string }>({ open: false, sub: '' });
@@ -175,7 +175,7 @@ export default function ImprovementActionsCard({
           sub={addEvidenceTarget.sub}
           userId={userId}
           supabaseEv={supabaseEv}
-          onAddEv={onAddEv ?? (() => {})}
+          onEvidenceSaved={onEvidenceSaved ?? (() => {})}
           onToast={onToast ?? noToast}
         />
       )}

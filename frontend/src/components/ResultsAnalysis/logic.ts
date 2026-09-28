@@ -234,8 +234,8 @@ export function groupAnalysesBySubject(analyses: ResultsAnalysisRow[]): Map<stri
 }
 
 /** يحوّل صفاً داخلياً كاملاً (يحوي أسماء الطلاب عبر summary.students) إلى
- *  الشكل المبسَّط الآمن للعرض العام — لمعاينة المالك لصفحته فقط (state.ev
- *  محلي أصلاً، لا يعبر الشبكة بشكل مختلف). أدنى/أعلى درجة تُحسبان هنا بنفس
+ *  الشكل المبسَّط الآمن للعرض العام — لمعاينة المالك لصفحته فقط، ولبناء
+ *  لقطة تقرير الحصاد الفصلي. أدنى/أعلى درجة تُحسبان هنا بنفس
  *  الطريقة التي تحسبها get_shared_results_analysis() داخل SQL لنمط ?share=،
  *  حتى يتطابق العرض بين النمطين. */
 export function toPublicResultsAnalysisRow(row: ResultsAnalysisRow): PublicResultsAnalysisRow {

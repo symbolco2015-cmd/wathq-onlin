@@ -24,12 +24,22 @@ const defaultProfile: UserProfile = {
 };
 
 const defaultState: AppState = {
-  ev: {},
-  csubs: {},
-  notes: {},
   profile: defaultProfile,
   readAnnouncements: [],
   yearStartMonth: 9,
+};
+
+// حقول AppState المعروفة فقط. حقول النظام القديم للشواهد قد تبقى في
+// portfolios.state أو في localStorage لحسابات قديمة — تُتجاهل عند التحميل
+// (لا تُنسخ هنا)، فلا تدخل الحالة ولا تُكتب مجدداً مع أي saveState لاحق.
+// الشواهد مصدرها جدول evidence فقط.
+export const pickAppStateFields = (raw: Record<string, any>): Partial<AppState> => {
+  const picked: Partial<AppState> = {};
+  if (raw.profile !== undefined) picked.profile = raw.profile;
+  if (raw.readAnnouncements !== undefined) picked.readAnnouncements = raw.readAnnouncements;
+  if (raw.yearStartMonth !== undefined) picked.yearStartMonth = raw.yearStartMonth;
+  if (raw.aiSuggestConsentAt !== undefined) picked.aiSuggestConsentAt = raw.aiSuggestConsentAt;
+  return picked;
 };
 
 // إصدار تخزين localStorage — غيّره عند أي تصفير كامل لقاعدة البيانات لإبطال
@@ -208,7 +218,7 @@ export function useAppStore() {
           if (data && data.state && Object.keys(data.state).length > 0) {
             setState({
               ...defaultState,
-              ...data.state,
+              ...pickAppStateFields(data.state),
               profile: {
                 ...defaultState.profile,
                 ...(data.state.profile || {})
@@ -270,7 +280,7 @@ export function useAppStore() {
           const parsed = JSON.parse(d);
           setState({
             ...defaultState,
-            ...parsed,
+            ...pickAppStateFields(parsed),
             profile: {
               ...defaultState.profile,
               ...(parsed.profile || {})
@@ -349,59 +359,6 @@ export function useAppStore() {
     return true;
   };
 
-  const addEv = (
-    sid: number,
-    sub: string,
-    type: 'pdf' | 'img' | 'doc' | 'vid',
-    name: string,
-    url?: string
-  ) => {
-    const k = `${sid}|${sub}`;
-    const newEv = { ...state.ev };
-    if (!newEv[k]) newEv[k] = [];
-    newEv[k].push({
-      type,
-      name,
-      url,
-      date: new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' }),
-    });
-    return saveState({ ...state, ev: newEv });
-  };
-
-  const delEv = (sid: number, sub: string, i: number) => {
-    const k = `${sid}|${sub}`;
-    const newEv = { ...state.ev };
-    if (newEv[k]) {
-      newEv[k].splice(i, 1);
-      return saveState({ ...state, ev: newEv });
-    }
-  };
-
-  const addSub = (sid: number, val: string) => {
-    const newSubs = { ...state.csubs };
-    if (!newSubs[sid]) newSubs[sid] = [];
-    newSubs[sid].push(val);
-    return saveState({ ...state, csubs: newSubs });
-  };
-
-  const delSub = (sid: number, subName: string) => {
-    const newSubs = { ...state.csubs };
-    if (newSubs[sid]) {
-      newSubs[sid] = newSubs[sid].filter(s => s !== subName);
-    }
-    // Also remove any evidence linked to this sub
-    const k = `${sid}|${subName}`;
-    const newEv = { ...state.ev };
-    delete newEv[k];
-    const newNotes = { ...state.notes };
-    delete newNotes[k];
-    return saveState({ ...state, csubs: newSubs, ev: newEv, notes: newNotes });
-  };
-
-  const updateNote = (k: string, val: string) => {
-    return saveState({ ...state, notes: { ...state.notes, [k]: val } });
-  };
-
   const signOut = async () => {
     if (supabase) {
       await supabase.auth.signOut();
@@ -443,11 +400,6 @@ export function useAppStore() {
     isAdmin,
     passwordRecovery,
     clearPasswordRecovery,
-    addEv,
-    delEv,
-    addSub,
-    delSub,
-    updateNote,
     updateProfile,
     saveState,
     signOut,

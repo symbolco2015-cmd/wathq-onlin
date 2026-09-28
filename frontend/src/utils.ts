@@ -155,10 +155,7 @@ export function extensionFromUrl(url: string): string {
   try { return new URL(url).pathname.split('.').pop()?.toLowerCase() ?? ''; } catch { return ''; }
 }
 
-// calculateEvaluation() حُذفت (14 سبتمبر 2026) — كانت تحسب شارة "معلم متميز/موثّق
-// رسمياً/قيد الإنجاز" من state.ev القديم (نظام تخزين مهجور)، بالتوازي مع
-// overallPct الجديد من get_portfolio_completion (evidence.indicator_id) — نفس
-// الشاشة كانت تعرض رقمين متضاربين لنفس المفهوم. القرار: مصدر حقيقة واحد
-// لمفهوم "جاهزية/اعتماد الملف" = overallPct فقط. الشارة الشهرية التحفيزية
+// مصدر حقيقة واحد لمفهوم "جاهزية/اعتماد الملف" = overallPct فقط، من
+// get_portfolio_completion (evidence.indicator_id). الشارة الشهرية التحفيزية
 // (calculatePointsLevel أدناه، من monthly_progress) نظام منفصل تماماً ولم
 // يُمس — تقيس زخم/استمرارية التوثيق، لا اعتماداً رسمياً.

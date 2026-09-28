@@ -4,6 +4,8 @@ import type { ComparisonPoint } from './components/ResultsAnalysis/logic';
 
 export type PageType = 'auth' | 'dashboard' | 'public' | 'admin';
 
+/** شكل عرض محلي مبسَّط (نوع الصورة المصغّرة والاسم والرابط) — ليس تخزيناً؛
+ * الشواهد نفسها في جدول evidence فقط. Public.tsx يستخدم Evidence['type']. */
 export interface Evidence {
   type: 'pdf' | 'img' | 'doc' | 'vid';
   name: string;
@@ -83,9 +85,6 @@ export interface AcademicDate {
 }
 
 export interface AppState {
-  ev: Record<string, Evidence[]>;
-  csubs: Record<number, string[]>;
-  notes: Record<string, string>;
   profile: UserProfile;
   readAnnouncements?: string[];
   yearStartMonth?: number; // 1–12، الافتراضي 9 (سبتمبر)
@@ -95,7 +94,7 @@ export interface AppState {
 }
 
 /** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */
-export type PublicPortfolioState = Pick<AppState, 'ev' | 'csubs' | 'profile'> & {
+export type PublicPortfolioState = Pick<AppState, 'profile'> & {
   /** ملخص عام مولَّد بالذكاء الاصطناعي (عمود ai_summary في portfolios) — غائب
    * أو null قبل أول توليد أو لملف بلا شواهد مصنَّفة؛ الصفحة تتدهور بأمان لسلوكها
    * الحالي بدون هذا الحقل. */
@@ -139,9 +138,8 @@ export interface FrozenPointsLevel {
  * وتُحفظ كما هي في عمود harvest_reports.snapshot؛ Public.tsx يعرضها مباشرة
  * بلا أي إعادة حساب حي (خلافاً لمسار ?share=). */
 export interface HarvestSnapshot {
-  /** نفس شكل PublicPortfolioState الذي يستهلكه Public.tsx حالياً — ev/csubs
-   * هنا مبنيان فقط من شواهد الفترة المختارة (وليس كامل الملف)، انظر التعليق
-   * في Dashboard.tsx لتفاصيل بناء مفاتيح ev الاصطناعية من section_indicators. */
+  /** نفس شكل PublicPortfolioState الذي يستهلكه Public.tsx (الملف الشخصي فقط)؛
+   * شواهد الفترة في الحقل evidence أدناه. */
   state: PublicPortfolioState;
   /** مؤشر الاستمرارية، محسوب من monthly_progress ضمن المدى المختار فقط. */
   continuity: ContinuityData;

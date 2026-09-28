@@ -4,6 +4,7 @@ import { SectionReclassifyDropdown } from './Dashboard';
 import { SelectDropdown } from './UI';
 import { supabase } from '../supabaseClient';
 import { useSaveEvidence } from '../hooks/useSaveEvidence';
+import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
 import type { SectionData } from '../types';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
@@ -46,14 +47,7 @@ interface BulkImportReviewProps {
    *  على قائمة مُفلترة أصلاً لا تحوي القيمة المطلوب مطابقتها. */
   stratSectionId?: number;
   supabaseEv?: SupabaseEvidenceHook;
-  onAddEv?: (
-    sid: number,
-    sub: string,
-    type: 'pdf' | 'img' | 'doc' | 'vid',
-    name: string,
-    url?: string,
-    createdAt?: string
-  ) => void;
+  onEvidenceSaved?: OnEvidenceSavedFn;
   onToast?: (msg: string, icon?: string) => void;
 }
 
@@ -67,11 +61,11 @@ const publicUrlFor = (filePath: string): string =>
  * "قبول الكل". صفوف 'failed' تُعالَج تلقائياً عند الفتح بلا أي تفاعل من
  * المستخدم (تُحفظ بلا قسم في evidence، نفس منطق فشل التصنيف الصوتي) ولا تُعرض هنا.
  */
-export default function BulkImportReview({ isOpen, onClose, userId, sections, stratSectionId, supabaseEv, onAddEv, onToast }: BulkImportReviewProps) {
-  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تحديث state.ev
-  // + monthly_progress عبر onAddEv (انظر useSaveEvidence.ts). لا يُستخدم في
+export default function BulkImportReview({ isOpen, onClose, userId, sections, stratSectionId, supabaseEv, onEvidenceSaved, onToast }: BulkImportReviewProps) {
+  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تسجيل الشاهد في
+  // monthly_progress عبر onEvidenceSaved (انظر useSaveEvidence.ts). لا يُستخدم في
   // resolveFailedRows أدناه (استثناء مقصود، انظر تعليقها).
-  const { saveEvidence } = useSaveEvidence(supabaseEv?.addEvidence, onAddEv);
+  const { saveEvidence } = useSaveEvidence(supabaseEv?.addEvidence, onEvidenceSaved);
 
   const [rows, setRows] = useState<ClassifiedRow[]>([]);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
@@ -115,7 +109,7 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
     // استثناء مقصود من مسار saveEvidence الموحّد: هذه الصفوف تُحفظ بلا قسم
     // (section_id null) للتصنيف اليدوي لاحقاً من قائمة "غير مصنّف" — بلا قسم
     // لا يوجد مؤشر ممكن أصلاً (indicator_id يتبع section_id)، فلا يمكن إلزامها
-    // بمؤشر. تبقى INSERT مباشرة كما كانت تماماً، ولا تُحدَّث state.ev/monthly_progress
+    // بمؤشر. تبقى INSERT مباشرة كما كانت تماماً، ولا يُحدَّث monthly_progress
     // هنا (نفس السلوك السابق) لأنها غير مصنَّفة بقسم بعد.
     const dateLabel = new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
     const payload = failedRows.map(r => ({
@@ -206,27 +200,20 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
       // بالتتابع (await داخل الحلقة) لا بالتوازي — recordEvidence في monthly_progress
       // يقرأ العدّاد الحالي ثم يكتب قيمة جديدة (upsert)، فتنفيذ عدة صفوف لنفس
       // القسم بالتوازي قد يتسابق على نفس الصف فيضيع بعض العدّ.
-      let localSyncFailed = false;
       const succeededIds: string[] = [];
       for (const row of targetRows) {
         const edit = getEdit(row);
         if (edit.sectionId == null || !edit.indicatorId) continue; // احتياط إضافي — الأزرار مُعطَّلة أصلاً لهذه الحالة
 
-        // sub = اسم المؤشر المختار فعلياً لهذا الصف (لا subs[0] الثابت) — حتى
-        // يُصنَّف الشاهد محلياً (state.ev) تحت نفس المؤشر المسجَّل في evidence
-        // عبر indicator_id، بدل الانحياز دائماً لأول مؤشر بالقسم
-        const indicatorName = indicatorsBySection[edit.sectionId]?.find(i => i.id === edit.indicatorId)?.name_ar ?? 'عام';
         const result = await saveEvidence({
           section_id: edit.sectionId,
           indicator_id: edit.indicatorId,
-          sub: indicatorName,
           title: edit.title.trim() || 'شاهد من الاستيراد الجماعي',
           evidence_type: 'image',
           file_url: publicUrlFor(row.file_path),
         });
         if (result) {
           succeededIds.push(row.id);
-          if (!result.localSyncOk) localSyncFailed = true;
         }
       }
 
@@ -240,11 +227,7 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
       }
 
       if (succeededIds.length === targetRows.length) {
-        if (localSyncFailed) {
-          onToast?.('تم حفظ الشواهد، لكن تعذّر تحديث العرض المحلي لبعضها — يرجى تحديث الصفحة', '⚠️');
-        } else {
-          onToast?.(`تم اعتماد ${succeededIds.length} ${succeededIds.length === 1 ? 'شاهد' : 'شواهد'} بنجاح ✅`, '✅');
-        }
+        onToast?.(`تم اعتماد ${succeededIds.length} ${succeededIds.length === 1 ? 'شاهد' : 'شواهد'} بنجاح ✅`, '✅');
       } else if (succeededIds.length > 0) {
         onToast?.(`تم اعتماد ${succeededIds.length} من ${targetRows.length}، تعذّر حفظ الباقي ❌`, '⚠️');
       } else {

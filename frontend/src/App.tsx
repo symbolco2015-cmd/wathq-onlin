@@ -48,11 +48,6 @@ export default function App() {
     isAdmin,
     passwordRecovery,
     clearPasswordRecovery,
-    addEv,
-    delEv,
-    addSub,
-    delSub,
-    updateNote,
     updateProfile,
     saveState,
     signOut,
@@ -103,27 +98,11 @@ export default function App() {
 
   const supabaseEv = useSupabaseEvidence(user?.id ?? null, monthlyProgress.removeEvidence, monthlyProgress.recordEvidence);
 
-  // wrapper: يسجّل في monthly_progress عند كل إضافة شاهد
-  // createdAt اختياري: يُمرَّر فقط عند الإضافة من أرشيف شهر سابق ضمن نافذة التعديل
-  // المسموحة، لربط الشاهد بشهره الصحيح في monthly_progress بدل الشهر الحالي الفعلي
-  // ترجع Promise<boolean> (نتيجة addEv/saveState الفعلية) بدل fire-and-forget —
-  // saveState صارت Promise<boolean>، وتجاهل نتيجتها بصمت يعني أن المستدعي
-  // (useSaveEvidence) قد يُبلغ المستخدم بنجاح رغم فشل حفظ state.ev فعلياً.
-  // monthlyProgress.recordEvidence يبقى غير مشروط بنجاح addEv عمداً: الشاهد
-  // الحقيقي في جدول evidence مُدرَج فعلاً قبل الوصول لهنا (saveEvidence)،
-  // وعدّاد monthly_progress يتبع وجوده هو لا نجاح مرآة state.ev المحلية.
-  const handleAddEv = async (
-    sid: number,
-    sub: string,
-    type: 'pdf' | 'img' | 'doc' | 'vid',
-    name: string,
-    url?: string,
-    createdAt?: string
-  ): Promise<boolean> => {
-    const ok = await addEv(sid, sub, type, name, url);
-    monthlyProgress.recordEvidence(sid, createdAt);
-    return ok;
-  };
+  // يسجّل الشاهد في monthly_progress بعد نجاح إدراجه في evidence (يستدعيه
+  // useSaveEvidence فقط بعد النجاح). createdAt اختياري: يُمرَّر فقط عند الإضافة
+  // من أرشيف شهر سابق ضمن نافذة التعديل المسموحة، لربط الشاهد بشهره الصحيح.
+  const onEvidenceSaved = (sectionId: number, createdAt?: string) =>
+    monthlyProgress.recordEvidence(sectionId, createdAt);
 
   const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string; strategyId?: string }>({
     open: false, sectionId: 0, sub: '',
@@ -328,39 +307,6 @@ export default function App() {
 
   const openAddEvModal = (sid: number, sub: string, strategyId?: string) => {
     setEvidenceModal({ open: true, sectionId: sid, sub, strategyId });
-  };
-
-  const openAddSubModal = (sid: number) => {
-    let inputVal = '';
-    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => { inputVal = e.target.value; };
-    
-    setModalConfig({
-      isOpen: true,
-      title: 'إضافة قسم فرعي',
-      subtitle: '',
-      icon: 'ti-folder-plus',
-      body: (
-        <div className="mb-5">
-          <div className="text-[12px] font-bold text-[var(--text3)] mb-2.5 flex items-center gap-2 tracking-wide uppercase">
-            <i className="ti ti-folder-plus text-[16px] text-[var(--em7)]"></i> اسم القسم الفرعي
-          </div>
-          <input 
-            type="text" 
-            autoFocus 
-            className="w-full py-3.5 px-4 bg-white/5 border-[1.5px] border-[var(--line2)] rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15)]" 
-            placeholder="مثال: برامج الموهوبين" 
-            onChange={handleInput} 
-          />
-        </div>
-      ),
-      onConfirm: () => {
-        if (inputVal.trim()) {
-          addSub(sid, inputVal.trim());
-          showToast('تم إضافة القسم الفرعي ✓');
-          closeModal();
-        }
-      }
-    });
   };
 
   // خطوة 1 من تدفّق "استراتيجيات التدريس" الجديد: اختيار استراتيجية من الكتالوج
@@ -1087,19 +1033,16 @@ export default function App() {
             state={state}
             sections={sections}
             onAddEvClick={openAddEvModal}
-            onAddSubClick={openAddSubModal}
-            onUpdateNote={updateNote}
             onDeleteEv={handleDeleteEv}
             onAddStrategyClick={openAddStrategyModal}
             strategyNames={strategyNames}
-            onDelSub={delSub}
             announcements={announcements}
             onMarkAsRead={markAnnouncementAsRead}
             academicDates={academicDates}
             supabaseEv={supabaseEv}
             monthlyProgress={monthlyProgress}
             userId={user?.id}
-            onAddEv={handleAddEv}
+            onEvidenceSaved={onEvidenceSaved}
             onToast={showToast}
             aiConsentGiven={!!state.aiSuggestConsentAt}
             onGiveAiConsent={setAiSuggestConsent}
@@ -1157,7 +1100,7 @@ export default function App() {
         strategyId={evidenceModal.strategyId}
         userId={user?.id}
         supabaseEv={supabaseEv}
-        onAddEv={handleAddEv}
+        onEvidenceSaved={onEvidenceSaved}
         onToast={showToast}
         aiConsentGiven={!!state.aiSuggestConsentAt}
         onGiveAiConsent={setAiSuggestConsent}

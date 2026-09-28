@@ -20,7 +20,7 @@ interface AnalysisSectionCardProps {
   analyses: ResultsAnalysisRow[];
   loading: boolean;
   saveAnalysis: (subject: string, classSection: string | null, summary: AnalysisSummary) => Promise<ResultsAnalysisRow | null>;
-  onAddEv?: EvidenceFormProps['onAddEv'];
+  onEvidenceSaved?: EvidenceFormProps['onEvidenceSaved'];
   onToast?: (msg: string, icon?: string) => void;
   isOpen: boolean;
   onToggle: () => void;
@@ -41,7 +41,7 @@ type Tab =
  */
 export default function AnalysisSectionCard({
   section, sections, userId, supabaseEv, gradeBands, analyses, loading,
-  saveAnalysis, onAddEv, onToast, isOpen, onToggle, focusAnalysisId, onFocusHandled,
+  saveAnalysis, onEvidenceSaved, onToast, isOpen, onToggle, focusAnalysisId, onFocusHandled,
 }: AnalysisSectionCardProps) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
@@ -172,7 +172,7 @@ export default function AnalysisSectionCard({
           sections={sections}
           userId={userId}
           supabaseEv={supabaseEv}
-          onAddEv={onAddEv ?? (() => {})}
+          onEvidenceSaved={onEvidenceSaved ?? (() => {})}
           onToast={onToast ?? noToast}
           onClose={() => setConvertOpen(false)}
         />

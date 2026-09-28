@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import type { EvidenceType } from '../hooks/useSupabaseEvidence';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import { useSaveEvidence } from '../hooks/useSaveEvidence';
+import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
 import { AI_CONSENT_TEXT } from '../utils';
 import { SelectDropdown } from './UI';
 import { LESSON_PLAN_SECTION_ID } from '../data';
@@ -40,15 +41,8 @@ export interface EvidenceFormProps {
   sub: string;
   userId: string | undefined;
   supabaseEv: SupabaseEvidenceHook;
-  /** يحفظ في state.ev المحلي أيضاً للتوافق مع النظام القديم */
-  onAddEv: (
-    sid: number,
-    sub: string,
-    type: 'pdf' | 'img' | 'doc' | 'vid',
-    name: string,
-    url?: string,
-    createdAt?: string
-  ) => void;
+  /** يسجّل الشاهد في عدّاد الشهر (monthly_progress) بعد نجاح إدراجه */
+  onEvidenceSaved: OnEvidenceSavedFn;
   onToast: (msg: string, icon?: string) => void;
   /** يُمرَّر فقط عند الإضافة لبند 4 (استراتيجيات التدريس) — معرّف الاستراتيجية
    *  المختارة/المُنشأة حديثاً (teaching_strategies.id). وجوده يُشدّد شرط تفعيل
@@ -122,12 +116,12 @@ const TYPE_CONFIG: {
  * الديسكتوب، أو BottomSheet على الجوال) تحديد شكل العرض الخارجي.
  */
 export default function EvidenceForm({
-  isOpen, onClose, sectionId, sub, userId, supabaseEv, onAddEv, onToast, createdAt,
+  isOpen, onClose, sectionId, sub, userId, supabaseEv, onEvidenceSaved, onToast, createdAt,
   aiConsentGiven, onGiveAiConsent, prefill, strategyId,
 }: EvidenceFormProps) {
-  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تحديث state.ev
-  // + monthly_progress عبر onAddEv (انظر useSaveEvidence.ts)
-  const { saveEvidence } = useSaveEvidence(supabaseEv.addEvidence, onAddEv);
+  // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تسجيل الشاهد
+  // في monthly_progress عبر onEvidenceSaved (انظر useSaveEvidence.ts)
+  const { saveEvidence } = useSaveEvidence(supabaseEv.addEvidence, onEvidenceSaved);
 
   // ── Form state ──────────────────────────────────────────────
   const [title,          setTitle]          = useState('');
@@ -538,19 +532,11 @@ export default function EvidenceForm({
     // الكتابة من الصفر تُنتج دائماً دليل "ملاحظة" بلا ملف مرفق، بصرف النظر عن
     // نوع الشاهد المختار أعلاه (مخفي أصلاً في هذا الوضع)
     const effectiveEvidenceType: EvidenceType = writeFromScratch ? 'note' : evidenceType;
-    // sub يُشتَق من المؤشر المختار فعلياً (indicatorId)، لا من prop sub القادم
-    // من البطاقة التي فُتح منها النموذج — قد يختلفان لأن indicatorId يبدأ
-    // فارغاً دوماً (انظر useEffect أعلاه) ويُعاد اختياره يدوياً من كل مؤشرات
-    // القسم، لا مقيَّداً بمؤشر البطاقة الأصلية. عدم الاشتقاق يحفظ الشاهد فعلياً
-    // تحت indicator_id واحد بينما يظهر محلياً (state.ev) تحت مفتاح "sub" آخر.
-    const effectiveSub = indicators.find(i => i.id === indicatorId)?.name_ar ?? sub;
-
     setSaving(true);
     try {
       const result = await saveEvidence({
         section_id:      sectionId,
         indicator_id:    indicatorId,
-        sub:             effectiveSub,
         title:           title.trim(),
         description:     description.trim()    || undefined,
         impact:          impact.trim()         || undefined,
@@ -566,11 +552,7 @@ export default function EvidenceForm({
       }, createdAt);
 
       if (result) {
-        if (result.localSyncOk) {
-          onToast('تم إضافة الشاهد بنجاح ✅', '✅');
-        } else {
-          onToast('تم حفظ الشاهد، لكن تعذّر تحديث العرض المحلي — يرجى تحديث الصفحة', '⚠️');
-        }
+        onToast('تم إضافة الشاهد بنجاح ✅', '✅');
         onClose();
       } else {
         onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', '❌');

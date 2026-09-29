@@ -21,8 +21,7 @@ ON CONFLICT (id) DO UPDATE SET
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 
--- (2) تفعيل RLS على storage.objects (مفعّل افتراضياً لكن نؤكد)
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- لا يُعدَّل storage.objects: يملكه Supabase، وRLS مفعّل عليه مسبقاً. تنفيذ ALTER يفشل بـ must be owner of table objects
 
 
 -- ─── تنظيف سياسات قديمة إن وُجدت ───────────────────────────────────────

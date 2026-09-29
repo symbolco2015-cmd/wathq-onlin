@@ -214,6 +214,36 @@ The admin panel gets real email / `created_at` / `last_sign_in_at` from
 `auth.users` via `admin_list_users()` (SECURITY DEFINER, raises `42501`
 for non-admins).
 
+**Reset / delete a teacher (`admin-portfolio-action` Edge Function).**
+Callable only by an admin: the caller is identified from its JWT and
+checked with `is_admin()`. Nothing in the request body is trusted as
+identity. Before touching anything it refuses a target that is in
+`admin_users` (400), a missing portfolio (404), and a `confirm_name` that
+does not match `state.profile.name` after trimming (400). The database
+step runs first. The storage step comes second and deletes everything
+under `{id}/`, recursively. Which buckets it covers depends on the mode
+(below).
+Each call writes one `admin_audit_log` row with counts only, no name or
+email.
+
+- `reset`: calls `admin_reset_portfolio_data(id)`. That function is
+  granted to `service_role` only and runs as one transaction. It deletes
+  evidence, `monthly_progress`, results analysis, harvest reports,
+  indicator/section AI summaries, lesson plan templates, the bulk import
+  queue and the teacher's non-global `teaching_strategies`, and nulls
+  the three `portfolios.ai_*` summary fields. It keeps the profile,
+  `share_enabled`, `year_start_month`, `ai_usage_log` (so a reset cannot
+  refresh the AI quota) and `portfolio_feature_overrides`. Storage files
+  are deleted from `evidence`, `evidence-video` and `evidence-audio`
+  only. The profile photo is kept, because it lives in the separate
+  `avatars` bucket (`{id}/avatar.jpg`), which reset does not touch.
+- `delete`: deletes the `portfolios` row, and every dependent table
+  cascades (`monthly_progress` was made `ON DELETE CASCADE` in
+  `20260929_admin_portfolio_actions.sql`). Storage files are deleted from
+  all four buckets: the three above plus `avatars`.
+  The `auth.users` account is deleted only when `delete_auth: true` is
+  sent.
+
 ### RLS
 
 Most tables have RLS enabled. Before assuming a table is protected,
@@ -251,6 +281,7 @@ knows Gemini's request shape; swap providers there only).
 | `generate-portfolio-summaries` | weekly GitHub Action + manual refresh button | Generates the public-share-page AI summary + "أبرز إنجاز" |
 | `generate-indicator-summary` | manual, per-indicator button (lesson-plan indicators specifically) | Per-indicator AI summary |
 | `generate-section-summary` | manual | Per-section AI summary (superseded the indicator-level approach for the "lesson plan" section specifically — both still coexist, by design, see inline comments in `generate-indicator-summary`) |
+| `admin-portfolio-action` | manual, admin panel | Reset or delete a teacher's portfolio (see "Admin Access") |
 
 ### Known pitfall — custom secret vs. Supabase API key (learned the hard way, 13 September 2026)
 

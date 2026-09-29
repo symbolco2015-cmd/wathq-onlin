@@ -138,7 +138,9 @@ export interface FrozenPointsLevel {
  * وتُحفظ كما هي في عمود harvest_reports.snapshot؛ Public.tsx يعرضها مباشرة
  * بلا أي إعادة حساب حي (خلافاً لمسار ?share=). */
 export interface HarvestSnapshot {
-  /** نفس شكل PublicPortfolioState الذي يستهلكه Public.tsx (الملف الشخصي فقط)؛
+  /** نفس شكل PublicPortfolioState الذي يستهلكه Public.tsx: الملف الشخصي، و
+   * completion = «جاهزية الفترة» (تغطية مؤشرات core بشواهد الفترة فقط، محسوبة
+   * وقت التوليد — غائبة في التقارير الأقدم أو إن فشل جلب المؤشرات)؛
    * شواهد الفترة في الحقل evidence أدناه. */
   state: PublicPortfolioState;
   /** مؤشر الاستمرارية، محسوب من monthly_progress ضمن المدى المختار فقط. */

@@ -216,10 +216,41 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, aca
         (strategies || []).forEach((s: any) => { strategyNames[s.id] = s.name_ar; });
       }
 
+      // 6) جاهزية الفترة — نفس معادلة get_portfolio_completion (أقسام core فقط)
+      // لكن "له شاهد" = له شاهد من rawEvidence (شواهد الفترة). تُخبَز هنا ولا
+      // تُحسب وقت العرض. فشل جلب المؤشرات لا يُفشل التقرير: يُحفظ بلا completion
+      // و Public.tsx يُخفي البطاقة حينها.
+      let completion: HarvestSnapshot['state']['completion'];
+      const { data: coreIndicators, error: indErr } = await supabase
+        .from('section_indicators')
+        .select('id, section_id, sections!inner(section_type)')
+        .eq('sections.section_type', 'core');
+      if (indErr || !coreIndicators || coreIndicators.length === 0) {
+        console.warn('[HarvestReportSheet] تعذّر جلب مؤشرات أقسام core — التقرير بلا جاهزية الفترة:', indErr?.message ?? 'empty');
+      } else {
+        const covered = new Set(rawEvidence.map(e => e.indicator_id).filter((id): id is string => !!id));
+        const bySection = new Map<number, { total: number; covered: number }>();
+        let coveredCount = 0;
+        (coreIndicators as { id: string; section_id: number }[]).forEach(ind => {
+          const isCovered = covered.has(ind.id);
+          if (isCovered) coveredCount++;
+          const s = bySection.get(ind.section_id) ?? { total: 0, covered: 0 };
+          s.total++;
+          if (isCovered) s.covered++;
+          bySection.set(ind.section_id, s);
+        });
+        completion = {
+          overall_pct: Math.round((coveredCount / coreIndicators.length) * 100),
+          completed_sections: Array.from(bySection.values()).filter(s => s.covered === s.total).length,
+          total_sections: bySection.size,
+        };
+      }
+
       const generatedAt = new Date().toISOString();
       const snapshot: HarvestSnapshot = {
         state: {
           profile: state.profile,
+          ...(completion ? { completion } : {}),
         },
         strategyNames,
         continuity: {

@@ -981,15 +981,22 @@ export default function Public({ state, sections, isSharedView, continuity, evid
 
         <div className="max-w-[1000px] mx-auto py-10 px-4 sm:px-7">
 
-          {/* المستوى 1: مؤشر الجاهزية الإجمالي — بارز فوق كل شيء */}
+          {/* المستوى 1: مؤشر الجاهزية الإجمالي — بارز فوق كل شيء. في وضع التقرير
+              يصبح «جاهزية الفترة» (مخبوزة في snapshot.state.completion وقت التوليد)،
+              ويُخفى إطلاقاً في التقارير القديمة التي لا تحويها بدل عرض 0%. */}
+          {!(reportMeta && !state.completion) && (
           <div className="print-card mb-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line)] shadow-lg p-6 sm:p-8 relative overflow-hidden">
             <div className="print-decor absolute top-0 left-0 w-full h-[4px]" style={{ backgroundColor: getCompletionColor(overallPct) }}></div>
             <div className="flex items-center justify-between flex-wrap gap-4 mb-4 relative z-10">
               <div>
                 <h2 className="text-[15px] font-bold text-[var(--text3)] flex items-center gap-2">
-                  <i className="ti ti-gauge text-[var(--em8)]"></i> مؤشر الجاهزية العام
+                  <i className="ti ti-gauge text-[var(--em8)]"></i> {reportMeta ? 'جاهزية الفترة' : 'مؤشر الجاهزية العام'}
                 </h2>
-                <p className="text-[12px] text-[var(--text4)] mt-1">متوسط نسبة الاكتمال عبر {state.completion?.total_sections ?? sectionsWithPct.length} مجالات أساسية</p>
+                <p className="text-[12px] text-[var(--text4)] mt-1">
+                  {reportMeta
+                    ? 'المؤشرات التي غطّيتها بشواهد خلال هذه الفترة'
+                    : <>متوسط نسبة الاكتمال عبر {state.completion?.total_sections ?? sectionsWithPct.length} مجالات أساسية</>}
+                </p>
               </div>
               <div className="text-[40px] sm:text-[48px] font-black leading-none" style={{ color: getCompletionColor(overallPct) }}>{overallPct}%</div>
             </div>
@@ -1001,6 +1008,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
             </div>
             <div className="mt-3 text-[12.5px] font-bold relative z-10" style={{ color: getCompletionColor(overallPct) }}>{getCompletionLabel(overallPct)}</div>
           </div>
+          )}
 
           {/* ملخص الملف بالذكاء الاصطناعي (ai_summary) — لا يُعرض شيء إطلاقاً إن
               كانت القيمة غائبة أو فارغة، بلا أي نص بديل أو رسالة خطأ */}

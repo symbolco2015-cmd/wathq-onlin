@@ -34,33 +34,50 @@ function readStored(): SupportContacts {
   }
 }
 
-export function useSupportContacts(): SupportContacts {
-  const [contacts, setContacts] = useState<SupportContacts>(readStored);
+// جلب واحد لكل تحميل للصفحة تشترك فيه كل النسخ. عند الفشل يُصفَّر الوعد
+// فتعيد النسخة التالية المحاولة.
+let fetchPromise: Promise<SupportContacts | null> | null = null;
 
-  useEffect(() => {
-    if (!supabase) return;
-    let cancelled = false;
+function fetchContacts(): Promise<SupportContacts | null> {
+  if (fetchPromise) return fetchPromise;
+  if (!supabase) return Promise.resolve(null);
 
+  const fail = () => {
+    fetchPromise = null;
+    return null;
+  };
+
+  fetchPromise = Promise.resolve(
     supabase
       .from('public_settings')
       .select('key, value')
       .in('key', ['support_email', 'support_whatsapp'])
-      .then(
-        ({ data, error }) => {
-          if (error || !data) return;
-          const byKey = new Map(data.map((row: { key: string; value: string }) => [row.key, row.value]));
-          const next = merge(readStored(), {
-            email: byKey.get('support_email'),
-            whatsapp: byKey.get('support_whatsapp'),
-          });
-          // يُحفظ حتى لو فُكّ تركيب المكوّن، ليبقى متاحاً عند فشل لاحق
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-          } catch {}
-          if (!cancelled) setContacts(next);
-        },
-        () => {}
-      );
+  ).then(({ data, error }) => {
+    if (error || !data) return fail();
+    const byKey = new Map(data.map((row: { key: string; value: string }) => [row.key, row.value]));
+    const next = merge(readStored(), {
+      email: byKey.get('support_email'),
+      whatsapp: byKey.get('support_whatsapp'),
+    });
+    // يُحفظ حتى لو فُكّ تركيب المكوّن، ليبقى متاحاً عند فشل لاحق
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {}
+    return next;
+  }, fail);
+
+  return fetchPromise;
+}
+
+export function useSupportContacts(): SupportContacts {
+  const [contacts, setContacts] = useState<SupportContacts>(readStored);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchContacts().then((next) => {
+      if (next && !cancelled) setContacts(next);
+    });
 
     return () => {
       cancelled = true;

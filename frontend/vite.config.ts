@@ -39,6 +39,10 @@ export default defineConfig(() => {
           // network, same as without a PWA.
           globPatterns: ['**/*.{js,css,html,woff,woff2,png,svg,ico}'],
           globIgnores: ['brand/og-image.png'],
+          // خط Tabler يُطلب بلاحقة ?v3.44.0، فبدون /^v\d/ لا يطابق نسخة
+          // الـ precache وتظهر الأيقونات مربعات فارغة بلا اتصال. أول قيمتين
+          // هما الافتراضيتان في workbox.
+          ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^v\d/],
           // injectRegister: 'script' (CSP-driven, see above) means
           // vite-plugin-pwa does NOT auto-enable these for registerType:
           // 'autoUpdate' (it only does so for injectRegister 'auto'/null).

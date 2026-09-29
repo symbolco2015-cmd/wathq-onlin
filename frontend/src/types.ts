@@ -145,10 +145,10 @@ export interface HarvestSnapshot {
   continuity: ContinuityData;
   /** شواهد جدول evidence الغني ضمن المدى المختار — impact/self_reflection
    * مُفرَّغة دائماً (null) بنفس منطق الخصوصية في get_shared_evidence، لأن هذا
-   * التقرير قابل للقراءة العامة عبر id (انظر RLS على harvest_reports). */
+   * التقرير قابل للقراءة العامة عبر id (انظر get_harvest_report). */
   evidence: SupabaseEvidence[];
   /** اسم كل استراتيجية تدريس (id → name_ar) مُخبوز وقت التوليد — التقرير
-   * قابل للقراءة العامة عبر id بلا أي RPC حية وقت العرض (نفس مبدأ evidence
+   * قابل للقراءة العامة عبر id ولا يُحسب شيء حياً وقت العرض (نفس مبدأ evidence
    * أعلاه)، فلا يمكن حل strategy_id إلى اسم إلا بتجميده هنا مسبقاً. */
   strategyNames: Record<string, string>;
   /** شارة اللقب/النقاط محسوبة مرة واحدة وقت التوليد من شواهد المدى المختار

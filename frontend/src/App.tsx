@@ -153,8 +153,8 @@ export default function App() {
   // مباشرة لغير المالك، انظر usePublicLessonPlanSummary).
   const sharedLessonPlanSummary = usePublicLessonPlanSummary(shareUserId ?? null);
 
-  // تقرير حصاد فصلي (?report=) — قراءة مباشرة (ليست RPC) على harvest_reports،
-  // السماح بها عبر RLS "قراءة عامة بمعرفة id" فقط (انظر useHarvestReport).
+  // تقرير حصاد فصلي (?report=) — عبر RPC get_harvest_report (القراءة المباشرة
+  // على harvest_reports للمالك والأدمن فقط، انظر useHarvestReport).
   const { report: harvestReport, loading: harvestReportLoading, error: harvestReportError } = useHarvestReport(reportId ?? null);
 
   // نفس البيانات لمعاينة المالك لملفه الخاص (صفحة 'public' داخل التطبيق) —

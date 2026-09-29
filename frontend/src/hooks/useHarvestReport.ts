@@ -8,10 +8,11 @@ interface UseHarvestReportResult {
   error: string | null;
 }
 
-/** يجلب تقرير حصاد فصلي واحد عبر قراءة مباشرة على جدول harvest_reports —
- * بخلاف usePublicProfile/usePublicEvidence، لا حاجة هنا لأي RPC: السطر
- * "قراءة عامة بمعرفة id" على harvest_reports يسمح بـSELECT عام مباشر (المعرّف
- * uuid عشوائي يكفي وحده كحماية، تماماً كأي رابط مشاركة لا يمكن تخمينه). */
+/** يجلب تقرير حصاد فصلي واحد عبر RPC get_harvest_report(report_id) —
+ * RLS على harvest_reports تقصر القراءة المباشرة على المالك والأدمن، والدالة
+ * (SECURITY DEFINER) تُرجع التقرير المطلوب بمعرّفه فقط أو null إن لم يوجد.
+ * لا شرط share_enabled: المعرّف uuid عشوائي يكفي وحده كحماية، تماماً كأي
+ * رابط مشاركة لا يمكن تخمينه. */
 export function useHarvestReport(reportId: string | null): UseHarvestReportResult {
   const [report, setReport] = useState<HarvestReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,10 +37,7 @@ export function useHarvestReport(reportId: string | null): UseHarvestReportResul
     setError(null);
 
     supabase
-      .from('harvest_reports')
-      .select('*')
-      .eq('id', reportId)
-      .single()
+      .rpc('get_harvest_report', { report_id: reportId })
       .then(({ data, error: sbError }) => {
         if (cancelled) return;
 

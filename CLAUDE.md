@@ -190,9 +190,9 @@ result grading tiers, unrelated to teacher portfolio scoring —
 
 **Known orphaned/legacy objects** (confirmed zero code references as of
 this rewrite — candidates for cleanup, not for building on top of):
-`user_portfolios` table, `evidence_sections` table (RLS enabled with no
-policies — silently denies everything), `archive_20260904` schema
-(a backup snapshot, not a working table).
+`evidence_sections` table (RLS enabled with no policies — silently
+denies everything), `archive_20260904` schema (a backup snapshot, not a
+working table). (`user_portfolios` was dropped in step 1.4.)
 
 Key RPCs (SECURITY DEFINER — check `get_advisors` for the current full
 list before assuming this one is exhaustive): `get_portfolio_completion`
@@ -225,6 +225,8 @@ sharing goes exclusively through the SECURITY DEFINER RPCs
 `share_enabled = true`. `get_shared_portfolio` returns `profile` built
 from an explicit field list (not the whole object), so a new profile
 field never becomes public unless it is added to that list.
+
+**`harvest_reports`**: direct SELECT for the owner and admins only; public `?report=` viewing goes through `get_harvest_report(report_id)`.
 
 ---
 

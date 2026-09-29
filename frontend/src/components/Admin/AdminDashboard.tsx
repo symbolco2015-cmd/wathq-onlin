@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { AdminUser, PlatformStats, PortfolioFeatureOverride } from '../../hooks/useAdminStore';
+import type { AdminUser, PlatformStats, PortfolioFeatureOverride, PortfolioActionResult } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
 import { getCompletionColor } from '../../utils';
 import { SelectDropdown } from '../UI';
@@ -227,17 +227,26 @@ function UserRow({ user, onView, idx }: {
 function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }: {
   user: AdminUser;
   onClose: () => void;
-  onDelete: (id: string) => Promise<boolean>;
-  onReset: (id: string) => Promise<boolean>;
+  onDelete: (id: string, confirmName: string, deleteAuth: boolean) => Promise<PortfolioActionResult>;
+  onReset: (id: string, confirmName: string) => Promise<PortfolioActionResult>;
   onToast: (msg: string, icon?: string) => void;
   shareUrl: string;
 }) {
-  const [deleting, setDeleting] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
+  // لوحة التأكيد: العملية المفتوحة، والاسم المكتوب، وخيار حذف حساب الدخول
+  const [pending, setPending] = useState<'reset' | 'delete' | null>(null);
+  const [typedName, setTypedName] = useState('');
+  const [deleteAuth, setDeleteAuth] = useState(false);
+  const [running, setRunning] = useState(false);
   const [inlineError, setInlineError] = useState('');
+  const nameMatches = typedName.trim() !== '' && typedName.trim() === user.name.trim();
+
+  const openConfirm = (mode: 'reset' | 'delete') => {
+    setPending(mode);
+    setTypedName('');
+    setDeleteAuth(false);
+    setInlineError('');
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -248,43 +257,45 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
   };
 
   const handleDelete = async () => {
+    if (!nameMatches) return;
     setInlineError('');
-    setDeleting(true);
+    setRunning(true);
     try {
-      const ok = await onDelete(user.id);
-      if (ok) {
-        onToast('تم حذف بيانات المستخدم نهائياً 🗑️', '🗑️');
+      const res = await onDelete(user.id, typedName.trim(), deleteAuth);
+      if (res.ok) {
+        if (res.authError) onToast('حُذف الملف، لكن تعذّر حذف حساب الدخول', '⚠️');
+        else if (res.storageErrors > 0) onToast('تم، لكن تعذّر حذف بعض الملفات. أعد المحاولة لاحقاً', '⚠️');
+        else onToast('تم حذف بيانات المستخدم نهائياً 🗑️', '🗑️');
         onClose();
       } else {
-        setInlineError('✖ فشل الحذف — تأكد من تطبيق سياسة الحذف في Supabase RLS');
-        setConfirmDelete(false);
+        setInlineError('message' in res ? res.message : 'تعذّر تنفيذ العملية، حاول مجدداً');
       }
-    } catch (e: any) {
-      setInlineError(`خطأ: ${e?.message || 'حدث خطأ غير معروف'}`);
-      setConfirmDelete(false);
+    } catch (e: unknown) {
+      console.error('Delete portfolio error:', e);
+      setInlineError('تعذّر تنفيذ العملية، حاول مجدداً');
     } finally {
-      setDeleting(false);
+      setRunning(false);
     }
   };
 
   const handleReset = async () => {
+    if (!nameMatches) return;
     setInlineError('');
-    setResetting(true);
+    setRunning(true);
     try {
-      const ok = await onReset(user.id);
-      if (ok) {
-        onToast('تم إعادة تعيين بيانات المستخدم ✅', '✅');
-        setConfirmReset(false);
+      const res = await onReset(user.id, typedName.trim());
+      if (res.ok) {
+        if (res.storageErrors > 0) onToast('تم، لكن تعذّر حذف بعض الملفات. أعد المحاولة لاحقاً', '⚠️');
+        else onToast('تم إعادة تعيين بيانات المستخدم ✅', '✅');
         onClose();
       } else {
-        setInlineError('✖ فشل إعادة التعيين — تأكد من تطبيق سياسة UPDATE في Supabase RLS');
-        setConfirmReset(false);
+        setInlineError('message' in res ? res.message : 'تعذّر تنفيذ العملية، حاول مجدداً');
       }
-    } catch (e: any) {
-      setInlineError(`خطأ: ${e?.message || 'حدث خطأ غير معروف'}`);
-      setConfirmReset(false);
+    } catch (e: unknown) {
+      console.error('Reset portfolio error:', e);
+      setInlineError('تعذّر تنفيذ العملية، حاول مجدداً');
     } finally {
-      setResetting(false);
+      setRunning(false);
     }
   };
 
@@ -360,6 +371,107 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
           </div>
         )}
 
+        {/* Confirm Panel — إعادة التعيين أو الحذف بكتابة اسم المعلم */}
+        {pending && (() => {
+          const isDelete = pending === 'delete';
+          const tone = isDelete ? '248,113,113' : '251,191,36';
+          const toneColor = isDelete ? '#f87171' : '#fbbf24';
+          return (
+            <div style={{
+              margin: inlineError ? '12px 24px 0' : '0 24px 0',
+              padding: '16px',
+              background: `rgba(${tone},.06)`,
+              border: `1px solid rgba(${tone},.3)`,
+              borderRadius: '10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 700, color: toneColor }}>
+                <i className={`ti ${isDelete ? 'ti-trash' : 'ti-refresh'}`} style={{ fontSize: '16px' }} />
+                {isDelete ? 'حذف الملف نهائياً' : 'إعادة تعيين الملف'}
+              </div>
+
+              <div style={{ fontSize: '12px', color: 'var(--text2)', lineHeight: 1.7 }}>
+                <div>
+                  <strong>سيُحذف: </strong>
+                  {isDelete
+                    ? 'الملف كاملاً، ومعه الأدلة وملفاتها، وعدّاد الشهر، وتحليل النتائج، وتقارير الحصاد، والملخصات، ومعه الصورة الشخصية.'
+                    : 'الأدلة وملفاتها، وعدّاد الشهر، وتحليل النتائج، وتقارير الحصاد، والملخصات.'}
+                </div>
+                {!isDelete && (
+                  <div>
+                    <strong>سيبقى: </strong>
+                    الحساب، والملف الشخصي، والصورة.
+                  </div>
+                )}
+              </div>
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px', color: 'var(--text2)' }}>
+                <span>
+                  اكتب اسم المعلم للتأكيد: <strong style={{ color: 'var(--text1)' }}>{user.name}</strong>
+                </span>
+                <input
+                  type="text"
+                  value={typedName}
+                  onChange={e => setTypedName(e.target.value)}
+                  disabled={running}
+                  autoComplete="off"
+                  style={{
+                    height: '44px',
+                    padding: '0 12px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--line2)',
+                    background: 'var(--surf3)',
+                    color: 'var(--text1)',
+                    fontSize: '14px',
+                    fontFamily: 'var(--font)',
+                    outline: 'none',
+                  }}
+                />
+              </label>
+
+              {isDelete && (
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: running ? 'default' : 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={deleteAuth}
+                    onChange={e => setDeleteAuth(e.target.checked)}
+                    disabled={running}
+                    style={{ marginTop: '4px', accentColor: '#f87171' }}
+                  />
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '14px', color: 'var(--text2)' }}>حذف حساب الدخول أيضاً</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text4)' }}>لن يستطيع المعلم تسجيل الدخول بهذا البريد بعدها</span>
+                  </span>
+                </label>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  className={`umodal-btn ${isDelete ? 'danger-btn' : 'warning-btn'} confirm`}
+                  onClick={isDelete ? handleDelete : handleReset}
+                  disabled={!nameMatches || running}
+                  style={{ height: '44px', borderRadius: '10px', fontSize: '14px', opacity: !nameMatches && !running ? 0.5 : 1, cursor: !nameMatches || running ? 'not-allowed' : 'pointer' }}
+                >
+                  <i className={`ti ${running ? 'ti-loader animate-spin' : 'ti-alert-triangle'}`} />
+                  {running
+                    ? (isDelete ? 'جاري الحذف...' : 'جاري إعادة التعيين...')
+                    : (isDelete ? 'تأكيد الحذف النهائي' : 'تأكيد إعادة التعيين')}
+                </button>
+                <button
+                  className="umodal-btn copy-btn"
+                  onClick={() => { setPending(null); setInlineError(''); }}
+                  disabled={running}
+                  style={{ height: '44px', borderRadius: '10px', fontSize: '14px' }}
+                >
+                  <i className="ti ti-x" /> إلغاء
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Actions */}
         <div className="umodal-actions">
           <a
@@ -375,37 +487,23 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
             {copied ? 'تم النسخ!' : 'نسخ الرابط'}
           </button>
 
-          {/* Reset Button */}
-          {!confirmReset ? (
-            <button className="umodal-btn warning-btn" onClick={() => { setConfirmReset(true); setConfirmDelete(false); }}>
-              <i className="ti ti-refresh" /> إعادة تعيين
-            </button>
-          ) : (
-            <button
-              className="umodal-btn warning-btn confirm"
-              onClick={handleReset}
-              disabled={resetting}
-            >
-              <i className={`ti ${resetting ? 'ti-loader animate-spin' : 'ti-alert-triangle'}`} />
-              {resetting ? 'جاري إعادة التعيين...' : 'تأكيد إعادة التعيين'}
-            </button>
-          )}
+          {/* Reset Button — يفتح لوحة التأكيد فقط */}
+          <button
+            className={`umodal-btn warning-btn${pending === 'reset' ? ' confirm' : ''}`}
+            onClick={() => openConfirm('reset')}
+            disabled={running}
+          >
+            <i className="ti ti-refresh" /> إعادة تعيين
+          </button>
 
-          {/* Delete Button */}
-          {!confirmDelete ? (
-            <button className="umodal-btn danger-btn" onClick={() => { setConfirmDelete(true); setConfirmReset(false); }}>
-              <i className="ti ti-trash" /> حذف البيانات
-            </button>
-          ) : (
-            <button
-              className="umodal-btn danger-btn confirm"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
-              <i className={`ti ${deleting ? 'ti-loader animate-spin' : 'ti-alert-triangle'}`} />
-              {deleting ? 'جاري الحذف...' : 'تأكيد الحذف النهائي'}
-            </button>
-          )}
+          {/* Delete Button — يفتح لوحة التأكيد فقط */}
+          <button
+            className={`umodal-btn danger-btn${pending === 'delete' ? ' confirm' : ''}`}
+            onClick={() => openConfirm('delete')}
+            disabled={running}
+          >
+            <i className="ti ti-trash" /> حذف البيانات
+          </button>
         </div>
       </div>
     </div>
@@ -421,8 +519,8 @@ interface AdminDashboardProps {
   loading: boolean;
   error: string | null;
   onReload: () => void;
-  onDeleteUser: (id: string) => Promise<boolean>;
-  onResetUser: (id: string) => Promise<boolean>;
+  onDeleteUser: (id: string, confirmName: string, deleteAuth: boolean) => Promise<PortfolioActionResult>;
+  onResetUser: (id: string, confirmName: string) => Promise<PortfolioActionResult>;
   onExportCSV: (users: AdminUser[]) => void;
   onToast: (msg: string, icon?: string) => void;
   getShareUrl: (id: string) => string;
@@ -1503,15 +1601,15 @@ export default function AdminDashboard({
         <UserDetailModal
           user={selectedUser}
           onClose={() => setSelectedUser(null)}
-          onDelete={async (id) => {
-            const ok = await onDeleteUser(id);
-            if (ok) setSelectedUser(null);
-            return ok;
+          onDelete={async (id, confirmName, deleteAuth) => {
+            const res = await onDeleteUser(id, confirmName, deleteAuth);
+            if (res.ok) setSelectedUser(null);
+            return res;
           }}
-          onReset={async (id) => {
-            const ok = await onResetUser(id);
-            if (ok) setSelectedUser(null);
-            return ok;
+          onReset={async (id, confirmName) => {
+            const res = await onResetUser(id, confirmName);
+            if (res.ok) setSelectedUser(null);
+            return res;
           }}
           onToast={onToast}
           shareUrl={getShareUrl(selectedUser.id)}

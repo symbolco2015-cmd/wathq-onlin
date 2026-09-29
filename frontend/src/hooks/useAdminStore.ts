@@ -1,7 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import type { AppState, Announcement } from '../types';
-import { pickAppStateFields } from './useAppStore';
+
+// نتيجة إعادة تعيين ملف معلم أو حذفه عبر admin-portfolio-action
+export type PortfolioActionResult =
+  | { ok: true; storageErrors: number; authError?: string }
+  | { ok: false; message: string };
+
+const PORTFOLIO_ACTION_FALLBACK_MESSAGE = 'تعذّر تنفيذ العملية، حاول مجدداً';
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
 
 export interface AdminUser {
   id: string;
@@ -339,57 +350,48 @@ export function useAdminStore(isAdmin: boolean) {
     }
   };
 
-  // Delete a user's portfolio (admin only)
-  const deleteUserPortfolio = async (userId: string): Promise<boolean> => {
-    if (!supabase) return false;
+  // إعادة التعيين والحذف على الخادم (admin-portfolio-action): الصلاحية ومطابقة
+  // الاسم وحذف الملفات والتسجيل في admin_audit_log كلها هناك، فلا logAdminAction هنا.
+  const invokePortfolioAction = async (body: {
+    portfolio_id: string;
+    mode: 'reset' | 'delete';
+    confirm_name: string;
+    delete_auth?: boolean;
+  }): Promise<PortfolioActionResult> => {
+    if (!supabase) return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
     try {
-      const { error } = await supabase
-        .from('portfolios')
-        .delete()
-        .eq('id', userId);
-      if (error) throw error;
-      setUsers(prev => prev.filter(u => u.id !== userId));
-      void logAdminAction('portfolio.delete', userId);
-      return true;
-    } catch (e: any) {
-      console.error('Delete portfolio error:', e);
-      return false;
+      const { data, error } = await supabase.functions.invoke('admin-portfolio-action', { body });
+      if (error) {
+        // الرد غير 2xx: error.context هو Response الأصلي، ورسالة الخادم العربية في جسمه
+        if (error instanceof FunctionsHttpError) {
+          const errBody: unknown = await error.context.json().catch(() => null);
+          if (isRecord(errBody) && typeof errBody.message === 'string' && errBody.message) {
+            return { ok: false, message: errBody.message };
+          }
+        }
+        console.error(`[admin-portfolio-action] ${body.mode} error:`, error);
+        return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
+      }
+      if (!isRecord(data) || data.ok !== true) {
+        return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
+      }
+      const storageErrors = Array.isArray(data.storage_errors) ? data.storage_errors.length : 0;
+      const authError = typeof data.auth_error === 'string' ? data.auth_error : undefined;
+      await loadAdminData();
+      return { ok: true, storageErrors, authError };
+    } catch (e: unknown) {
+      console.error(`[admin-portfolio-action] ${body.mode} error:`, e);
+      return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
     }
   };
+
+  // Delete a user's portfolio (admin only)
+  const deleteUserPortfolio = (userId: string, confirmName: string, deleteAuth: boolean): Promise<PortfolioActionResult> =>
+    invokePortfolioAction({ portfolio_id: userId, mode: 'delete', confirm_name: confirmName, delete_auth: deleteAuth });
 
   // Reset a user's portfolio data (keep profile)
-  const resetUserPortfolio = async (userId: string): Promise<boolean> => {
-    if (!supabase) return false;
-    try {
-      // Fetch current state to preserve profile
-      const { data, error: fetchError } = await supabase
-        .from('portfolios')
-        .select('state')
-        .eq('id', userId)
-        .single();
-      if (fetchError) throw fetchError;
-
-      // TODO المرحلة 1: الحذف الفعلي عبر دالة خادم
-      // حالياً يُعاد حفظ حقول AppState المعروفة فقط (تسقط حقول النظام القديم
-      // إن وُجدت)، ولا يُحذف أي صف من جدول evidence.
-      const resetState = pickAppStateFields((data?.state || {}) as any);
-
-      const { error } = await supabase
-        .from('portfolios')
-        .update({ state: resetState, updated_at: new Date().toISOString() })
-        .eq('id', userId);
-      if (error) throw error;
-
-      setUsers(prev => prev.map(u =>
-        u.id === userId ? { ...u, evidenceCount: 0, strategiesCount: 3 } : u
-      ));
-      void logAdminAction('portfolio.reset', userId);
-      return true;
-    } catch (e: any) {
-      console.error('Reset portfolio error:', e);
-      return false;
-    }
-  };
+  const resetUserPortfolio = (userId: string, confirmName: string): Promise<PortfolioActionResult> =>
+    invokePortfolioAction({ portfolio_id: userId, mode: 'reset', confirm_name: confirmName });
 
   // Export users list as CSV
   const exportCSV = (usersList: AdminUser[]) => {

@@ -74,6 +74,11 @@ body{
 @keyframes floatR{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(1.08)}}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* شاشة البداية وهيكل التحميل (wathq-prototype.html) */
+@keyframes splashBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
+@keyframes splashBar{0%{right:-40%}100%{right:100%}}
+@keyframes splashFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes skShimmer{0%{background-position:120% 0}100%{background-position:-120% 0}}
 @keyframes goldShimmer{
   0%{background-position:200% center}
   100%{background-position:-200% center}

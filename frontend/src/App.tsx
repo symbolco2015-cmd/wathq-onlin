@@ -19,6 +19,8 @@ import Dashboard from './components/Dashboard';
 import Public from './components/Public';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import Onboarding from './components/Onboarding';
+import SplashScreen from './components/SplashScreen';
+import DashboardSkeleton from './components/DashboardSkeleton';
 import { Modal, Toast, SelectDropdown } from './components/UI';
 import EvidenceModal from './components/EvidenceModal';
 import { LESSON_PLAN_SECTION_ID } from './data';
@@ -787,65 +789,25 @@ export default function App() {
   // شاشة تحميل الأقسام/المؤشرات — تسبق كل مسارات العرض (لوحة التحكم، المشاركة
   // العامة، تقرير الحصاد)، إذ تحتاجها جميعاً لبناء sections الكامل (subs
   // مشتقة من section_indicators). لا سقوط على subs ثابتة عند الفشل أبداً.
+  // شاشة البداية تحمل key="boot" في كل مواضعها، فيبقى المكوّن نفسه (ومؤقتاته)
+  // حياً عند الانتقال من حالة تحميل إلى أخرى. بعد معرفة أن المستخدم مسجّل
+  // الدخول تُعرض بدلها هيكلة لوحة التحكم.
+  const showDashboardSkeleton = !!user && !shareUserId && !reportId && !passwordRecovery;
+
   if (sectionsStatus === 'loading') {
-    return (
-      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
-        <Background />
-        <div className="relative z-10 text-center flex flex-col items-center" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
-          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--em3)] to-[var(--em6)] text-[40px] text-white flex items-center justify-center shadow-[0_0_0_1px_rgba(82,196,120,.3),0_16px_48px_rgba(42,122,68,.5)] mb-6 animate-pulse">
-            <i className="ti ti-list-check animate-spin" style={{ animationDuration: '3s' }}></i>
-          </div>
-          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">جاري تحميل بيانات الأقسام...</div>
-          <div className="text-[13px] text-[var(--text4)] flex items-center gap-1.5 justify-center font-[var(--font2)]">
-            <i className="ti ti-lock text-[16px] text-[var(--em8)] animate-pulse"></i>
-            اتصال آمن بـ Supabase
-          </div>
-        </div>
-      </div>
-    );
+    return showDashboardSkeleton ? <DashboardSkeleton /> : <SplashScreen key="boot" />;
   }
 
   // فشل جلب مؤشرات الأقسام — لا يمكن بناء أي واجهة صحيحة بدونها (subs
-  // مشتقة منها كلياً الآن)، فتُحجب الواجهة كاملة بدل عرض بيانات ناقصة/مضلِّلة
+  // مشتقة منها كلياً الآن)، فتُحجب الواجهة كاملة بدل عرض بيانات ناقصة/مضلِّلة.
+  // key مختلف: «إعادة المحاولة» تعيد تركيب شاشة جديدة بمؤقتات من الصفر.
   if (sectionsStatus === 'error') {
-    return (
-      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
-        <Background />
-        <div className="relative z-10 text-center flex flex-col items-center px-6" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
-          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-red-900/60 to-red-700/40 text-[40px] text-red-400 flex items-center justify-center shadow-[0_0_0_1px_rgba(239,68,68,.3),0_16px_48px_rgba(239,68,68,.2)] mb-6">
-            <i className="ti ti-mood-sad"></i>
-          </div>
-          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">تعذّر تحميل بيانات الأقسام</div>
-          <div className="text-[14px] text-[var(--text4)] max-w-sm">حدث خطأ أثناء الاتصال بالخادم، يرجى المحاولة مرة أخرى.</div>
-          <button
-            type="button"
-            onClick={() => reloadSections()}
-            className="mt-8 py-3 px-8 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white text-[14px] font-bold border-none cursor-pointer hover:opacity-90 transition-opacity"
-          >
-            <i className="ti ti-refresh ml-2"></i>إعادة المحاولة
-          </button>
-        </div>
-      </div>
-    );
+    return <SplashScreen key="failed" failed onRetry={reloadSections} />;
   }
 
   // Show loading screen for shared profile view
   if (shareUserId && sharedLoading) {
-    return (
-      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
-        <Background />
-        <div className="relative z-10 text-center flex flex-col items-center" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
-          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--em3)] to-[var(--em6)] text-[40px] text-white flex items-center justify-center shadow-[0_0_0_1px_rgba(82,196,120,.3),0_16px_48px_rgba(42,122,68,.5)] mb-6 animate-pulse">
-            <i className="ti ti-eye animate-spin" style={{ animationDuration: '3s' }}></i>
-          </div>
-          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">جاري تحميل ملف الإنجاز...</div>
-          <div className="text-[13px] text-[var(--text4)] flex items-center gap-1.5 justify-center font-[var(--font2)]">
-            <i className="ti ti-lock text-[16px] text-[var(--em8)] animate-pulse"></i>
-            عرض عام — لا يتطلب تسجيل دخول
-          </div>
-        </div>
-      </div>
-    );
+    return <SplashScreen key="boot" />;
   }
 
   // Show error screen if shared profile not found
@@ -869,21 +831,7 @@ export default function App() {
 
   // Show loading screen for a harvest report (?report=)
   if (reportId && harvestReportLoading) {
-    return (
-      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
-        <Background />
-        <div className="relative z-10 text-center flex flex-col items-center" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
-          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[40px] text-[var(--em0)] flex items-center justify-center shadow-[0_0_0_1px_rgba(201,162,39,.3),0_16px_48px_rgba(201,162,39,.4)] mb-6 animate-pulse">
-            <i className="ti ti-file-report animate-spin" style={{ animationDuration: '3s' }}></i>
-          </div>
-          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">جاري تحميل التقرير...</div>
-          <div className="text-[13px] text-[var(--text4)] flex items-center gap-1.5 justify-center font-[var(--font2)]">
-            <i className="ti ti-lock text-[16px] text-[var(--em8)] animate-pulse"></i>
-            عرض عام — لا يتطلب تسجيل دخول
-          </div>
-        </div>
-      </div>
-    );
+    return <SplashScreen key="boot" />;
   }
 
   // Show error screen if the harvest report was not found
@@ -906,21 +854,7 @@ export default function App() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
-        <Background />
-        <div className="relative z-10 text-center flex flex-col items-center" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
-          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--em3)] to-[var(--em6)] text-[40px] text-white flex items-center justify-center shadow-[0_0_0_1px_rgba(82,196,120,.3),0_16px_48px_rgba(42,122,68,.5)] mb-6 animate-pulse">
-            <i className="ti ti-certificate animate-spin" style={{ animationDuration: '6s' }}></i>
-          </div>
-          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">جاري جلب بياناتك بأمان...</div>
-          <div className="text-[13px] text-[var(--text4)] flex items-center gap-1.5 justify-center font-[var(--font2)]">
-            <i className="ti ti-lock text-[16px] text-[var(--em8)] animate-pulse"></i>
-            اتصال آمن بـ Supabase
-          </div>
-        </div>
-      </div>
-    );
+    return showDashboardSkeleton ? <DashboardSkeleton /> : <SplashScreen key="boot" />;
   }
 
   // If viewing a shared profile via ?share= — render minimal layout with shared state

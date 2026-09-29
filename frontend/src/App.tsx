@@ -111,7 +111,7 @@ export default function App() {
   const onEvidenceSaved = (sectionId: number, createdAt?: string) =>
     monthlyProgress.recordEvidence(sectionId, createdAt);
 
-  const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string; strategyId?: string }>({
+  const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string; strategyId?: string; indicatorId?: string }>({
     open: false, sectionId: 0, sub: '',
   });
 
@@ -312,8 +312,8 @@ export default function App() {
 
   const closeModal = () => setModalConfig(prev => ({ ...prev, isOpen: false }));
 
-  const openAddEvModal = (sid: number, sub: string, strategyId?: string) => {
-    setEvidenceModal({ open: true, sectionId: sid, sub, strategyId });
+  const openAddEvModal = (sid: number, sub: string, strategyId?: string, indicatorId?: string) => {
+    setEvidenceModal({ open: true, sectionId: sid, sub, strategyId, indicatorId });
   };
 
   // خطوة 1 من تدفّق "استراتيجيات التدريس" الجديد: اختيار استراتيجية من الكتالوج
@@ -1041,6 +1041,7 @@ export default function App() {
         sectionId={evidenceModal.sectionId}
         sub={evidenceModal.sub}
         strategyId={evidenceModal.strategyId}
+        indicatorId={evidenceModal.indicatorId}
         userId={user?.id}
         supabaseEv={supabaseEv}
         onEvidenceSaved={onEvidenceSaved}

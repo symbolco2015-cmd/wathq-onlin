@@ -58,6 +58,9 @@ export interface EvidenceFormProps {
    *  مرفوع مسبقاً لـ bucket evidence، فيُفتح النموذج بنوع "صورة" وعنوان
    *  وملف جاهزَين بدل حقول فارغة، مع بقاء كل الحقول قابلة للتعديل. */
   prefill?: { title: string; fileUrl: string; fileName: string };
+  /** يُمرَّر من زر «+» على بطاقة مؤشر في شاشة القسم — يُضبط قيمةً ابتدائية
+   *  للمؤشر بعد تحميل مؤشرات القسم إن كان ضمنها، وإلا يبقى الحقل فارغاً. */
+  indicatorId?: string;
 }
 
 const readFileAsBase64 = (file: File): Promise<string> =>
@@ -117,7 +120,7 @@ const TYPE_CONFIG: {
  */
 export default function EvidenceForm({
   isOpen, onClose, sectionId, sub, userId, supabaseEv, onEvidenceSaved, onToast, createdAt,
-  aiConsentGiven, onGiveAiConsent, prefill, strategyId,
+  aiConsentGiven, onGiveAiConsent, prefill, strategyId, indicatorId: presetIndicatorId,
 }: EvidenceFormProps) {
   // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تسجيل الشاهد
   // في monthly_progress عبر onEvidenceSaved (انظر useSaveEvidence.ts)
@@ -222,6 +225,13 @@ export default function EvidenceForm({
     if (!isOpen) return;
     loadIndicators();
   }, [isOpen, loadIndicators]);
+
+  // المؤشر المحدد مسبقاً — يُطبَّق فقط حين تكتمل قائمة مؤشرات القسم ويكون ضمنها.
+  // لا يعيد تطبيق نفسه بعد تغيير المعلم للاختيار (لا تتغير اعتمادياته حينها).
+  useEffect(() => {
+    if (!isOpen || !presetIndicatorId || indicatorsStatus !== 'ready') return;
+    if (indicators.some(ind => ind.id === presetIndicatorId)) setIndicatorId(presetIndicatorId);
+  }, [isOpen, presetIndicatorId, indicatorsStatus, indicators]);
 
   // بوابة صلاحية ميزة "اقتراح تلقائي من الصورة" (Beta) — يديرها الأدمن عبر
   // feature_flags/portfolio_feature_overrides في قاعدة البيانات، وليست قائمة مكتوبة بالكود.

@@ -7,6 +7,7 @@ import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
+import SectionView from './SectionView';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
@@ -47,7 +48,7 @@ interface DashboardProps {
   state: AppState;
   sections: SectionData[];
   supabaseEv?: SupabaseEvidenceHook;
-  onAddEvClick: (sid: number, sub: string, strategyId?: string) => void;
+  onAddEvClick: (sid: number, sub: string, strategyId?: string, indicatorId?: string) => void;
   onDeleteEv: (evidenceId: string) => void;
   /** يفتح تدفّق "إضافة استراتيجية" (اختيار من الكتالوج أو إنشاء جديدة، ثم
    *  فتح نموذج الدليل الإجباري) — انظر openAddStrategyModal في App.tsx. */
@@ -739,6 +740,39 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     setOpenSecs(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // شاشة القسم العادي (SectionView) — الحالة هنا لا في App: كل ما تحتاجه
+  // الشاشة (sections/supabaseEv/ملخصات بند 6) موجود في Dashboard، وإزالته
+  // عند الانتقال لصفحة أخرى تصفّرها تلقائياً. الفتح يضيف مدخلاً في history
+  // بالرابط نفسه، فزر الرجوع (المتصفح/الجوال) يغلق الشاشة عبر popstate بدل
+  // الخروج من التطبيق. الحالة لا تُقرأ من الرابط، فالتحديث (F5) يعيد اللوحة.
+  const [openSectionId, setOpenSectionId] = useState<number | null>(null);
+  const sectionReturnScrollY = useRef(0);
+
+  useEffect(() => {
+    // بعد F5 والشاشة مفتوحة يبقى المدخل المضاف في السجل؛ تفريغه يمنع ضغطة
+    // رجوع أولى لا تفعل شيئاً مرئياً
+    if (window.history.state?.wathqSection != null) window.history.replaceState(null, '');
+    const onPopState = (e: PopStateEvent) => {
+      const id = (e.state as { wathqSection?: number } | null)?.wathqSection ?? null;
+      setOpenSectionId(id);
+      if (id == null) {
+        const y = sectionReturnScrollY.current;
+        requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' }));
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const openSection = (id: number) => {
+    sectionReturnScrollY.current = window.scrollY;
+    window.history.pushState({ wathqSection: id }, '');
+    setOpenSectionId(id);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+  const closeSection = () => window.history.back();
+  const openSectionData = openSectionId != null ? nonStratSections.find(s => s.id === openSectionId) ?? null : null;
+
   // Filter sections by search query (قسم الاستراتيجيات مستبعد — له بطاقته المثبّتة دائماً)
   const filteredSections = searchQuery.trim()
     ? nonStratSections.filter(sec => {
@@ -861,7 +895,26 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         monthlyProgress={monthlyProgress}
       />
       <main className="flex-1 p-3 sm:p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
-        {archiveMonth ? archiveView : <>
+        {archiveMonth ? archiveView : openSectionData ? (
+          <SectionView
+            section={openSectionData}
+            evidence={supabaseEv?.evidence ?? []}
+            onBack={closeSection}
+            onAddEvClick={onAddEvClick}
+            onDeleteEv={onDeleteEv}
+            lessonPlanAi={openSectionData.id === LESSON_PLAN_SECTION_ID ? {
+              sectionSummary,
+              sectionSummaryBusy,
+              lessonPlanHasEvidence,
+              sectionSummaryUpdateAvailable,
+              onGenerateSectionSummary: handleGenerateSectionSummary,
+              lessonPlanIndicatorIds: lessonPlanIndicators.map(ind => ind.id),
+              indicatorSummaries,
+              indicatorSummaryCooldown,
+              onGenerateIndicatorSummary: handleGenerateIndicatorSummary,
+            } : undefined}
+          />
+        ) : <>
         {/* بطاقة الملف الشخصي المضغوطة — جوال فقط */}
         <div className="lg:hidden flex items-center gap-3 mb-3 px-1" style={{ animation: 'fadeUp .4s var(--sp) both' }}>
           <div
@@ -1426,7 +1479,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           {sortedFilteredSections.map((sec, i) => {
             // كل أدلة القسم (section_id) بما فيها ما ليس له مؤشر
             const secTotalEvs = supabaseEv?.getBySection(sec.id).length ?? 0;
-            const isOpen = !!openSecs[sec.id];
             // completionPct: نشاط الشهر الحالي (يتحكم بالترتيب وتلوين الحدود — لا تغيير)
             const secStat = getSectionStat(sec.id);
             const completionPct = getMonthlyPct(sec.id);
@@ -1451,10 +1503,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
             return (
               <div key={sec.id} id={`sc-${sec.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', animation: `fadeUp .45s var(--sp) both ${i * 0.04}s`, borderRight: `4px solid ${borderColor}` }}>
-                <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => toggleSec(sec.id)}>
+                <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => openSection(sec.id)}>
                    <div className="absolute bottom-0 right-6 left-6 h-px bg-gradient-to-r from-transparent via-[var(--em7)]/15 to-transparent opacity-0 transition-opacity duration-250 group-hover:opacity-100"></div>
-                   
-                   <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border shadow-[0_4px_14px_rgba(42,122,68,.3)] transition-all duration-350 ${isOpen ? 'bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white border-transparent scale-110 !rotate-[-5deg] shadow-[0_6px_20px_rgba(42,122,68,.5)]' : 'bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border-[var(--em7)]/20 group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em7)] group-hover:text-white group-hover:scale-110 group-hover:rotate-[-5deg] group-hover:shadow-[0_6px_20px_rgba(42,122,68,.5)]'}`}>
+
+                   <div className="w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border shadow-[0_4px_14px_rgba(42,122,68,.3)] transition-all duration-350 bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border-[var(--em7)]/20 group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em7)] group-hover:text-white group-hover:scale-110 group-hover:rotate-[-5deg] group-hover:shadow-[0_6px_20px_rgba(42,122,68,.5)]">
                      <i className={`ti ${sec.icon}`}></i>
                    </div>
                    
@@ -1553,7 +1605,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                      </div>
                    )}
                    
-                   <i className={`ti ti-chevron-down text-[22px] shrink-0 transition-all duration-400 ${isOpen ? 'rotate-180 text-[var(--em7)]' : 'text-[var(--text4)]'}`}></i>
+                   <i className="ti ti-chevron-left text-[22px] shrink-0 text-[var(--text4)]"></i>
                 </div>
 
                 {/* منطقة الاستمرارية — تظهر فقط عند تجاوز فعلي للحد الأدنى (>3)، تُخفى تماماً غير ذلك */}
@@ -1570,178 +1622,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                     </span>
                   </div>
                 )}
-
-                <div className={`overflow-hidden transition-all duration-500 ease-[var(--ease)] ${isOpen ? 'max-h-[9999px] opacity-100 border-t border-[var(--line)]' : 'max-h-0 opacity-0 border-t-0'}`}>
-
-                  {/* ملخص ذكاء اصطناعي لبند "إعداد خطة التعلم" كاملاً — يظهر فقط
-                      لهذا البند (id:6)، مستقل تماماً عن حلقة allSubs.map أدناه
-                      (التصميم القديم لكل مؤشر على حدة، لم يُمس). */}
-                  {sec.id === LESSON_PLAN_SECTION_ID && (
-                    <div className="py-4 px-6 border-b border-white/5 bg-[var(--em7)]/[0.03]">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                          onClick={handleGenerateSectionSummary}
-                          disabled={sectionSummaryBusy || !lessonPlanHasEvidence}
-                          className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[12px] font-bold border-[1.5px] border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/5 hover:bg-[var(--em7)]/15 transition-all duration-250 cursor-pointer font-[var(--font)] disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {sectionSummaryBusy ? (
-                            <><i className="ti ti-loader animate-spin text-[13px]" /> جارٍ التوليد...</>
-                          ) : (
-                            <><i className="ti ti-sparkles text-[13px]" /> ولّد الملخص</>
-                          )}
-                        </button>
-                        {sectionSummaryUpdateAvailable && !sectionSummaryBusy && (
-                          <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[var(--gold3)]">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--gold)]" /> تحديث متاح
-                          </span>
-                        )}
-                        {!lessonPlanHasEvidence && !sectionSummaryBusy && (
-                          <span className="text-[10.5px] text-[var(--text4)]">أضف دليلاً أولاً لتوليد الملخص</span>
-                        )}
-                      </div>
-                      {sectionSummary?.ai_sentence && (
-                        <div className="text-[12.5px] text-[var(--text3)] bg-white/5 border border-[var(--line)] rounded-lg py-2 px-3 mt-2.5 leading-relaxed">
-                          <i className="ti ti-sparkles text-[var(--em7)] ml-1.5" />{sectionSummary.ai_sentence}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {sec.indicators.map(indicator => {
-                     const sub = indicator.name_ar;
-                     const evs = (supabaseEv?.evidence ?? []).filter(e => e.indicator_id === indicator.id).map(toEvRow);
-
-                     const isLessonPlanIndicator = sec.id === LESSON_PLAN_SECTION_ID;
-                     const lessonPlanIndicatorId = isLessonPlanIndicator
-                       ? lessonPlanIndicators.find(ind => ind.id === indicator.id)?.id
-                       : undefined;
-                     const indicatorEvidence = lessonPlanIndicatorId
-                       ? (supabaseEv?.evidence.filter(e => e.indicator_id === lessonPlanIndicatorId) ?? [])
-                       : [];
-                     const indicatorHasEvidence = indicatorEvidence.length > 0;
-                     const indicatorSummaryRow = lessonPlanIndicatorId ? indicatorSummaries[lessonPlanIndicatorId] : undefined;
-                     const indicatorLatestEvidenceAt = indicatorHasEvidence
-                       ? indicatorEvidence.reduce((max, e) => (e.created_at > max ? e.created_at : max), indicatorEvidence[0].created_at)
-                       : null;
-                     const indicatorUpdateAvailable =
-                       !!indicatorSummaryRow && !!indicatorLatestEvidenceAt && indicatorLatestEvidenceAt > indicatorSummaryRow.generated_at;
-                     const indicatorSummaryBusy = !!(lessonPlanIndicatorId && indicatorSummaryCooldown[lessonPlanIndicatorId]);
-
-                     return (
-                        <div key={indicator.id} className="py-5 px-6 border-b border-white/5 hover:bg-white/[0.015] transition-colors duration-200 last:border-b-0">
-                           <div className="flex items-center justify-between mb-4">
-                             <div className="flex items-center gap-3">
-                               <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-gradient-to-br from-[var(--em6)] to-[var(--gold)] shadow-[0_0_8px_rgba(82,196,120,.5)]" style={{ animation: 'pulse 3s ease-in-out infinite' }}></div>
-                               <div className="text-[15px] font-bold text-[var(--text2)]">{sub}</div>
-                               {evs.length > 0 && <span className="text-[12px] font-extrabold text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em7),var(--gold))]">{evs.length}</span>}
-                             </div>
-                             <div className="flex gap-1.5">
-                               <button className="inline-flex items-center gap-1.5 py-2 px-4 rounded-xl text-[12.5px] font-bold cursor-pointer border-[1.5px] whitespace-nowrap border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/10 hover:bg-gradient-to-br hover:from-[var(--em4)] hover:to-[var(--em6)] hover:text-white hover:border-transparent hover:shadow-[0_6px_18px_rgba(42,122,68,.5)] hover:-translate-y-0.5 group transition-all duration-250 active:scale-95" onClick={() => onAddEvClick(sec.id, sub)}>
-                                 <i className="ti ti-plus text-[15px] transition-transform duration-300 group-hover:scale-125 group-hover:rotate-[-5deg]"></i> إضافة دليل
-                               </button>
-                             </div>
-                           </div>
-
-                           {lessonPlanIndicatorId && (
-                             <div className="mb-3 flex flex-col gap-2">
-                               <div className="flex items-center gap-2 flex-wrap">
-                                 <button
-                                   onClick={() => handleGenerateIndicatorSummary(lessonPlanIndicatorId)}
-                                   disabled={indicatorSummaryBusy || !indicatorHasEvidence}
-                                   className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[12px] font-bold border-[1.5px] border-[var(--em7)]/20 text-[var(--em7)] bg-[var(--em7)]/5 hover:bg-[var(--em7)]/15 transition-all duration-250 cursor-pointer font-[var(--font)] disabled:opacity-40 disabled:cursor-not-allowed"
-                                 >
-                                   {indicatorSummaryBusy ? (
-                                     <><i className="ti ti-loader animate-spin text-[13px]" /> جارٍ التوليد...</>
-                                   ) : (
-                                     <><i className="ti ti-sparkles text-[13px]" /> ولّد الملخص</>
-                                   )}
-                                 </button>
-                                 {indicatorUpdateAvailable && !indicatorSummaryBusy && (
-                                   <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[var(--gold3)]">
-                                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--gold)]" /> تحديث متاح
-                                   </span>
-                                 )}
-                                 {!indicatorHasEvidence && !indicatorSummaryBusy && (
-                                   <span className="text-[10.5px] text-[var(--text4)]">أضف دليلاً أولاً لتوليد الملخص</span>
-                                 )}
-                               </div>
-                               {indicatorSummaryRow?.ai_sentence && (
-                                 <div className="text-[12.5px] text-[var(--text3)] bg-white/5 border border-[var(--line)] rounded-lg py-2 px-3 leading-relaxed">
-                                   <i className="ti ti-sparkles text-[var(--em7)] ml-1.5" />{indicatorSummaryRow.ai_sentence}
-                                 </div>
-                               )}
-                             </div>
-                           )}
-
-                           {evs.length > 0 && (
-                             <div className="flex flex-col gap-2 mb-3">
-                               {evs.map(ev => {
-                                 const t = EVT_CONFIG[ev.type] || EVT_CONFIG.doc;
-                                 return (
-                                   <div key={ev.id} className="flex items-center gap-3.5 py-3 px-4 bg-white/5 rounded-xl border border-[var(--line)] transition-all duration-250 hover:bg-white/10 hover:border-[var(--line2)] hover:-translate-x-1 hover:shadow-[0_4px_20px_rgba(0,0,0,.3)] group" style={{ animation: 'slideR .3s var(--sp) both' }}>
-                                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[20px] shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg] ${t.cls}`}>
-                                       <i className={`ti ${t.icon}`}></i>
-                                     </div>
-                                     <div 
-                                        className={`flex-1 min-w-0 ${ev.url ? 'cursor-pointer hover:opacity-80 transition-all' : ''}`}
-                                        onClick={() => ev.url && window.open(ev.url, '_blank')}
-                                        title={ev.url ? 'اضغط لعرض الملف' : ''}
-                                      >
-                                        <div className="text-[13.5px] font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis group-hover:text-[var(--em8)] transition-colors" dir="ltr" style={{unicodeBidi:'isolate'}}>{ev.name}</div>
-                                        <div className="text-[11px] text-[var(--text4)] mt-1 flex items-center gap-1.5">
-                                          <i className="ti ti-calendar"></i>{ev.date} · <i className="ti ti-tag"></i>{t.label}
-                                          {ev.url && <span className="text-[var(--em8)] flex items-center gap-0.5 font-bold"><i className="ti ti-external-link"></i> استعراض</span>}
-                                        </div>
-                                      </div>
-                                     <button className="bg-transparent border-none text-[var(--text4)] cursor-pointer p-2 rounded-lg text-[16px] shrink-0 transition-all duration-200 hover:text-red-400 hover:bg-red-400/10 hover:scale-115" onClick={() => onDeleteEv(ev.id)} title="حذف">
-                                       <i className="ti ti-trash"></i>
-                                     </button>
-                                   </div>
-                                 );
-                               })}
-                             </div>
-                           )}
-
-                           <button className="flex items-center gap-2.5 w-full py-3 px-4 border-[1.5px] border-dashed border-[var(--em7)]/20 rounded-xl cursor-pointer bg-transparent font-[var(--font)] text-[var(--text4)] text-[13.5px] transition-all duration-250 group overflow-hidden relative hover:border-[var(--em7)]/40 hover:text-[var(--em7)] hover:bg-[var(--em7)]/5" onClick={() => onAddEvClick(sec.id, sub)}>
-                              <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(82,196,120,.05),transparent)] translate-x-full transition-transform duration-500 group-hover:-translate-x-full"></div>
-                              <i className="ti ti-paperclip text-[20px] transition-transform duration-350 group-hover:rotate-90 group-hover:scale-110"></i>
-                              <span className="relative z-10">إرفاق ملف أو دليل...</span>
-                           </button>
-
-                        </div>
-                     )
-                  })}
-
-                  {/* ── قائمة الشواهد من Supabase ── */}
-                  {supabaseEv && (
-                    <div className="px-6 pb-6 border-t border-[var(--line)] pt-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2 text-[12px] font-extrabold text-[var(--text3)] tracking-wide uppercase">
-                          <i className="ti ti-files text-[16px] text-[var(--em7)]" />
-                          الشواهد الموثّقة
-                          {supabaseEv.getBySection(sec.id).length > 0 && (
-                            <span className="text-[10px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-full border border-[var(--em7)]/20">
-                              {supabaseEv.getBySection(sec.id).length}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => onAddEvClick(sec.id, sec.subs[0] ?? 'عام')}
-                          className="inline-flex items-center gap-1.5 py-1.5 px-3.5 rounded-lg text-[12px] font-bold bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all cursor-pointer font-[var(--font)]"
-                        >
-                          <i className="ti ti-plus text-[13px]" /> إضافة شاهد
-                        </button>
-                      </div>
-                      <EvidenceList
-                        sectionId={sec.id}
-                        evidence={supabaseEv.getBySection(sec.id)}
-                        loading={supabaseEv.loading}
-                        onDelete={supabaseEv.deleteEvidence}
-                        onAddClick={() => onAddEvClick(sec.id, sec.subs[0] ?? 'عام')}
-                      />
-                    </div>
-                  )}
-                </div>
               </div>
             );
           })}

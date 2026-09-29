@@ -7,6 +7,7 @@ import ResultsBarChart from './ResultsBarChart';
 import { supabase } from '../../supabaseClient';
 import type { SectionData } from '../../types';
 import type { GradeBand, ResultsAnalysisRow } from './types';
+import { formatDate } from '../../utils';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -60,7 +61,7 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
       if (error) throw error;
       const { data: urlData } = supabase.storage.from('evidence').getPublicUrl(path);
       setPrefill({
-        title: `تحليل نتائج - ${analysis.subject} - ${new Date(analysis.created_at).toLocaleDateString('ar-SA')}`,
+        title: `تحليل نتائج - ${analysis.subject} - ${formatDate(analysis.created_at, 'short')}`,
         fileUrl: urlData.publicUrl,
         fileName: 'analysis.png',
       });

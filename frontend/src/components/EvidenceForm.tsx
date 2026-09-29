@@ -5,7 +5,7 @@ import type { EvidenceType } from '../hooks/useSupabaseEvidence';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import { useSaveEvidence } from '../hooks/useSaveEvidence';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
-import { AI_CONSENT_TEXT } from '../utils';
+import { AI_CONSENT_TEXT, formatDate } from '../utils';
 import { SelectDropdown } from './UI';
 import { LESSON_PLAN_SECTION_ID } from '../data';
 
@@ -591,7 +591,7 @@ export default function EvidenceForm({
           <div className="text-[12px] text-[var(--text4)] mt-0.5">{strategyId ? `استراتيجية: ${sub}` : sub}</div>
           {createdAt && (
             <div className="text-[11px] text-[var(--gold)] mt-1 flex items-center gap-1 font-bold">
-              <i className="ti ti-history" /> سيُسجَّل هذا الشاهد ضمن أرشيف {new Date(createdAt).toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })}
+              <i className="ti ti-history" /> سيُسجَّل هذا الشاهد ضمن أرشيف {formatDate(createdAt, 'monthYear')}
             </div>
           )}
         </div>

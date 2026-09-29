@@ -5,6 +5,7 @@ import type { SectionData } from '../types';
 import { useVoiceRecording } from './useVoiceRecording';
 import { useSaveEvidence } from './useSaveEvidence';
 import type { OnEvidenceSavedFn } from './useSaveEvidence';
+import { formatDate } from '../utils';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('./useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -157,7 +158,7 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
         fileUrl = URL.createObjectURL(fileToUpload);
       }
 
-      const title = `شاهد سريع - ${new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+      const title = `شاهد سريع - ${formatDate(new Date(), 'long')}`;
       const result = await saveEvidence({
         section_id: sec.id,
         indicator_id: indicator.id,
@@ -256,7 +257,7 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
           fileUrl = URL.createObjectURL(base64ToBlob(audioBase64, voiceRecording.mimeType));
         }
 
-        const title = `شاهد صوتي سريع - ${new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+        const title = `شاهد صوتي سريع - ${formatDate(new Date(), 'long')}`;
         // ⚠️ يتجاوز saveEvidence الموحّد عمداً (استثناء VOICE_CAPTURE_ENABLED أعلاه)
         // ولا يمرّر indicator_id — إعادة تفعيل هذا التدفّق مستقبلاً تستلزم أولاً
         // إضافة خطوة اختيار مؤشر (مثل selectSection/saveToIndicator أعلاه)، وإلا

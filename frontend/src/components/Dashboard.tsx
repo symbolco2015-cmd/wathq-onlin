@@ -7,7 +7,7 @@ import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal } from '../utils';
+import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
@@ -188,7 +188,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const daysLeft = Math.round((new Date(upcoming.date).getTime() - today.getTime()) / 86400000);
-      const dateStr = new Date(upcoming.date).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
+      const dateStr = formatDate(upcoming.date, 'long');
       return {
         icon: 'ti-calendar-event',
         title: upcoming.title,
@@ -902,7 +902,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               </div>
               <div className="flex flex-wrap gap-2">
                 <div className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-full text-[12.5px] font-bold bg-white/5 border border-white/10 text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/30 hover:-translate-y-0.5">
-                  <i className="ti ti-calendar text-[14px]"></i> السنة الدراسية 1446
+                  <i className="ti ti-calendar text-[14px]"></i> السنة الدراسية {currentHijriYear()}هـ
                 </div>
               </div>
             </div>
@@ -1306,7 +1306,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {announcements.slice(0, 3).map((ann) => {
                 const isRead = state.readAnnouncements?.includes(ann.id);
-                const dateStr = new Date(ann.created_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' });
+                const dateStr = formatDate(ann.created_at, 'dayMonth');
                 
                 // Category styling
                 let catLabel = 'تحديث';
@@ -2343,7 +2343,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                     {activeAnn.category === 'admin' ? 'تعميم إداري' : activeAnn.category === 'urgent' ? 'تنبيه عاجل' : 'تحديث برمجي'}
                   </div>
                   <div className="text-[12px] text-[var(--text3)] mt-0.5">
-                    {new Date(activeAnn.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    {formatDate(activeAnn.created_at, 'long')}
                   </div>
                 </div>
               </div>

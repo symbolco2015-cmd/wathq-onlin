@@ -1,4 +1,5 @@
 import type { GradeBand, AnalysisSummary, StudentResult, ColumnDetectionResult, ParsedFile, ResultsAnalysisRow, PublicResultsAnalysisRow } from './types';
+import { formatDate } from '../../utils';
 
 /** هامش "منطقة الخطر" حول حد النجاح (60) — طالب بدرجة ضمن [55,65] يُعتبر في
  *  منطقة خطر. ثابت الآن، قابل للتعديل لاحقاً دون تغيير منطق الحساب. */
@@ -205,7 +206,7 @@ export function buildComparisonSeries(analyses: ResultsAnalysisRow[], subject: s
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     .map(a => ({
       id: a.id,
-      label: new Date(a.created_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }),
+      label: formatDate(a.created_at, 'dayMonth'),
       average: a.summary.average,
       createdAt: a.created_at,
     }));
@@ -276,7 +277,7 @@ export function buildPublicComparisonSeries(rows: PublicResultsAnalysisRow[], su
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     .map(r => ({
       id: r.id,
-      label: new Date(r.created_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }),
+      label: formatDate(r.created_at, 'dayMonth'),
       average: r.average,
       createdAt: r.created_at,
     }));

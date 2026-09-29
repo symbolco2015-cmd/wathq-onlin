@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { SupabaseEvidence, EvidenceType } from '../hooks/useSupabaseEvidence';
+import { formatDate } from '../utils';
 
 interface EvidenceListProps {
   sectionId: number;
@@ -110,9 +111,7 @@ export default function EvidenceList({ evidence, loading, onDelete, onAddClick, 
       {evidence.map(ev => {
         const meta        = TYPE_META[ev.evidence_type] ?? TYPE_META.file;
         const url         = ev.file_url ?? ev.link_url ?? null;
-        const date        = new Date(ev.created_at).toLocaleDateString('ar-SA', {
-          year: 'numeric', month: 'short', day: 'numeric',
-        });
+        const date        = formatDate(ev.created_at, 'long');
         const isConfirming = confirmId === ev.id;
 
         return (

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import BottomSheet from './BottomSheet';
 import { supabase } from '../supabaseClient';
-import { calculatePointsLevelFromTotal } from '../utils';
+import { calculatePointsLevelFromTotal, formatDate } from '../utils';
 import type { AcademicDate, AppState, HarvestSnapshot, SectionData } from '../types';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { ResultsAnalysisRow } from './ResultsAnalysis/types';
@@ -31,7 +31,7 @@ const flat = (dateStr: string): number => {
 };
 
 const formatArabicDate = (dateStr: string): string =>
-  new Date(`${dateStr}T12:00:00`).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
+  formatDate(new Date(`${dateStr}T12:00:00`), 'long');
 
 /** يبني أزواج (بداية/نهاية) لكل رقم فصل من مواعيد academic_dates التي حدّدها
  * الأدمن — يزاوج كل موعد "بداية" بأقرب موعد "نهاية" تالٍ له بنفس رقم الفصل،

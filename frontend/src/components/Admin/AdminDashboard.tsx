@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { AdminUser, PlatformStats, PortfolioFeatureOverride, PortfolioActionResult } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
-import { getCompletionColor } from '../../utils';
+import { getCompletionColor, formatDate } from '../../utils';
 import { SelectDropdown } from '../UI';
 import UserCard from './UserCard';
 
@@ -64,7 +64,7 @@ function MiniBarChart({ data }: { data: { date: string; count: number }[] }) {
     <div className="mini-chart">
       {data.map((d, i) => {
         const pct = Math.max((d.count / max) * 100, d.count > 0 ? 8 : 3);
-        const label = new Date(d.date).toLocaleDateString('ar-SA', { weekday: 'short' });
+        const label = formatDate(d.date, 'weekday');
         return (
           <div key={i} className="mini-bar-wrap" title={`${label}: ${d.count} مستخدم`}>
             <div className="mini-bar" style={{ height: `${pct}%` }} />
@@ -170,7 +170,7 @@ function UserRow({ user, onView, idx }: {
   user: AdminUser; onView: (u: AdminUser) => void; idx: number;
 }) {
   const lastActive = user.updated_at
-    ? new Date(user.updated_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })
+    ? formatDate(user.updated_at, 'long')
     : '—';
 
   const isActive = user.updated_at
@@ -343,11 +343,11 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
         <div className="umodal-grid">
           <div className="umodal-field">
             <label>تاريخ الانضمام</label>
-            <span>{new Date(user.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+            <span>{formatDate(user.created_at, 'long')}</span>
           </div>
           <div className="umodal-field">
             <label>آخر تحديث</label>
-            <span>{user.updated_at ? new Date(user.updated_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' }) : '—'}</span>
+            <span>{user.updated_at ? formatDate(user.updated_at, 'long') : '—'}</span>
           </div>
         </div>
 
@@ -1174,7 +1174,7 @@ export default function AdminDashboard({
                             {catLabel}
                           </span>
                           <span style={{ fontSize: '11px', color: 'var(--text4)' }}>
-                            {new Date(ann.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            {formatDate(ann.created_at, 'long')}
                           </span>
                         </div>
                         <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ann.title}</h4>
@@ -1373,7 +1373,7 @@ export default function AdminDashboard({
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
                         <span className="inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20">
-                          {new Date(ad.date).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          {formatDate(ad.date, 'long')}
                         </span>
                         {ad.hijri_label && (
                           <span style={{ fontSize: '11px', color: 'var(--text4)' }}>{ad.hijri_label}</span>

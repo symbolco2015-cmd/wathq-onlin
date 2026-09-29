@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
-import { calculatePointsLevel, getCompletionColor, getCompletionLabel, supabaseEvidenceTypeToLocal, extensionFromUrl } from '../utils';
+import { calculatePointsLevel, getCompletionColor, getCompletionLabel, supabaseEvidenceTypeToLocal, extensionFromUrl, formatDate } from '../utils';
 import { LESSON_PLAN_SECTION_ID } from '../data';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
@@ -273,7 +273,7 @@ function BadgesRow({ justify }: { justify: string }) {
 /** سطر عنوان فترة التقرير + تاريخ التوليد — يظهر فقط في وضع ?report=، أعلى
  * اسم المعلم في الهيرو (كل من تخطيطي الجوال والديسكتوب). */
 function ReportPeriodBanner({ periodLabel, generatedAt, justify }: { periodLabel: string; generatedAt: string; justify: string }) {
-  const generatedLabel = new Date(generatedAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
+  const generatedLabel = formatDate(generatedAt, 'long');
   return (
     <div className={`flex ${justify} relative z-10 mb-3`}>
       <div className="inline-flex flex-col items-center sm:items-start gap-0.5 py-2 px-4 rounded-2xl bg-white/5 border border-[var(--gold)]/25 backdrop-blur-md">
@@ -809,7 +809,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
   const exportToPDF = () => {
     // تاريخ التصدير الفعلي لحظة الطباعة (وليس تاريخاً ثابتاً من لحظة تحميل
     // الصفحة) — يُحدَّث في الترويسة المخصّصة لوضع الطباعة قبل فتح حوار الطباعة.
-    setPrintDate(new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' }));
+    setPrintDate(formatDate(new Date(), 'long'));
     // ننتظر دورة رسم واحدة (requestAnimationFrame) لضمان وصول التاريخ الجديد
     // إلى الـDOM قبل أن يأخذ المتصفح "لقطته" الخاصة بحوار الطباعة.
     requestAnimationFrame(() => window.print());
@@ -896,7 +896,7 @@ export default function Public({ state, sections, isSharedView, continuity, evid
               </div>
               <div className="print-header-date">
                 {reportMeta
-                  ? `مُولَّد بتاريخ ${new Date(reportMeta.generatedAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}`
+                  ? `مُولَّد بتاريخ ${formatDate(reportMeta.generatedAt, 'long')}`
                   : printDate}
               </div>
               <div className="print-header-url">wathq.online</div>

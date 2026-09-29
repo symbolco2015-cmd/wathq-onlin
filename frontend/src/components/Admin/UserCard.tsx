@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AdminUser } from '../../hooks/useAdminStore';
+import { formatDate } from '../../utils';
 
 // عتبة "فيه نشاط فعلي" — نفس القيمة المستخدمة في عرض الجدول (UserRow) لإبراز
 // نفس الصف بلون التمييز البرتقالي عند توسيع البطاقة. أي دليل واحد فأكثر يستحق
@@ -22,7 +23,7 @@ export default function UserCard({ user, onView }: {
   const [expanded, setExpanded] = useState(false);
 
   const lastActive = user.updated_at
-    ? new Date(user.updated_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })
+    ? formatDate(user.updated_at, 'long')
     : '—';
 
   const isActive = user.updated_at

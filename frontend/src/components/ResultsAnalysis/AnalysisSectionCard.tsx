@@ -8,6 +8,7 @@ import ConvertToEvidenceFlow from './ConvertToEvidenceFlow';
 import { buildComparisonSeries, computeScoreGap, groupAnalysesBySubject, groupRemedialStudents } from './logic';
 import type { AnalysisSummary, GradeBand, ResultsAnalysisRow } from './types';
 import type { SectionData } from '../../types';
+import { formatDate } from '../../utils';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -191,7 +192,7 @@ function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyPro
   const weakBand = bands[bands.length - 1];
   const gap = computeScoreGap(analysis.summary.students);
   const remedial = groupRemedialStudents(analysis.summary.students, weakBand?.id);
-  const dateLabel = new Date(analysis.created_at).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
+  const dateLabel = formatDate(analysis.created_at, 'long');
 
   const handlePrint = () => window.print();
 

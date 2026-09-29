@@ -159,3 +159,48 @@ export function extensionFromUrl(url: string): string {
 // get_portfolio_completion (evidence.indicator_id). الشارة الشهرية التحفيزية
 // (calculatePointsLevel أدناه، من monthly_progress) نظام منفصل تماماً ولم
 // يُمس — تقيس زخم/استمرارية التوثيق، لا اعتماداً رسمياً.
+
+// ── تنسيق التواريخ الموحّد ──
+// 'ar-SA' وحده قد يعرض التاريخ هجرياً وبأرقام عربية هندية حسب المتصفح،
+// لذلك يُحدَّد التقويم والأرقام صراحةً (DESIGN.md: التواريخ والأرقام).
+const GREGORY_LOCALE = 'ar-SA-u-ca-gregory-nu-latn';
+const HIJRI_LOCALE = 'ar-SA-u-ca-islamic-umalqura-nu-latn';
+
+type DateStyle = 'short' | 'long' | 'dayMonth' | 'monthYear' | 'weekday';
+
+const DATE_STYLE_OPTIONS: Record<DateStyle, Intl.DateTimeFormatOptions> = {
+  short:     { year: 'numeric', month: 'numeric', day: 'numeric' }, // 29/9/2026
+  long:      { year: 'numeric', month: 'long', day: 'numeric' },    // 29 سبتمبر 2026
+  dayMonth:  { month: 'short', day: 'numeric' },                    // 29 سبتمبر
+  monthYear: { month: 'long', year: 'numeric' },                    // سبتمبر 2026
+  weekday:   { weekday: 'short' },                                  // الثلاثاء
+};
+
+const toValidDate = (value: string | Date): Date | null => {
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+export function formatDate(value: string | Date, style: DateStyle = 'long'): string {
+  const d = toValidDate(value);
+  return d ? d.toLocaleDateString(GREGORY_LOCALE, DATE_STYLE_OPTIONS[style]) : '';
+}
+
+export function formatDateTime(value: string | Date): string {
+  const d = toValidDate(value);
+  return d
+    ? d.toLocaleString(GREGORY_LOCALE, { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : '';
+}
+
+export function formatHijri(value: string | Date): string {
+  const d = toValidDate(value);
+  return d ? d.toLocaleDateString(HIJRI_LOCALE, { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+}
+
+export function currentHijriYear(): number {
+  const year = new Intl.DateTimeFormat(HIJRI_LOCALE, { year: 'numeric' })
+    .formatToParts(new Date())
+    .find(p => p.type === 'year')?.value;
+  return Number(year);
+}

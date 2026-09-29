@@ -25,8 +25,23 @@
   --sp: cubic-bezier(.16,1,.3,1);
   --ease: cubic-bezier(.4,0,.2,1);
   --bounce: cubic-bezier(.34,1.56,.64,1);
-  --font:'Tajawal',sans-serif;
-  --font2:'Noto Naskh Arabic',serif;
+  --font:'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font2:var(--font);
+
+  /* ── متغيرات docs/design/DESIGN.md (المرحلة 2) ──
+     تُضاف بجانب القديمة ولا تحل محلها؛ كل شاشة تنتقل إليها عند إعادة
+     تصميمها. متغير حالة «متجاوز» اسمه --st-gold مؤقتاً لتعارضه مع --gold
+     القديم، ويُوحَّد عند انتهاء الانتقال. */
+  --bg:#0b0f0d;
+  --s1:#121715; --s2:#181e1b; --s3:#1f2622;
+  --bd:rgba(255,255,255,.08); --bd2:rgba(255,255,255,.14);
+  --t1:#eef2ef; --t2:#b3bdb7; --t3:#8a958f;
+  --accent:#3ecf7a;
+  --brand:#0A2E1F; --brand-gold:#C9A24A; --brand-cream:#F7F5EF;
+  --danger:#f16b6b; --warn:#e8a33d; --info:#6fb3f0;
+  --idle:#4a544f; --prog:#c9d3cd; --st-gold:#d9b44a;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px;
+  --r-sm:10px; --r-md:16px; --r-lg:24px; --r-full:999px;
 }
 
 *,*::before,*::after{box-sizing:border-box;}

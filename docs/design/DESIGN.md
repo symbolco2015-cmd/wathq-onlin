@@ -85,7 +85,23 @@
 | شاشة البداية | `logo-primary-ondark.svg` بعرض 116px على `--brand` |
 | تذييل الصفحة العامة | `logo-horizontal-dark.svg` بعرض 170px |
 | الطباعة وPDF | `logo-primary.svg` أو `logo-horizontal.svg` |
-| المتصفح والجوال | `favicon.ico` و`apple-touch-icon.png` و`icon-*.png` (انظر README الحزمة) |
+| المتصفح والجوال | `favicon.ico` و`apple-touch-icon.png` و`icon-*.png` (انظر الجدول التالي) |
+
+ملفات الحزمة في `frontend/public/brand/`، ما عدا `favicon.ico` فهو في جذر `frontend/public/`. الـ manifest يولّده `vite-plugin-pwa` من `vite.config.ts`.
+
+| الملف | الاستخدام |
+|---|---|
+| `favicon.ico` / `favicon.svg` / `favicon-32.png` | تبويب المتصفح |
+| `apple-touch-icon.png` (180) | أيقونة الشاشة الرئيسية في iPhone |
+| `icon-192.png` / `icon-512.png` | تثبيت التطبيق (PWA) |
+| `icon-maskable-512.png` | أيقونة Android القابلة للقص |
+| `og-image.png` (1200×630) | معاينة الرابط في واتساب وX |
+| `logo-primary-ondark.svg` | شاشة التحميل (خلفية `--brand`) |
+| `mark.svg` | الشريط العلوي داخل التطبيق بجانب كلمة «وثّق» |
+| `logo-horizontal-dark.svg` | أي خلفية داكنة تحتاج الشعار الأفقي |
+| `logo-primary.svg` / `logo-horizontal.svg` | PDF والطباعة والخلفيات الفاتحة |
+| `app-icon.svg` | صورة حسابات التواصل فقط (لا يُستخدم تحت 48px) |
+| `logo-mono.svg` | طباعة بلون واحد |
 
 ## التواريخ والأرقام
 

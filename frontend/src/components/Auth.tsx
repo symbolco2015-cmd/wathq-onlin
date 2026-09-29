@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
+// الدخول بحساب مايكروسوفت غير مفعّل بعد: ينتظر إعداد Entra ID وموافقة الوزارة.
+// الزر ودالته handleOAuth('azure') باقيان في الكود، ولتفعيله غيّر القيمة إلى true.
+const MICROSOFT_AUTH_ENABLED = false;
+
 interface AuthProps {
   onLoginSuccess: () => void;
   onToast: (msg: string, icon?: string) => void;
@@ -272,14 +276,8 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_40%_at_50%_0%,rgba(42,122,68,.12),transparent_70%)] pointer-events-none z-0"></div>
 
           <div className="text-center mb-10 relative z-10">
-            <div className="inline-flex items-center justify-center w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-[var(--em3)] to-[var(--em6)] text-[40px] text-white mb-5 shadow-[0_0_0_1px_rgba(82,196,120,.3),0_16px_48px_rgba(42,122,68,.6)] relative overflow-hidden" style={{ animation: 'float 4s ease-in-out infinite' }}>
-              <div className="absolute -top-1/2 -right-1/2 w-[70%] h-[70%] bg-white/15 rounded-full blur-[10px]"></div>
-              <i className="ti ti-certificate"></i>
-            </div>
-            <div className="text-[30px] font-black tracking-[-.5px] mb-2 text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em8)_0%,var(--gold3)_50%,var(--em9)_100%)] bg-[length:200%_auto]" style={{ animation: 'goldShimmer 4s linear infinite' }}>
-              منصة وثّق
-            </div>
-            <div className="font-[var(--font2)] text-[14px] text-[var(--text3)] tracking-wide leading-relaxed">
+            <img src="/brand/logo-primary-ondark.svg" alt="وثّق" className="w-[116px] h-auto mx-auto mb-4" />
+            <div className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">
               ملف الإنجاز الرقمي للمعلم السعودي
             </div>
           </div>
@@ -460,7 +458,8 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
               <i className="ti ti-brand-google text-[20px]"></i>
               حساب جوجل (Google)
             </button>
-            <button 
+            {MICROSOFT_AUTH_ENABLED && (
+            <button
               type="button"
               className="w-full py-3.5 px-5 bg-[#0078d4]/10 hover:bg-[#0078d4]/20 border border-[#0078d4]/30 rounded-xl text-[14px] font-bold text-white transition-all duration-300 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
               onClick={() => handleOAuth('azure')}
@@ -469,6 +468,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
               <i className="ti ti-brand-windows text-[20px] text-[#00a4ef]"></i>
               حساب مايكروسوفت (Microsoft)
             </button>
+            )}
           </div>
           </>
           )}
@@ -480,7 +480,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       <div className="hidden lg:flex lg:w-1/2 items-center justify-center p-12 relative z-10">
         <div className="max-w-[440px]">
           <div className="inline-flex items-center gap-2 py-1.5 px-4 rounded-full border border-[var(--line2)] bg-white/5 text-[12px] font-bold text-[var(--text3)] tracking-wide mb-8">
-            <i className="ti ti-certificate text-[var(--em7)]"></i>
+            <img src="/brand/mark.svg" alt="" aria-hidden="true" className="h-[16px] w-auto" />
             منصة وثّق
           </div>
           <h2 className="text-[38px] font-black leading-[1.15] text-white mb-2">

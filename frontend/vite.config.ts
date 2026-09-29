@@ -14,22 +14,21 @@ export default defineConfig(() => {
         // 'script' (not inline) keeps SW registration compatible with the
         // strict CSP in index.html (script-src 'self', no unsafe-inline).
         injectRegister: 'script',
-        includeAssets: ['favicon.ico'],
+        includeAssets: ['favicon.ico', 'brand/favicon.svg', 'brand/apple-touch-icon.png'],
         manifest: {
-          name: 'وثّق — ملف الإنجاز الرقمي للمعلم السعودي',
+          name: 'وثّق — ملف الإنجاز المهني',
           short_name: 'وثّق',
           description: 'منصة ملف الإنجاز الرقمي المهني للمعلمين والمعلمات في السعودية',
           lang: 'ar',
           dir: 'rtl',
           display: 'standalone',
           start_url: '/',
-          background_color: '#1f5c32',
-          theme_color: '#1f5c32',
+          background_color: '#0A2E1F',
+          theme_color: '#0A2E1F',
           icons: [
-            { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
-            { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-            { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-            { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+            { src: 'brand/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: 'brand/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: 'brand/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
         },
         workbox: {
@@ -39,6 +38,7 @@ export default defineConfig(() => {
           // never touched by the service worker — they always hit the
           // network, same as without a PWA.
           globPatterns: ['**/*.{js,css,html,woff,woff2,png,svg,ico}'],
+          globIgnores: ['brand/og-image.png'],
           // injectRegister: 'script' (CSP-driven, see above) means
           // vite-plugin-pwa does NOT auto-enable these for registerType:
           // 'autoUpdate' (it only does so for injectRegister 'auto'/null).

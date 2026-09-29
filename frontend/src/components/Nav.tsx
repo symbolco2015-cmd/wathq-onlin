@@ -52,15 +52,9 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
         }`}
         style={{ animation: 'navIn .7s var(--sp) both' }}
       >
-        <div className="flex items-center gap-3.5 cursor-pointer no-underline" onClick={() => setPage('auth')}>
-          <div className="relative overflow-hidden w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] flex items-center justify-center text-[22px] text-white shadow-[0_0_0_1px_rgba(82,196,120,.3),0_8px_24px_rgba(42,122,68,.5)] transition-all duration-400 hover:rotate-[-8deg] hover:scale-110 hover:shadow-[0_0_0_2px_rgba(82,196,120,.5),0_12px_30px_rgba(42,122,68,.6)] group">
-             <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,.2)_0%,transparent_60%)]" />
-             <i className="ti ti-certificate relative z-10 group-hover:scale-110 transition-transform"></i>
-          </div>
-          <div className="hidden sm:block">
-            <div className="text-[22px] font-black tracking-tight text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em8),var(--gold3))]">وثّق</div>
-            <div className="text-[11px] text-[var(--text4)] tracking-wide mt-px">ملف الإنجاز الرقمي</div>
-          </div>
+        <div className="flex items-center gap-2 cursor-pointer no-underline" onClick={() => setPage('auth')}>
+          <img src="/brand/mark.svg" alt="" aria-hidden="true" className="h-[28px] w-auto" />
+          <span className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">وثّق</span>
         </div>
 
         <div className="hidden md:flex gap-0.5 bg-[var(--glass)] p-1 rounded-xl border border-[var(--line)]">

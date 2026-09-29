@@ -1,14 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { AppState, UserProfile, Announcement, AcademicDate } from '../types';
-
-// ═══════════════════════════════════════════════════════════
-// قائمة المشرفين — أضف إيميلك هنا لمنح صلاحيات الأدمن
-// ═══════════════════════════════════════════════════════════
-const ADMIN_EMAILS = [
-  'azozsaleh@gmail.com',
-];
-// ═══════════════════════════════════════════════════════════
 
 const defaultProfile: UserProfile = {
   name: 'الاسم الثلاثي',
@@ -116,13 +108,33 @@ export function useAppStore() {
     };
   }, []);
 
-  // 1b. حساب صلاحية الأدمن بشكل فوري من الإيميل — بدون Supabase
-  const isAdmin = useMemo(() => {
-    if (!user?.email) return false;
-    const email = user.email.toLowerCase().trim();
-    const result = ADMIN_EMAILS.map(e => e.toLowerCase().trim()).includes(email);
-    return result;
-  }, [user]);
+  // 1b. صلاحية الأدمن من جدول admin_users عبر is_admin() — نفس مصدر RLS.
+  // يُحفظ معرّف المستخدم الذي أكّدت القاعدة أنه أدمن، و isAdmin مشتق منه:
+  // false حتى يصل الرد، وعند الخطأ، وفوراً (في نفس الـrender) عند الخروج أو
+  // تبدّل المستخدم. يعتمد على user.id فقط — تجديد الـtoken لا يعيد الاستعلام.
+  const [adminUserId, setAdminUserId] = useState<string | null>(null);
+  const isAdmin = !!user?.id && adminUserId === user.id;
+
+  useEffect(() => {
+    if (!user?.id || !supabase) {
+      setAdminUserId(null);
+      return;
+    }
+    let cancelled = false;
+    const userId: string = user.id;
+    supabase.rpc('is_admin').then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.warn('[is_admin] تعذّر التحقق من صلاحية الأدمن:', error.message);
+        setAdminUserId(null);
+        return;
+      }
+      setAdminUserId(data === true ? userId : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   // Fetch announcements من Supabase
   const fetchAnnouncements = async () => {

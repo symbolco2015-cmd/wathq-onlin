@@ -37,6 +37,14 @@ export interface PlatformStats {
   dailySignups: { date: string; count: number }[];
 }
 
+// صف من admin_list_users() — بيانات auth.users للأدمن فقط
+interface AuthUserRow {
+  id: string;
+  email: string | null;
+  created_at: string;
+  last_sign_in_at: string | null;
+}
+
 export function useAdminStore(isAdmin: boolean) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [stats, setStats] = useState<PlatformStats | null>(null);
@@ -51,13 +59,47 @@ export function useAdminStore(isAdmin: boolean) {
     setError(null);
 
     try {
-      // Fetch all portfolios (admin RLS policy required in Supabase)
-      const { data: portfolios, error: portfolioError } = await supabase
-        .from('portfolios')
-        .select('id, state, updated_at, created_at')
-        .order('updated_at', { ascending: false });
+      // الاستعلامات الأربعة مستقلة فتُشغَّل معاً. admin_list_users يُرجع البريد
+      // وتاريخ الإنشاء وآخر دخول فعلي من auth.users — فشله لا يوقف اللوحة.
+      const [
+        { data: portfolios, error: portfolioError },
+        { data: stratEvidenceRows, error: stratEvidenceError },
+        { data: evidenceRows, error: evidenceError },
+        { data: authUsers, error: authUsersError },
+      ] = await Promise.all([
+        // Fetch all portfolios (admin RLS policy required in Supabase)
+        supabase
+          .from('portfolios')
+          .select('id, state, updated_at, created_at')
+          .order('updated_at', { ascending: false }),
+        // عدد الاستراتيجيات "المفعّلة" (strategiesCount) كان يُحسَب من
+        // state.strats.length — مصفوفة نصية مهجورة تماماً بعد إعادة بناء قسم
+        // الاستراتيجيات (14 سبتمبر 2026)، ستبقى صفراً دائماً لكل الحسابات
+        // الجديدة إن اعتُمد عليها. الحساب الحقيقي الآن: عدد strategy_id المميّزة
+        // ضمن أدلة القسم 4 (isStrat، رقمه ثابت 4 كما في Dashboard.tsx لبندي 5/10
+        // — لا ثابت مسمّى بالمشروع لهذا) لكل portfolio_id، من جدول evidence مباشرة.
+        supabase
+          .from('evidence')
+          .select('portfolio_id, strategy_id')
+          .eq('section_id', 4)
+          .not('strategy_id', 'is', null),
+        // عدد الشواهد لكل معلم من جدول evidence مباشرة (عدد الصفوف لكل portfolio_id)
+        supabase
+          .from('evidence')
+          .select('portfolio_id'),
+        supabase.rpc('admin_list_users'),
+      ]);
 
       if (portfolioError) throw portfolioError;
+      if (stratEvidenceError) throw stratEvidenceError;
+      if (evidenceError) throw evidenceError;
+
+      const authUsersById = new Map<string, AuthUserRow>();
+      if (authUsersError) {
+        console.warn('[admin_list_users] تعذّر جلب بيانات الدخول، يُستخدم البديل:', authUsersError.message);
+      } else {
+        ((authUsers || []) as AuthUserRow[]).forEach(u => authUsersById.set(u.id, u));
+      }
 
       if (!portfolios) {
         setUsers([]);
@@ -66,18 +108,6 @@ export function useAdminStore(isAdmin: boolean) {
         return;
       }
 
-      // عدد الاستراتيجيات "المفعّلة" (strategiesCount) كان يُحسَب من
-      // state.strats.length — مصفوفة نصية مهجورة تماماً بعد إعادة بناء قسم
-      // الاستراتيجيات (14 سبتمبر 2026)، ستبقى صفراً دائماً لكل الحسابات
-      // الجديدة إن اعتُمد عليها. الحساب الحقيقي الآن: عدد strategy_id المميّزة
-      // ضمن أدلة القسم 4 (isStrat، رقمه ثابت 4 كما في Dashboard.tsx لبندي 5/10
-      // — لا ثابت مسمّى بالمشروع لهذا) لكل portfolio_id، من جدول evidence مباشرة.
-      const { data: stratEvidenceRows, error: stratEvidenceError } = await supabase
-        .from('evidence')
-        .select('portfolio_id, strategy_id')
-        .eq('section_id', 4)
-        .not('strategy_id', 'is', null);
-      if (stratEvidenceError) throw stratEvidenceError;
       const strategyIdsByPortfolio = new Map<string, Set<string>>();
       (stratEvidenceRows || []).forEach((row: any) => {
         const set = strategyIdsByPortfolio.get(row.portfolio_id) ?? new Set<string>();
@@ -88,11 +118,6 @@ export function useAdminStore(isAdmin: boolean) {
         Array.from(strategyIdsByPortfolio.entries()).map(([id, set]) => [id, set.size])
       );
 
-      // عدد الشواهد لكل معلم من جدول evidence مباشرة (عدد الصفوف لكل portfolio_id)
-      const { data: evidenceRows, error: evidenceError } = await supabase
-        .from('evidence')
-        .select('portfolio_id');
-      if (evidenceError) throw evidenceError;
       const evidenceCountByPortfolio = new Map<string, number>();
       (evidenceRows || []).forEach((row: any) => {
         evidenceCountByPortfolio.set(row.portfolio_id, (evidenceCountByPortfolio.get(row.portfolio_id) ?? 0) + 1);
@@ -103,12 +128,15 @@ export function useAdminStore(isAdmin: boolean) {
         const state: AppState = p.state || {};
         const profile = state.profile || {} as any;
         const evidenceCount = evidenceCountByPortfolio.get(p.id) ?? 0;
+        const authUser = authUsersById.get(p.id);
 
         return {
           id: p.id,
-          email: profile.email || '',
-          created_at: p.created_at || new Date().toISOString(),
-          last_sign_in_at: p.updated_at || null,
+          // البريد وتاريخ الإنشاء وآخر دخول من auth.users؛ البديل عند غيابها
+          // هو السلوك السابق (profile.email و portfolios)
+          email: authUser?.email || profile.email || '',
+          created_at: authUser?.created_at || p.created_at || new Date().toISOString(),
+          last_sign_in_at: authUser ? authUser.last_sign_in_at : (p.updated_at || null),
           name: profile.name || 'غير محدد',
           role: profile.role || 'غير محدد',
           school: profile.school || 'غير محدد',
@@ -227,6 +255,34 @@ export function useAdminStore(isAdmin: boolean) {
     }
   }, [isAdmin, loadFeatureFlags]);
 
+  // تسجيل عملية أدمن في admin_audit_log بعد نجاحها. details للمعلومات
+  // الأساسية فقط (لا محتوى كامل ولا بيانات شخصية). الفشل لا يُفشل العملية
+  // الأصلية ولا يظهر للمستخدم — console.warn فقط.
+  const logAdminAction = async (
+    action: string,
+    targetPortfolioId?: string,
+    details: Record<string, unknown> = {}
+  ): Promise<void> => {
+    if (!supabase) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const adminId = session?.user?.id;
+      if (!adminId) {
+        console.warn('[admin_audit_log] لا يوجد مستخدم حالي، لم تُسجَّل العملية:', action);
+        return;
+      }
+      const { error } = await supabase.from('admin_audit_log').insert({
+        admin_id: adminId,
+        action,
+        target_portfolio_id: targetPortfolioId ?? null,
+        details,
+      });
+      if (error) console.warn('[admin_audit_log] فشل التسجيل:', action, error.message);
+    } catch (e) {
+      console.warn('[admin_audit_log] فشل التسجيل:', action, e);
+    }
+  };
+
   // Set the platform-wide switch for a feature (admin only)
   const setGlobalFeatureFlag = async (featureKey: string, enabled: boolean): Promise<boolean> => {
     if (!isAdmin || !supabase) return false;
@@ -236,6 +292,7 @@ export function useAdminStore(isAdmin: boolean) {
         .upsert({ feature: featureKey, enabled, updated_at: new Date().toISOString() });
       if (error) throw error;
       setFeatureFlags(prev => ({ ...prev, [featureKey]: enabled }));
+      void logAdminAction('feature.set', undefined, { feature: featureKey, enabled });
       return true;
     } catch (e) {
       console.error('Set global feature flag error:', e);
@@ -255,6 +312,7 @@ export function useAdminStore(isAdmin: boolean) {
         const withoutExisting = prev.filter(o => !(o.portfolio_id === portfolioId && o.feature === featureKey));
         return [...withoutExisting, { portfolio_id: portfolioId, feature: featureKey, enabled }];
       });
+      void logAdminAction('feature_override.set', portfolioId, { feature: featureKey, enabled });
       return true;
     } catch (e) {
       console.error('Set portfolio feature override error:', e);
@@ -273,6 +331,7 @@ export function useAdminStore(isAdmin: boolean) {
         .eq('feature', featureKey);
       if (error) throw error;
       setFeatureOverrides(prev => prev.filter(o => !(o.portfolio_id === portfolioId && o.feature === featureKey)));
+      void logAdminAction('feature_override.remove', portfolioId, { feature: featureKey });
       return true;
     } catch (e) {
       console.error('Remove portfolio feature override error:', e);
@@ -290,6 +349,7 @@ export function useAdminStore(isAdmin: boolean) {
         .eq('id', userId);
       if (error) throw error;
       setUsers(prev => prev.filter(u => u.id !== userId));
+      void logAdminAction('portfolio.delete', userId);
       return true;
     } catch (e: any) {
       console.error('Delete portfolio error:', e);
@@ -323,6 +383,7 @@ export function useAdminStore(isAdmin: boolean) {
       setUsers(prev => prev.map(u =>
         u.id === userId ? { ...u, evidenceCount: 0, strategiesCount: 3 } : u
       ));
+      void logAdminAction('portfolio.reset', userId);
       return true;
     } catch (e: any) {
       console.error('Reset portfolio error:', e);
@@ -384,6 +445,7 @@ export function useAdminStore(isAdmin: boolean) {
           created_by: currentUser?.id || null
         });
       if (insertError) throw insertError;
+      void logAdminAction('announcement.create', undefined, { title, category });
       return true;
     } catch (e) {
       console.error('Create announcement error:', e);
@@ -411,6 +473,7 @@ export function useAdminStore(isAdmin: boolean) {
         })
         .eq('id', id);
       if (error) throw error;
+      void logAdminAction('announcement.update', undefined, { id, title, category });
       return true;
     } catch (e) {
       console.error('Update announcement error:', e);
@@ -427,6 +490,7 @@ export function useAdminStore(isAdmin: boolean) {
         .delete()
         .eq('id', id);
       if (error) throw error;
+      void logAdminAction('announcement.delete', undefined, { id });
       return true;
     } catch (e) {
       console.error('Delete announcement error:', e);
@@ -456,6 +520,7 @@ export function useAdminStore(isAdmin: boolean) {
           created_by: currentUser?.id || null
         });
       if (insertError) throw insertError;
+      void logAdminAction('academic_date.create', undefined, { title, date });
       return true;
     } catch (e) {
       console.error('Create academic date error:', e);
@@ -485,6 +550,7 @@ export function useAdminStore(isAdmin: boolean) {
         })
         .eq('id', id);
       if (error) throw error;
+      void logAdminAction('academic_date.update', undefined, { id, title, date });
       return true;
     } catch (e) {
       console.error('Update academic date error:', e);
@@ -501,6 +567,7 @@ export function useAdminStore(isAdmin: boolean) {
         .delete()
         .eq('id', id);
       if (error) throw error;
+      void logAdminAction('academic_date.delete', undefined, { id });
       return true;
     } catch (e) {
       console.error('Delete academic date error:', e);

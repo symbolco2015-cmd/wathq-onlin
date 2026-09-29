@@ -204,11 +204,15 @@ across `core` sections only — does **not** include `strategy` or
 
 ### Admin Access
 
-Two independent mechanisms, both must be kept in sync manually: a
-hardcoded `ADMIN_EMAILS` list inside `useAppStore.ts` (drives
-`isAdmin`, computed client-side, gates the `admin` page) **and** the
-`admin_users` table + `is_admin()` SECURITY DEFINER function (used for
-RLS policies server-side). Adding an admin requires updating both.
+One source of truth: the `admin_users` table, read through the
+`is_admin()` SECURITY DEFINER function. RLS policies use `is_admin()`,
+and the frontend computes `isAdmin` in `useAppStore.ts` via
+`supabase.rpc('is_admin')` — `false` until the reply arrives, on error,
+and on sign-out; re-queried only when the user id changes. There is no
+email list in code. Adding an admin = inserting a row into `admin_users`.
+The admin panel gets real email / `created_at` / `last_sign_in_at` from
+`auth.users` via `admin_list_users()` (SECURITY DEFINER, raises `42501`
+for non-admins).
 
 ### RLS
 
@@ -227,6 +231,8 @@ from an explicit field list (not the whole object), so a new profile
 field never becomes public unless it is added to that list.
 
 **`harvest_reports`**: direct SELECT for the owner and admins only; public `?report=` viewing goes through `get_harvest_report(report_id)`.
+
+**`admin_audit_log`**: append-only. SELECT for admins (`is_admin()`), INSERT for admins with `admin_id = auth.uid()`, no UPDATE/DELETE policies (and UPDATE/DELETE/TRUNCATE revoked at table level). Written by `logAdminAction` in `useAdminStore.ts` after each successful admin operation; a failed log write never fails the operation.
 
 ---
 

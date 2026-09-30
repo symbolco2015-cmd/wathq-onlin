@@ -224,7 +224,8 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, aca
       const { data: coreIndicators, error: indErr } = await supabase
         .from('section_indicators')
         .select('id, section_id, sections!inner(section_type)')
-        .eq('sections.section_type', 'core');
+        .eq('sections.section_type', 'core')
+        .is('portfolio_id', null); // الرسمية فقط — المخصص لا يدخل في الجاهزية
       if (indErr || !coreIndicators || coreIndicators.length === 0) {
         console.warn('[HarvestReportSheet] تعذّر جلب مؤشرات أقسام core — التقرير بلا جاهزية الفترة:', indErr?.message ?? 'empty');
       } else {

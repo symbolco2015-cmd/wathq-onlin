@@ -19,6 +19,9 @@ export interface Evidence {
 export interface SectionIndicator {
   id: string;
   name_ar: string;
+  /** مؤشر أضافه المعلم (portfolio_id غير فارغ). لا يدخل في الجاهزية ولا في
+   *  «c من 3 مؤشرات رسمية» ولا في مستوى القسم. */
+  isCustom: boolean;
 }
 
 /** البيانات الثابتة لكل قسم — مكتوبة يدوياً في data.ts، لا تأتي من القاعدة

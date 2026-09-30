@@ -26,7 +26,7 @@ export function useSections() {
     try {
       const { data, error } = await supabase
         .from('section_indicators')
-        .select('id, section_id, name_ar, weight')
+        .select('id, section_id, name_ar, weight, portfolio_id')
         .order('section_id', { ascending: true })
         .order('weight', { ascending: true })
         .order('name_ar', { ascending: true });
@@ -35,9 +35,11 @@ export function useSections() {
       if (!data || data.length === 0) throw new Error('empty_section_indicators');
 
       const indicatorsBySection = new Map<number, SectionIndicator[]>();
-      for (const row of data as { id: string; section_id: number; name_ar: string; weight: number }[]) {
+      // RLS تُرجع الرسمية (portfolio_id فارغ) ومؤشرات المعلم المخصصة فقط، ووزن
+      // المخصص 99 فيأتي بعد الرسمي في كل قسم
+      for (const row of data as { id: string; section_id: number; name_ar: string; weight: number; portfolio_id: string | null }[]) {
         const list = indicatorsBySection.get(row.section_id) ?? [];
-        list.push({ id: row.id, name_ar: row.name_ar });
+        list.push({ id: row.id, name_ar: row.name_ar, isCustom: row.portfolio_id !== null });
         indicatorsBySection.set(row.section_id, list);
       }
 

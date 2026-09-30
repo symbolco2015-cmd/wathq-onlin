@@ -169,7 +169,7 @@ deliberately separate monthly-momentum counter, untouched by the
 `indicator_id` unification below), `useBulkImport.ts`, `useQuickCapture.ts`,
 `useVoiceRecording.ts` (**feature currently disabled**, see below),
 `usePublicProfile.ts`/`usePublicEvidence.ts`/`usePublicMonthlyProgress.ts`/
-`usePublicLessonPlanSummary.ts`/`usePublicResultsAnalysis.ts` (public
+`usePublicSectionSummaries.ts` (`get_shared_section_summaries`)/`usePublicResultsAnalysis.ts` (public
 share-view data fetchers, each via its own `get_shared_*` RPC),
 `useHarvestReport.ts` (the separate `?report=` feature).
 
@@ -180,13 +180,20 @@ Core tables: `portfolios` (id, `state` JSONB — profile/settings only, `share_e
 `ai_summary_generated_at`), `evidence` (`indicator_id` NOT NULL,
 `evidence_type` — currently `file`/`image`/`link`/`note`/`audio`/`video`),
 `sections` (`section_type`: `core`/`strategy`/`results` — replaces any
-hardcoded section-ID list in code), `section_indicators`,
+hardcoded section-ID list in code), `section_indicators` (`portfolio_id`
+NULL = official indicator, otherwise a teacher's custom indicator — max 5
+per teacher per section, enforced by trigger, weight forced to 99 (`numeric(4,2)`, max 99.99) so it
+sorts after the officials, excluded from every readiness calculation;
+`created_at`),
 `monthly_progress`, `bulk_import_queue`, `admin_users`, `announcements`,
 `feature_flags`, `portfolio_feature_overrides`, `grade_bands` (student
 result grading tiers, unrelated to teacher portfolio scoring —
 `ResultsAnalysis/` feature only), `academic_dates`, `lesson_plan_templates`,
-`results_analysis`, `indicator_ai_summaries`, `section_ai_summaries`,
-`ai_usage_log`.
+`results_analysis`, `section_ai_summaries` (one row per teacher per
+section, unique `(portfolio_id, section_id)`; `hidden` — teacher hides it
+from the public page; `source_key` — fingerprint of the evidence the
+summary was generated from), `ai_usage_log`. (`indicator_ai_summaries`
+was dropped in step 3.3.)
 
 **Known orphaned/legacy objects** (confirmed zero code references as of
 this rewrite — candidates for cleanup, not for building on top of):
@@ -260,6 +267,10 @@ sharing goes exclusively through the SECURITY DEFINER RPCs
 from an explicit field list (not the whole object), so a new profile
 field never becomes public unless it is added to that list.
 
+**`section_indicators`**: SELECT for anon/authenticated returns official rows plus the caller's own custom rows only (`portfolio_id IS NULL OR portfolio_id = auth.uid()`). INSERT/UPDATE/DELETE for the owner's custom rows only; column grants limit INSERT to `(section_id, name_ar, portfolio_id)` and UPDATE to `(name_ar)`, so no teacher can touch an official indicator. A trigger on `evidence` (`evidence_indicator_owner_guard`) blocks linking evidence to another teacher's custom indicator. Public viewers get custom indicators (only those with evidence) through `get_shared_custom_indicators(target_id)`, gated on `share_enabled`.
+
+**`section_ai_summaries`**: the owner can SELECT and UPDATE only the `hidden` column (column grant); anon has nothing. Rows are written by `generate-portfolio-summaries` with the service role key; the public page reads them through `get_shared_section_summaries`.
+
 **`harvest_reports`**: direct SELECT for the owner and admins only; public `?report=` viewing goes through `get_harvest_report(report_id)`.
 
 **`admin_audit_log`**: append-only. SELECT for admins (`is_admin()`), INSERT for admins with `admin_id = auth.uid()`, no UPDATE/DELETE policies (and UPDATE/DELETE/TRUNCATE revoked at table level). Written by `logAdminAction` in `useAdminStore.ts` after each successful admin operation; a failed log write never fails the operation.
@@ -278,9 +289,8 @@ knows Gemini's request shape; swap providers there only).
 | `suggest-from-image` | manual, from evidence form | Suggests a section for an uploaded image |
 | `transcribe-voice` | manual, from voice capture (currently disabled) | Transcribes + classifies a voice note |
 | `process-bulk-queue` | immediate (fire-and-forget, no `await`) + daily `pg_cron` backup | Classifies queued bulk-import images |
-| `generate-portfolio-summaries` | weekly GitHub Action + manual refresh button | Generates the public-share-page AI summary + "أبرز إنجاز" |
-| `generate-indicator-summary` | manual, per-indicator button (lesson-plan indicators specifically) | Per-indicator AI summary |
-| `generate-section-summary` | manual | Per-section AI summary (superseded the indicator-level approach for the "lesson plan" section specifically — both still coexist, by design, see inline comments in `generate-indicator-summary`) |
+| `generate-portfolio-summaries` | weekly GitHub Action + manual refresh button | Generates the public-share-page AI summary + "أبرز إنجاز", and the per-section summaries (writes `section_ai_summaries` with the service role key; teachers cannot write summary text) |
+| `import-from-link` | manual, from evidence form | Imports a file from a public Google Drive/Docs share link into the `evidence` bucket and returns its URL (does not insert evidence rows) |
 | `admin-portfolio-action` | manual, admin panel | Reset or delete a teacher's portfolio (see "Admin Access") |
 
 ### Known pitfall — custom secret vs. Supabase API key (learned the hard way, 13 September 2026)

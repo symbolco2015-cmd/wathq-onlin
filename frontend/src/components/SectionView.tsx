@@ -143,8 +143,10 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
       .filter(e => e.indicator_id === indicatorId)
       .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
 
-  const total = section.indicators.length;
-  const covered = section.indicators.filter(ind => evidence.some(e => e.indicator_id === ind.id)).length;
+  // الجاهزية ومستوى القسم من المؤشرات الرسمية فقط — المخصص لا يدخل فيهما
+  const official = section.indicators.filter(ind => !ind.isCustom);
+  const total = official.length;
+  const covered = official.filter(ind => evidence.some(e => e.indicator_id === ind.id)).length;
   const n = sectionEvidence.length;
   const level = sectionLevel(covered, total, n);
 
@@ -243,10 +245,16 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
       {section.indicators.map(indicator => {
         const evs = byIndicator(indicator.id);
         const count = evs.length;
-        const st = count >= 2 ? 'x' : count === 1 ? 'g' : '';
+        // المخصص لا يبلغ «متجاوز» — indCard() في النموذج
+        const st = indicator.isCustom
+          ? (count > 0 ? 'g' : '')
+          : (count >= 2 ? 'x' : count === 1 ? 'g' : '');
 
         return (
-          <div key={indicator.id} className="rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--bd)]">
+          <div
+            key={indicator.id}
+            className={`rounded-[var(--r-md)] bg-[var(--s1)] border ${indicator.isCustom ? 'border-dashed border-[var(--bd2)]' : 'border-[var(--bd)]'}`}
+          >
             <div className="flex items-center gap-2.5 py-3 px-3.5">
               <span
                 className={`w-[26px] h-[26px] rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[14px] border-[1.5px] ${
@@ -259,7 +267,7 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
               </span>
               <span className="min-w-0 flex-1">
                 <b className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] leading-normal">{indicator.name_ar}</b>
-                <small className="text-[length:var(--fs-xs)] text-[var(--t3)]">{nEv(count)}</small>
+                <small className="text-[length:var(--fs-xs)] text-[var(--t3)]">{indicator.isCustom && 'مؤشر مخصص · '}{nEv(count)}</small>
               </span>
               <button
                 type="button"

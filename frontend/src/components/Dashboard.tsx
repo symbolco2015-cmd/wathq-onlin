@@ -524,9 +524,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       byType[supabaseEvidenceTypeToLocal(e.evidence_type)]++;
       if (e.indicator_id) coveredIndicators.add(e.indicator_id);
     }
+    // المؤشرات الرسمية فقط — المخصص لا يدخل في نسبة الاكتمال
     const bySections = pickableSections.map(s => {
-      const filledSubs = s.indicators.filter(ind => coveredIndicators.has(ind.id)).length;
-      const totalSubs = s.indicators.length;
+      const official = s.indicators.filter(ind => !ind.isCustom);
+      const filledSubs = official.filter(ind => coveredIndicators.has(ind.id)).length;
+      const totalSubs = official.length;
       return {
         sectionId: s.id,
         filledSubs,
@@ -1390,7 +1392,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             const secStat = getSectionStat(sec.id);
             const completionPct = getMonthlyPct(sec.id);
             const filledSubs = secStat?.filledSubs ?? 0;
-            const totalSubs = secStat?.totalSubs ?? sec.indicators.length;
+            const totalSubs = secStat?.totalSubs ?? sec.indicators.filter(ind => !ind.isCustom).length;
             // cumulativePct: نسبة الاكتمال التراكمية الحقيقية عبر كل الأدلة منذ البداية (secStat) — تُعرض كمعلومة إضافية فقط
             const cumulativePct = secStat?.completionPct ?? 0;
             // العمق الشهري = أدلة هذا الشهر ÷ عدد المؤشرات الفرعية المغطاة تراكمياً (filledSubs).

@@ -604,7 +604,14 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
   );
 }
 
-export default function Public({ state, sections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, sectionSummaries, strategyNames = {} }: PublicProps) {
+export default function Public({ state, sections: allSections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, sectionSummaries, strategyNames = {} }: PublicProps) {
+  // المؤشرات المخصصة مستبعدة من الصفحة كلها (العرض والحساب والتجميع): useSections
+  // يحمّل مخصص المعلم المسجّل، وهو قد يكون زائراً يفتح صفحة غيره. عرضها هنا
+  // يأتي في 3.4 عبر get_shared_custom_indicators.
+  const sections = useMemo(() => allSections.map(s => {
+    const indicators = s.indicators.filter(ind => !ind.isCustom);
+    return { ...s, indicators, subs: indicators.map(ind => ind.name_ar) };
+  }), [allSections]);
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);

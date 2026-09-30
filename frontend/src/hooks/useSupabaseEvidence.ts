@@ -27,6 +27,25 @@ export interface SupabaseEvidence {
   strategy_id: string | null;
 }
 
+/** الحقول التي يسمح نموذج التعديل بتغييرها — لا ملف ولا نوع ولا قسم */
+export interface EvidenceUpdatePatch {
+  title?: string;
+  description?: string | null;
+  impact?: string | null;
+  context_grade?: string | null;
+  context_subject?: string | null;
+  academic_term?: string | null;
+  self_reflection?: string | null;
+  frequency?: 'weekly' | 'semester' | null;
+  /** NOT NULL في القاعدة */
+  indicator_id?: string;
+}
+
+const EDITABLE_FIELDS: (keyof EvidenceUpdatePatch)[] = [
+  'title', 'description', 'impact', 'context_grade', 'context_subject',
+  'academic_term', 'self_reflection', 'frequency', 'indicator_id',
+];
+
 // روابط Supabase العلنية تتبع الصيغة: .../storage/v1/object/public/<bucket>/<path>
 // نستخرج اسم الـ bucket ديناميكياً بدل افتراضه ثابتاً ('evidence')، لأن أنواع
 // شواهد مختلفة (مثل 'video') تُخزَّن في bucket مستقل (evidence-video).
@@ -93,6 +112,26 @@ export function useSupabaseEvidence(
     return data as SupabaseEvidence;
   };
 
+  /** يعدّل حقول الشاهد المسموحة فقط. القسم لا يتغيّر، فعدّاد الشهر لا يُمس. */
+  const updateEvidence = async (id: string, patch: EvidenceUpdatePatch): Promise<boolean> => {
+    if (!supabase) return false;
+    // نسخ الحقول المسموحة وحدها، حتى لو مُرِّر كائن فيه حقول أكثر
+    const clean: EvidenceUpdatePatch = {};
+    for (const k of EDITABLE_FIELDS) {
+      if (k in patch) (clean as Record<string, unknown>)[k] = patch[k];
+    }
+    const { data, error } = await supabase
+      .from('evidence')
+      .update(clean)
+      .eq('id', id)
+      .select('id');
+    if (error) { console.error('[Supabase Evidence] update error:', error.message, error); return false; }
+    // لم يُعدَّل أي صف (RLS ترفض بصمت)
+    if (!data || data.length === 0) { console.error('[Supabase Evidence] لم يُعدَّل الشاهد في قاعدة البيانات'); return false; }
+    await fetch();
+    return true;
+  };
+
   const deleteEvidence = async (id: string): Promise<void> => {
     if (!supabase) return;
 
@@ -144,6 +183,7 @@ export function useSupabaseEvidence(
     evidence,
     loading,
     addEvidence,
+    updateEvidence,
     deleteEvidence,
     getBySection,
     refetch: fetch,

@@ -26,6 +26,7 @@ import EvidenceModal from './components/EvidenceModal';
 import { supabase } from './supabaseClient';
 import { isProfileIncomplete } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
+import type { SupabaseEvidence } from './hooks/useSupabaseEvidence';
 import { useMonthlyProgress } from './hooks/useMonthlyProgress';
 import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
 import { useSections } from './hooks/useSections';
@@ -110,7 +111,10 @@ export default function App() {
   const onEvidenceSaved = (sectionId: number, createdAt?: string) =>
     monthlyProgress.recordEvidence(sectionId, createdAt);
 
-  const [evidenceModal, setEvidenceModal] = useState<{ open: boolean; sectionId: number; sub: string; strategyId?: string; indicatorId?: string }>({
+  const [evidenceModal, setEvidenceModal] = useState<{
+    open: boolean; sectionId: number; sub: string; strategyId?: string; indicatorId?: string;
+    mode?: 'add' | 'edit'; initial?: SupabaseEvidence;
+  }>({
     open: false, sectionId: 0, sub: '',
   });
 
@@ -310,7 +314,12 @@ export default function App() {
   const closeModal = () => setModalConfig(prev => ({ ...prev, isOpen: false }));
 
   const openAddEvModal = (sid: number, sub: string, strategyId?: string, indicatorId?: string) => {
-    setEvidenceModal({ open: true, sectionId: sid, sub, strategyId, indicatorId });
+    setEvidenceModal({ open: true, sectionId: sid, sub, strategyId, indicatorId, mode: 'add' });
+  };
+
+  // وضع التعديل — القسم من الشاشة المعروضة لا من ev.section_id (يقبل الفراغ)
+  const openEditEvModal = (sid: number, ev: SupabaseEvidence) => {
+    setEvidenceModal({ open: true, sectionId: sid, sub: '', mode: 'edit', initial: ev });
   };
 
   // خطوة 1 من تدفّق "استراتيجيات التدريس" الجديد: اختيار استراتيجية من الكتالوج
@@ -972,6 +981,7 @@ export default function App() {
             sections={sections}
             onAddEvClick={openAddEvModal}
             onDeleteEv={handleDeleteEv}
+            onEditEv={openEditEvModal}
             onAddStrategyClick={openAddStrategyModal}
             strategyNames={strategyNames}
             announcements={announcements}
@@ -1039,6 +1049,8 @@ export default function App() {
         sub={evidenceModal.sub}
         strategyId={evidenceModal.strategyId}
         indicatorId={evidenceModal.indicatorId}
+        mode={evidenceModal.mode}
+        initial={evidenceModal.initial}
         userId={user?.id}
         supabaseEv={supabaseEv}
         onEvidenceSaved={onEvidenceSaved}

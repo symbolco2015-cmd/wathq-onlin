@@ -50,6 +50,8 @@ interface DashboardProps {
   supabaseEv?: SupabaseEvidenceHook;
   onAddEvClick: (sid: number, sub: string, strategyId?: string, indicatorId?: string) => void;
   onDeleteEv: (evidenceId: string) => void;
+  /** يفتح نموذج الشاهد في وضع التعديل — من شاشة القسم العادي فقط */
+  onEditEv: (sectionId: number, ev: SupabaseEvidenceHook['evidence'][number]) => void;
   /** يفتح تدفّق "إضافة استراتيجية" (اختيار من الكتالوج أو إنشاء جديدة، ثم
    *  فتح نموذج الدليل الإجباري) — انظر openAddStrategyModal في App.tsx. */
   onAddStrategyClick: () => void;
@@ -178,7 +180,7 @@ export function SectionReclassifyDropdown({
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -815,6 +817,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             onBack={closeSection}
             onAddEvClick={onAddEvClick}
             onDeleteEv={onDeleteEv}
+            onEditEv={onEditEv}
             sectionSummary={openSectionIsCore ? sectionSummaries[openSectionData.id] ?? null : null}
             onToggleSummaryHidden={openSectionIsCore ? toggleSummaryHidden : undefined}
           />

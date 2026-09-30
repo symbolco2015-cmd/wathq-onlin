@@ -1,7 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
-import type { EvidenceType } from '../hooks/useSupabaseEvidence';
+import type { EvidenceType, SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import { useSaveEvidence } from '../hooks/useSaveEvidence';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
@@ -62,7 +62,16 @@ export interface EvidenceFormProps {
   /** يُمرَّر من زر «+» على بطاقة مؤشر في شاشة القسم — يُضبط قيمةً ابتدائية
    *  للمؤشر بعد تحميل مؤشرات القسم إن كان ضمنها، وإلا يبقى فارغاً. */
   indicatorId?: string;
+  /** 'edit' يفتح النموذج على شاهد موجود (initial): لا رفع ولا حذف لأي ملف،
+   *  والنوع والمرفق للعرض فقط. الافتراضي 'add'. */
+  mode?: 'add' | 'edit';
+  initial?: ExistingEvidence;
 }
+
+/** الشاهد الموجود الذي يُفتح عليه وضع التعديل */
+export type ExistingEvidence = Pick<SupabaseEvidence,
+  'id' | 'evidence_type' | 'file_url' | 'link_url' | 'title' | 'description' | 'impact' |
+  'context_grade' | 'context_subject' | 'academic_term' | 'self_reflection' | 'frequency' | 'indicator_id'>;
 
 /** ما تكشفه EvidenceForm لحاويتها (EvidenceModal / BottomSheet): كل طرق
  *  الإغلاق من خارج النموذج (الخلفية، السحب) تمر عبر requestClose حتى يسأل
@@ -225,7 +234,9 @@ function Label({ children, hint, htmlFor, action }: { children: React.ReactNode;
 const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function EvidenceForm({
   isOpen, onClose, sectionId, sub, userId, supabaseEv, onEvidenceSaved, onToast, createdAt,
   aiConsentGiven, onGiveAiConsent, prefill, strategyId, indicatorId: presetIndicatorId,
+  mode = 'add', initial,
 }, ref) {
+  const isEdit = mode === 'edit' && !!initial;
   // مسار الكتابة الموحّد — INSERT في evidence، وعند نجاحه فقط تسجيل الشاهد
   // في monthly_progress عبر onEvidenceSaved (انظر useSaveEvidence.ts)
   const { saveEvidence } = useSaveEvidence(supabaseEv.addEvidence, onEvidenceSaved);
@@ -328,24 +339,32 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
    *  (نموذج فارغ)، وkeepIndicatorId يُبقي المؤشر نفسه. */
   const resetForm = (opts: { usePrefill: boolean; keepIndicatorId?: string }) => {
     const pf = opts.usePrefill ? prefill : undefined;
-    const initial: FormValues = {
+    // وضع التعديل: القيم الابتدائية من الشاهد نفسه، فلا يُعدّ النموذج «متسخاً» قبل أي تغيير
+    const ex = isEdit ? initial : undefined;
+    const init: FormValues = ex ? {
+      title: ex.title ?? '', indicatorId: ex.indicator_id ?? '', evidenceType: ex.evidence_type,
+      description: ex.description ?? '', impact: ex.impact ?? '', contextGrade: ex.context_grade ?? '',
+      academicTerm: ex.academic_term ?? '', selfReflection: ex.self_reflection ?? '', linkUrl: ex.link_url ?? '',
+      contextSubject: ex.context_subject ?? '', frequency: ex.frequency ?? '', writeFromScratch: false,
+      fileUrl: ex.file_url ?? '',
+    } : {
       title: pf?.title ?? '', indicatorId: opts.keepIndicatorId ?? '', evidenceType: 'image',
       description: '', impact: '', contextGrade: '', academicTerm: '', selfReflection: '', linkUrl: '',
       contextSubject: '', frequency: '', writeFromScratch: false, fileUrl: pf?.fileUrl ?? '',
     };
-    initialRef.current = initial;
+    initialRef.current = init;
     sessionSeqRef.current += 1;
     sessionUploadsRef.current = [];
     currentUploadRef.current = null;
 
-    setTitle(initial.title); setIndicatorId(initial.indicatorId); setEvidenceType(initial.evidenceType);
-    setDescription(''); setImpact(''); setContextGrade('');
-    setAcademicTerm(''); setSelfReflection(''); setLinkUrl('');
+    setTitle(init.title); setIndicatorId(init.indicatorId); setEvidenceType(init.evidenceType);
+    setDescription(init.description); setImpact(init.impact); setContextGrade(init.contextGrade);
+    setAcademicTerm(init.academicTerm); setSelfReflection(init.selfReflection); setLinkUrl(init.linkUrl);
     setThumbUrl(prev => { revokeThumb(prev); return pf?.fileUrl ?? ''; });
-    setFileUrl(initial.fileUrl); setFileName(pf?.fileName ?? ''); setFileSize(0);
+    setFileUrl(init.fileUrl); setFileName(pf?.fileName ?? ''); setFileSize(0);
     setUploadSuccess(!!pf); setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    setContextSubject(''); setFrequency(''); setWriteFromScratch(false); setSelectedTemplateId('');
+    setContextSubject(init.contextSubject); setFrequency(init.frequency); setWriteFromScratch(false); setSelectedTemplateId('');
     setShowLinkImport(false); setLinkImportUrl(''); setLinkImportLoading(false);
     resetAiSuggestion();
     setVoiceConsentPromptOpen(false); setVoiceLoading(false); setVoiceTranscript(''); setVoiceSuggestedDesc('');
@@ -412,7 +431,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   // فشل الجلب (مثلاً الجدول لم يُنشأ بعد على بيئة ما) لا يُسقط النموذج —
   // قائمة قوالب فارغة فقط، الكتابة الحرة تبقى متاحة دوماً.
   useEffect(() => {
-    if (!isOpen || !isDistributionIndicator || !supabase) { setTemplates([]); return; }
+    if (!isOpen || isEdit || !isDistributionIndicator || !supabase) { setTemplates([]); return; }
     supabase
       .from('lesson_plan_templates')
       .select('id, title, content')
@@ -421,7 +440,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
         if (error) { console.warn('[EvidenceForm] تعذّر تحميل قوالب خطة الدرس:', error.message); setTemplates([]); return; }
         setTemplates(data ?? []);
       });
-  }, [isOpen, isDistributionIndicator, userId]);
+  }, [isOpen, isEdit, isDistributionIndicator, userId]);
 
   // بوابة صلاحية ميزة "التوثيق الصوتي" (Beta) — نفس آلية image_suggestion بمفتاح مستقل
   useEffect(() => {
@@ -451,7 +470,15 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  const currentTypeConfig = TYPE_CONFIG.find(t => t.id === evidenceType)!;
+  const matchedTypeConfig = TYPE_CONFIG.find(t => t.id === evidenceType);
+  // 'audio' ليس ضمن أنواع الإضافة، ويصل فقط في وضع التعديل حيث لا تُستعمل
+  // خصائص الرفع — الاحتياط يمنع الانكسار فقط، والعرض يأتي من typeMeta
+  const currentTypeConfig = matchedTypeConfig ?? TYPE_CONFIG[0];
+  const typeMeta = matchedTypeConfig
+    ? { icon: matchedTypeConfig.icon, label: matchedTypeConfig.label }
+    : evidenceType === 'audio'
+      ? { icon: 'ti-microphone', label: 'تسجيل صوتي' }
+      : { icon: 'ti-file-text', label: 'ملف' };
   const currentIndicator = indicators.find(ind => ind.id === indicatorId) ?? null;
 
   const isAiSuggestionEligible = aiFeatureEnabled && evidenceType === 'image';
@@ -808,7 +835,9 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   const validate = (): Partial<Record<ErrKey, string>> => {
     const e: Partial<Record<ErrKey, string>> = {};
     if (!indicatorId) e.indicator = 'اختر المؤشر';
-    if (writeFromScratch) {
+    if (isEdit) {
+      // الملف والرابط لا يتغيّران في وضع التعديل
+    } else if (writeFromScratch) {
       if (!description.trim()) e.description = 'اكتب نص الخطة';
     } else {
       if (currentTypeConfig.hasFile && !fileUrl) e.file = 'أرفق الملف أولاً';
@@ -824,6 +853,33 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     const first = ERR_ORDER.find(k => found[k]);
     if (first) {
       requestAnimationFrame(() => fieldRefs.current[first]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      return;
+    }
+
+    if (isEdit && initial) {
+      setSaving(true);
+      try {
+        const ok = await supabaseEv.updateEvidence(initial.id, {
+          title:           title.trim(),
+          description:     description.trim()    || null,
+          impact:          impact.trim()         || null,
+          context_grade:   contextGrade.trim()   || null,
+          academic_term:   academicTerm          || null,
+          self_reflection: selfReflection.trim() || null,
+          indicator_id:    indicatorId,
+          ...(isLessonPlanSection ? { context_subject: contextSubject.trim() || null } : {}),
+          // نقل الشاهد بعيداً عن مؤشر الخطة الموزعة يفرّغ تكراره
+          frequency:       isDistributionIndicator ? (frequency || null) : null,
+        });
+        if (ok) {
+          onToast('حُفظت التعديلات');
+          onClose();
+        } else {
+          onToast('تعذّر حفظ التعديلات، حاول مجدداً', '');
+        }
+      } finally {
+        setSaving(false);
+      }
       return;
     }
 
@@ -868,7 +924,9 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     : currentTypeConfig.hasFile ? uploadSuccess
     : currentTypeConfig.hasLink ? linkUrl.trim().length > 0
     : false;
-  const saveDisabled = saving || uploading || linkImportLoading || (!!strategyId && !hasAttachment);
+  const saveDisabled = isEdit
+    ? saving
+    : saving || uploading || linkImportLoading || (!!strategyId && !hasAttachment);
 
   const isMedia = !writeFromScratch && (evidenceType === 'image' || evidenceType === 'video');
   const sectionTitle = section?.ttl ?? '';
@@ -954,7 +1012,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       {/* ── الرأس ── */}
       <div className="px-[18px] pt-3.5 pb-2.5 shrink-0">
         <div className="flex items-center gap-2.5">
-          <h3 className="flex-1 text-[length:var(--fs-md)] font-bold text-[var(--t1)]">شاهد جديد</h3>
+          <h3 className="flex-1 text-[length:var(--fs-md)] font-bold text-[var(--t1)]">{isEdit ? 'تعديل الشاهد' : 'شاهد جديد'}</h3>
           <button type="button" aria-label="إغلاق" className={ICON_BTN_SM_CLS} onClick={requestClose}>
             <i className="ti ti-x" />
           </button>
@@ -1008,10 +1066,12 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
               triggerClassName={INPUT_CLS + ' cursor-pointer'}
               allowClear
             />
-            <button type="button" className={BTN_SM_CLS + ' mt-3'} onClick={toggleWriteFromScratch}>
-              <i className={`ti ${writeFromScratch ? 'ti-file-upload' : 'ti-pencil'} text-[20px]`} />
-              {writeFromScratch ? 'العودة لرفع ملف' : 'اكتب خطة من الصفر'}
-            </button>
+            {!isEdit && (
+              <button type="button" className={BTN_SM_CLS + ' mt-3'} onClick={toggleWriteFromScratch}>
+                <i className={`ti ${writeFromScratch ? 'ti-file-upload' : 'ti-pencil'} text-[20px]`} />
+                {writeFromScratch ? 'العودة لرفع ملف' : 'اكتب خطة من الصفر'}
+              </button>
+            )}
             {writeFromScratch && (
               <div className="mt-3">
                 <Label hint="اختياري">ابدأ من قالب</Label>
@@ -1032,7 +1092,42 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
           </div>
         )}
 
-        {!writeFromScratch && <>
+        {/* وضع التعديل: النوع والمرفق للعرض فقط — لا رفع ولا حذف لأي ملف */}
+        {isEdit && initial && <>
+          <div className="mt-3.5">
+            <Label>النوع</Label>
+            <div className="flex items-center gap-1.5 text-[length:var(--fs-sm)] font-bold text-[var(--t2)]">
+              <i className={`ti ${typeMeta.icon} text-[16px]`} /> {typeMeta.label}
+            </div>
+          </div>
+
+          {(initial.file_url || initial.link_url) && (
+            <div className="mt-3.5">
+              <Label>المرفق</Label>
+              <div className="flex items-center gap-2.5 py-2.5 px-3 rounded-[var(--r-sm)] bg-[var(--s2)] border border-[var(--bd)]">
+                <span className="w-11 h-11 rounded-[var(--r-sm)] bg-[var(--s3)] text-[var(--t2)] flex items-center justify-center text-[20px] shrink-0 overflow-hidden">
+                  {initial.evidence_type === 'image' && initial.file_url
+                    ? <img src={initial.file_url} alt="" className="w-full h-full object-cover" />
+                    : <i className={`ti ${typeMeta.icon}`} />}
+                </span>
+                <b className="min-w-0 flex-1 text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">
+                  {initial.file_url ? 'الملف المرفق' : 'الرابط'}
+                </b>
+                <a
+                  href={initial.file_url ?? initial.link_url ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={BTN_SM_CLS}
+                >
+                  <i className="ti ti-external-link text-[20px]" /> فتح
+                </a>
+              </div>
+              <div className="mt-1.5 text-[length:var(--fs-xs)] text-[var(--t3)]">لتغيير الملف احذف الشاهد وأضفه من جديد</div>
+            </div>
+          )}
+        </>}
+
+        {!isEdit && !writeFromScratch && <>
           {/* 2. النوع */}
           <div className="mt-3.5">
             <Label>ماذا توثّق؟</Label>
@@ -1428,7 +1523,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
         <button type="button" className={BTN_PRI_CLS + ' flex-1'} onClick={handleSave} disabled={saveDisabled}>
           {saving
             ? <><i className={`ti ti-loader ${SPIN_CLS}`} /> جارٍ الحفظ...</>
-            : 'حفظ الشاهد'}
+            : isEdit ? 'حفظ التعديلات' : 'حفظ الشاهد'}
         </button>
       </div>
 

@@ -7,14 +7,13 @@ import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import SectionView from './SectionView';
+import SectionView, { type SectionSummary } from './SectionView';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
 import type { PortfolioCompletion } from '../hooks/usePortfolioCompletion';
 import { supabase } from '../supabaseClient';
-import { LESSON_PLAN_SECTION_ID } from '../data';
 import BulkImportPicker from './BulkImportPicker';
 import BulkImportReview from './BulkImportReview';
 import HarvestReportSheet from './HarvestReportSheet';
@@ -467,135 +466,42 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     }
   };
 
-  // ملخص ذكاء اصطناعي لكل مؤشر فرعي ضمن بند 6 (إعداد خطة التعلم) — مستقل
-  // تماماً عن ملخص الملف العام أعلاه (جدول indicator_ai_summaries، Edge
-  // Function منفصلة generate-indicator-summary). lessonPlanIndicators يربط
-  // نص "sub" في allSubs.map بـ indicator_id الحقيقي عبر مطابقة name_ar
-  // (نفس نمط استعلام section_indicators في EvidenceForm.tsx).
-  const [lessonPlanIndicators, setLessonPlanIndicators] = useState<{ id: string; name_ar: string }[]>([]);
+  // ملخصات الأقسام العادية — يولّدها المسار الأسبوعي (generate-portfolio-summaries)،
+  // والمعلم يغيّر hidden فقط. جلب واحد لكل صفوف المعلم.
+  const [sectionSummaries, setSectionSummaries] = useState<Record<number, SectionSummary>>({});
 
   useEffect(() => {
     if (!supabase || !userId) return;
-    supabase
-      .from('section_indicators')
-      .select('id, name_ar')
-      .eq('section_id', LESSON_PLAN_SECTION_ID)
-      .then(({ data, error }) => {
-        if (error) { console.warn('[Dashboard] تعذّر جلب مؤشرات بند 6:', error.message); return; }
-        setLessonPlanIndicators(data ?? []);
-      });
-  }, [userId]);
-
-  const [indicatorSummaries, setIndicatorSummaries] = useState<Record<string, { ai_sentence: string; generated_at: string }>>({});
-
-  const refetchIndicatorSummaries = useCallback(() => {
-    if (!supabase || !userId || lessonPlanIndicators.length === 0) return;
-    supabase
-      .from('indicator_ai_summaries')
-      .select('indicator_id, ai_sentence, generated_at')
-      .eq('portfolio_id', userId)
-      .eq('section_id', LESSON_PLAN_SECTION_ID)
-      .in('indicator_id', lessonPlanIndicators.map(i => i.id))
-      .then(({ data, error }) => {
-        if (error) { console.warn('[Dashboard] تعذّر جلب ملخصات المؤشرات:', error.message); return; }
-        const map: Record<string, { ai_sentence: string; generated_at: string }> = {};
-        for (const row of data ?? []) map[row.indicator_id] = { ai_sentence: row.ai_sentence, generated_at: row.generated_at };
-        setIndicatorSummaries(map);
-      });
-  }, [userId, lessonPlanIndicators]);
-
-  useEffect(() => { refetchIndicatorSummaries(); }, [refetchIndicatorSummaries]);
-
-  // تعطيل 60 ثانية من لحظة الضغط، بصرف النظر عن نجاح/فشل الطلب — مفتاحه indicator_id
-  const [indicatorSummaryCooldown, setIndicatorSummaryCooldown] = useState<Record<string, boolean>>({});
-
-  const handleGenerateIndicatorSummary = async (indicatorId: string) => {
-    if (!supabase || indicatorSummaryCooldown[indicatorId]) return;
-    setIndicatorSummaryCooldown(prev => ({ ...prev, [indicatorId]: true }));
-    setTimeout(() => setIndicatorSummaryCooldown(prev => ({ ...prev, [indicatorId]: false })), 60000);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-      if (!accessToken) { onToast?.('يجب تسجيل الدخول أولاً ⚠️', '⚠️'); return; }
-      const { data, error } = await supabase.functions.invoke('generate-indicator-summary', {
-        body: { indicator_id: indicatorId, section_id: LESSON_PLAN_SECTION_ID },
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (error) { onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌'); return; }
-      if (data?.generated && data?.ai_sentence) {
-        setIndicatorSummaries(prev => ({ ...prev, [indicatorId]: { ai_sentence: data.ai_sentence, generated_at: data.generated_at } }));
-        onToast?.('تم توليد الملخص بنجاح ✅', '✅');
-      } else if (data?.reason === 'no_description') {
-        onToast?.('لا توجد أوصاف نصية كافية بين آخر الأدلة لهذا المؤشر', 'ℹ️');
-      } else {
-        onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌');
-      }
-    } catch (err) {
-      console.error('[Dashboard] فشل توليد ملخص المؤشر:', err);
-      onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌');
-    }
-  };
-
-  // ملخص ذكاء اصطناعي لبند 6 (إعداد خطة التعلم) كاملاً — بديل نهائي لتصميم
-  // "زر لكل مؤشر" أعلاه (lessonPlanIndicators/indicatorSummaries/
-  // handleGenerateIndicatorSummary تبقى كما هي دون حذف، فقط غير مستخدَمة
-  // بعد الآن). جدول section_ai_summaries، Edge Function منفصلة
-  // generate-section-summary. "آخر دليل" و"وجود دليل من الأساس" يُحسبان من
-  // supabaseEv.getBySection مباشرة — بلا استعلام إضافي.
-  const [sectionSummary, setSectionSummary] = useState<{ ai_sentence: string; generated_at: string } | null>(null);
-
-  const refetchSectionSummary = useCallback(() => {
-    if (!supabase || !userId) return;
+    let cancelled = false;
     supabase
       .from('section_ai_summaries')
-      .select('ai_sentence, generated_at')
+      .select('section_id, ai_sentence, generated_at, hidden')
       .eq('portfolio_id', userId)
-      .eq('section_id', LESSON_PLAN_SECTION_ID)
-      .maybeSingle()
       .then(({ data, error }) => {
-        if (error) { console.warn('[Dashboard] تعذّر جلب ملخص بند 6:', error.message); return; }
-        setSectionSummary(data ?? null);
+        if (cancelled) return;
+        if (error) { console.warn('[Dashboard] تعذّر جلب ملخصات الأقسام:', error.message); return; }
+        const map: Record<number, SectionSummary> = {};
+        for (const row of data ?? []) map[row.section_id] = { ai_sentence: row.ai_sentence, generated_at: row.generated_at, hidden: row.hidden };
+        setSectionSummaries(map);
       });
+    return () => { cancelled = true; };
   }, [userId]);
 
-  useEffect(() => { refetchSectionSummary(); }, [refetchSectionSummary]);
-
-  // تعطيل 60 ثانية من لحظة الضغط، بصرف النظر عن نجاح/فشل الطلب — قسم واحد
-  // فقط هنا (لا Record كما في الكولداون أعلاه المفتاح بـindicator_id)
-  const [sectionSummaryBusy, setSectionSummaryBusy] = useState(false);
-
-  const lessonPlanEvidence = supabaseEv?.getBySection(LESSON_PLAN_SECTION_ID) ?? [];
-  const lessonPlanHasEvidence = lessonPlanEvidence.length > 0;
-  const lessonPlanLatestEvidenceAt = lessonPlanHasEvidence
-    ? lessonPlanEvidence.reduce((max, e) => (e.created_at > max ? e.created_at : max), lessonPlanEvidence[0].created_at)
-    : null;
-  const sectionSummaryUpdateAvailable =
-    !!sectionSummary && !!lessonPlanLatestEvidenceAt && lessonPlanLatestEvidenceAt > sectionSummary.generated_at;
-
-  const handleGenerateSectionSummary = async () => {
-    if (!supabase || sectionSummaryBusy) return;
-    setSectionSummaryBusy(true);
-    setTimeout(() => setSectionSummaryBusy(false), 60000);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-      if (!accessToken) { onToast?.('يجب تسجيل الدخول أولاً ⚠️', '⚠️'); return; }
-      const { data, error } = await supabase.functions.invoke('generate-section-summary', {
-        body: { section_id: LESSON_PLAN_SECTION_ID },
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (error) { onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌'); return; }
-      if (data?.generated && data?.ai_sentence) {
-        setSectionSummary({ ai_sentence: data.ai_sentence, generated_at: data.generated_at });
-        onToast?.('تم توليد الملخص بنجاح ✅', '✅');
-      } else if (data?.reason === 'no_description') {
-        onToast?.('لا توجد أوصاف نصية كافية بين آخر أدلة هذا البند', 'ℹ️');
-      } else {
-        onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌');
-      }
-    } catch (err) {
-      console.error('[Dashboard] فشل توليد ملخص بند 6:', err);
-      onToast?.('تعذّر توليد الملخص، حاول مجدداً ❌', '❌');
+  // تحديث متفائل، ويُعاد الوضع السابق إن فشل الطلب
+  const toggleSummaryHidden = async (sectionId: number) => {
+    const current = sectionSummaries[sectionId];
+    if (!supabase || !userId || !current) return;
+    const next = !current.hidden;
+    setSectionSummaries(prev => ({ ...prev, [sectionId]: { ...prev[sectionId], hidden: next } }));
+    const { error } = await supabase
+      .from('section_ai_summaries')
+      .update({ hidden: next })
+      .eq('portfolio_id', userId)
+      .eq('section_id', sectionId);
+    if (error) {
+      console.warn('[Dashboard] تعذّر تحديث إخفاء الملخص:', error.message);
+      setSectionSummaries(prev => (prev[sectionId] ? { ...prev, [sectionId]: { ...prev[sectionId], hidden: current.hidden } } : prev));
+      onToast?.('تعذّر تحديث الملخص، حاول مجدداً', '❌');
     }
   };
 
@@ -772,6 +678,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   };
   const closeSection = () => window.history.back();
   const openSectionData = openSectionId != null ? nonStratSections.find(s => s.id === openSectionId) ?? null : null;
+  // ملخص القسم للأقسام العادية فقط
+  const openSectionIsCore = !!openSectionData && !openSectionData.isStrat && !openSectionData.isResultsSection;
 
   // Filter sections by search query (قسم الاستراتيجيات مستبعد — له بطاقته المثبّتة دائماً)
   const filteredSections = searchQuery.trim()
@@ -902,17 +810,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             onBack={closeSection}
             onAddEvClick={onAddEvClick}
             onDeleteEv={onDeleteEv}
-            lessonPlanAi={openSectionData.id === LESSON_PLAN_SECTION_ID ? {
-              sectionSummary,
-              sectionSummaryBusy,
-              lessonPlanHasEvidence,
-              sectionSummaryUpdateAvailable,
-              onGenerateSectionSummary: handleGenerateSectionSummary,
-              lessonPlanIndicatorIds: lessonPlanIndicators.map(ind => ind.id),
-              indicatorSummaries,
-              indicatorSummaryCooldown,
-              onGenerateIndicatorSummary: handleGenerateIndicatorSummary,
-            } : undefined}
+            sectionSummary={openSectionIsCore ? sectionSummaries[openSectionData.id] ?? null : null}
+            onToggleSummaryHidden={openSectionIsCore ? toggleSummaryHidden : undefined}
           />
         ) : <>
         {/* بطاقة الملف الشخصي المضغوطة — جوال فقط */}

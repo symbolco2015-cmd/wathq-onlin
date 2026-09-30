@@ -7,7 +7,7 @@ import { usePublicEvidence } from './hooks/usePublicEvidence';
 import { useTeachingStrategies } from './hooks/useTeachingStrategies';
 import { usePublicTeachingStrategies } from './hooks/usePublicTeachingStrategies';
 import { usePublicResultsAnalysis } from './hooks/usePublicResultsAnalysis';
-import { usePublicLessonPlanSummary } from './hooks/usePublicLessonPlanSummary';
+import { usePublicSectionSummaries } from './hooks/usePublicSectionSummaries';
 import { useHarvestReport } from './hooks/useHarvestReport';
 import { useResultsAnalysis } from './components/ResultsAnalysis/useResultsAnalysis';
 import { toPublicResultsAnalysisRow } from './components/ResultsAnalysis/logic';
@@ -23,7 +23,6 @@ import SplashScreen from './components/SplashScreen';
 import DashboardSkeleton from './components/DashboardSkeleton';
 import { Modal, Toast, SelectDropdown } from './components/UI';
 import EvidenceModal from './components/EvidenceModal';
-import { LESSON_PLAN_SECTION_ID } from './data';
 import { supabase } from './supabaseClient';
 import { isProfileIncomplete } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
@@ -150,10 +149,9 @@ export default function App() {
   // انظر usePublicResultsAnalysis)؛ الشكل المُرجَع مبسَّط أصلاً بلا أي اسم طالب.
   const sharedResultsAnalysis = usePublicResultsAnalysis(shareUserId ?? null);
 
-  // ملخص بند "إعداد خطة التعلم" (section_id=6) للعرض العام — جلب منفصل عبر
-  // RPC آمنة بنفس نمط sharedEvidence (RLS تمنع قراءة section_ai_summaries
-  // مباشرة لغير المالك، انظر usePublicLessonPlanSummary).
-  const sharedLessonPlanSummary = usePublicLessonPlanSummary(shareUserId ?? null);
+  // ملخصات الأقسام العادية للعرض العام — عبر RPC آمنة (RLS تمنع قراءة
+  // section_ai_summaries مباشرة لغير المالك، انظر usePublicSectionSummaries).
+  const sharedSectionSummaries = usePublicSectionSummaries(shareUserId ?? null);
 
   // تقرير حصاد فصلي (?report=) — عبر RPC get_harvest_report (القراءة المباشرة
   // على harvest_reports للمالك والأدمن فقط، انظر useHarvestReport).
@@ -192,24 +190,23 @@ export default function App() {
     [ownResultsAnalysis.analyses]
   );
 
-  // ملخص بند "إعداد خطة التعلم" لمعاينة المالك لملفه بنفسه — قراءة مباشرة
-  // بـRLS (المالك يملك صلاحية قراءة صفه في section_ai_summaries أصلاً)،
-  // بلا RPC، بنفس روح ownResultsAnalysis أعلاه (لا Dashboard.tsx مركَّب هنا
-  // فلا تكرار مع جلبه الخاص هناك).
-  const [ownLessonPlanSummary, setOwnLessonPlanSummary] = useState<string | null>(null);
+  // ملخصات الأقسام لمعاينة المالك لملفه — قراءة مباشرة بـRLS (المالك يقرأ
+  // صفوفه في section_ai_summaries)، غير المخفية فقط كما في الصفحة العامة.
+  const [ownSectionSummaries, setOwnSectionSummaries] = useState<Record<number, string>>({});
   useEffect(() => {
-    if (!isOwnPreview || !user?.id || !supabase) { setOwnLessonPlanSummary(null); return; }
+    if (!isOwnPreview || !user?.id || !supabase) { setOwnSectionSummaries({}); return; }
     let cancelled = false;
     supabase
       .from('section_ai_summaries')
-      .select('ai_sentence')
+      .select('section_id, ai_sentence')
       .eq('portfolio_id', user.id)
-      .eq('section_id', LESSON_PLAN_SECTION_ID)
-      .maybeSingle()
+      .eq('hidden', false)
       .then(({ data, error }) => {
         if (cancelled) return;
-        if (error) { console.warn('[App] تعذّر جلب ملخص بند 6:', error.message); setOwnLessonPlanSummary(null); return; }
-        setOwnLessonPlanSummary(data?.ai_sentence ?? null);
+        if (error) { console.warn('[App] تعذّر جلب ملخصات الأقسام:', error.message); setOwnSectionSummaries({}); return; }
+        const map: Record<number, string> = {};
+        for (const row of data ?? []) map[row.section_id] = row.ai_sentence;
+        setOwnSectionSummaries(map);
       });
     return () => { cancelled = true; };
   }, [isOwnPreview, user?.id]);
@@ -879,7 +876,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={sections} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} lessonPlanSummary={sharedLessonPlanSummary} strategyNames={sharedStrategyNames} />
+          <Public state={sharedState} sections={sections} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} sectionSummaries={sharedSectionSummaries} strategyNames={sharedStrategyNames} />
         </main>
       </>
     );
@@ -999,7 +996,7 @@ export default function App() {
             continuity={ownContinuity}
             evidence={supabaseEv.evidence}
             resultsAnalysis={ownResultsAnalysisPublic}
-            lessonPlanSummary={ownLessonPlanSummary}
+            sectionSummaries={ownSectionSummaries}
             strategyNames={strategyNames}
           />
         )}

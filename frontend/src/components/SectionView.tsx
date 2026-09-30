@@ -38,20 +38,11 @@ const TYPE_LABEL: Record<EvidenceType, string> = {
   note: 'ملاحظة', audio: 'تسجيل صوتي', video: 'فيديو',
 };
 
-type AiSummary = { ai_sentence: string; generated_at: string };
-
-/** كتلتا الذكاء الاصطناعي لبند 6 (إعداد خطة التعلم) — منطقهما وحالاتهما في
- *  Dashboard.tsx كما كانا، وهنا العرض فقط. */
-export interface LessonPlanAiProps {
-  sectionSummary: AiSummary | null;
-  sectionSummaryBusy: boolean;
-  lessonPlanHasEvidence: boolean;
-  sectionSummaryUpdateAvailable: boolean;
-  onGenerateSectionSummary: () => void;
-  lessonPlanIndicatorIds: string[];
-  indicatorSummaries: Record<string, AiSummary>;
-  indicatorSummaryCooldown: Record<string, boolean>;
-  onGenerateIndicatorSummary: (indicatorId: string) => void;
+/** ملخص القسم — يولّده المسار الأسبوعي، والمعلم يخفيه أو يظهره فقط. */
+export interface SectionSummary {
+  ai_sentence: string;
+  generated_at: string;
+  hidden: boolean;
 }
 
 interface SectionViewProps {
@@ -60,41 +51,12 @@ interface SectionViewProps {
   onBack: () => void;
   onAddEvClick: (sid: number, sub: string, strategyId?: string, indicatorId?: string) => void;
   onDeleteEv: (evidenceId: string) => void;
-  lessonPlanAi?: LessonPlanAiProps;
+  sectionSummary?: SectionSummary | null;
+  onToggleSummaryHidden?: (sectionId: number) => void;
 }
 
-const AI_BTN = 'h-9 px-3 inline-flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bd2)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
-
-function AiControls({ busy, hasEvidence, updateAvailable, onGenerate, sentence }: {
-  busy: boolean; hasEvidence: boolean; updateAvailable: boolean; onGenerate: () => void; sentence?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <button type="button" onClick={onGenerate} disabled={busy || !hasEvidence} className={AI_BTN}>
-          {busy ? (
-            <><i className="ti ti-loader motion-safe:animate-spin text-[16px]" /> جارٍ التوليد...</>
-          ) : (
-            <><i className="ti ti-sparkles text-[16px]" /> ولّد الملخص</>
-          )}
-        </button>
-        {updateAvailable && !busy && (
-          <span className="inline-flex items-center gap-1 text-[length:var(--fs-xs)] font-bold text-[var(--info)]">
-            <span className="w-1.5 h-1.5 rounded-[var(--r-full)] bg-[var(--info)]" /> تحديث متاح
-          </span>
-        )}
-        {!hasEvidence && !busy && (
-          <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">أضف دليلاً أولاً لتوليد الملخص</span>
-        )}
-      </div>
-      {sentence && (
-        <div className="text-[length:var(--fs-sm)] text-[var(--t2)] bg-[var(--s2)] rounded-[var(--r-sm)] py-2 px-3 leading-relaxed">
-          <i className="ti ti-sparkles text-[var(--t3)] ml-1.5" />{sentence}
-        </div>
-      )}
-    </div>
-  );
-}
+// .btn.sm في docs/design/wathq-prototype.html
+const BTN_SM = 'self-start h-9 px-3 inline-flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bd2)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] whitespace-nowrap cursor-pointer';
 
 function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onDelete }: {
   ev: SupabaseEvidence; menuOpen: boolean; onToggleMenu: () => void; onCloseMenu: () => void; onDelete: () => void;
@@ -151,7 +113,7 @@ function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onDelete }: {
   );
 }
 
-export default function SectionView({ section, evidence, onBack, onAddEvClick, onDeleteEv, lessonPlanAi }: SectionViewProps) {
+export default function SectionView({ section, evidence, onBack, onAddEvClick, onDeleteEv, sectionSummary, onToggleSummaryHidden }: SectionViewProps) {
   const [menuEvId, setMenuEvId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -215,16 +177,26 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
         </div>
       </div>
 
-      {/* ملخص ذكاء اصطناعي لبند 6 كاملاً — لا يظهر قبل أول شاهد في القسم */}
-      {lessonPlanAi && lessonPlanAi.lessonPlanHasEvidence && (
-        <div className="bg-[var(--s1)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
-          <AiControls
-            busy={lessonPlanAi.sectionSummaryBusy}
-            hasEvidence={lessonPlanAi.lessonPlanHasEvidence}
-            updateAvailable={lessonPlanAi.sectionSummaryUpdateAvailable}
-            onGenerate={lessonPlanAi.onGenerateSectionSummary}
-            sentence={lessonPlanAi.sectionSummary?.ai_sentence}
-          />
+      {/* ملخص القسم — يظهر فقط إن وُجد ملخص */}
+      {sectionSummary && (
+        <div className={`bg-[var(--s1)] border border-[var(--bd)] rounded-[var(--r-md)] p-4 flex flex-col gap-2 ${sectionSummary.hidden ? 'opacity-60' : ''}`}>
+          <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">ملخص القسم في صفحتك العامة</span>
+          <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">{sectionSummary.ai_sentence}</p>
+          <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">
+            يُحدَّث أسبوعياً من أوصاف شواهدك · آخر تحديث {formatDate(sectionSummary.generated_at)}
+          </span>
+          {sectionSummary.hidden && (
+            <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">مخفي من صفحتك العامة</span>
+          )}
+          {onToggleSummaryHidden && (
+            <button type="button" onClick={() => onToggleSummaryHidden(section.id)} className={BTN_SM}>
+              {sectionSummary.hidden ? (
+                <><i className="ti ti-eye text-[16px]" /> إظهار في صفحتي</>
+              ) : (
+                <><i className="ti ti-eye-off text-[16px]" /> إخفاء من صفحتي</>
+              )}
+            </button>
+          )}
         </div>
       )}
 
@@ -233,22 +205,6 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
         const evs = byIndicator(indicator.id);
         const count = evs.length;
         const st = count >= 2 ? 'x' : count === 1 ? 'g' : '';
-
-        // حسابات زر «ولّد الملخص» لكل مؤشر — منقولة كما هي من Dashboard.tsx
-        const lessonPlanIndicatorId = lessonPlanAi
-          ? lessonPlanAi.lessonPlanIndicatorIds.find(id => id === indicator.id)
-          : undefined;
-        const indicatorEvidence = lessonPlanIndicatorId
-          ? evidence.filter(e => e.indicator_id === lessonPlanIndicatorId)
-          : [];
-        const indicatorHasEvidence = indicatorEvidence.length > 0;
-        const indicatorSummaryRow = lessonPlanIndicatorId ? lessonPlanAi?.indicatorSummaries[lessonPlanIndicatorId] : undefined;
-        const indicatorLatestEvidenceAt = indicatorHasEvidence
-          ? indicatorEvidence.reduce((max, e) => (e.created_at > max ? e.created_at : max), indicatorEvidence[0].created_at)
-          : null;
-        const indicatorUpdateAvailable =
-          !!indicatorSummaryRow && !!indicatorLatestEvidenceAt && indicatorLatestEvidenceAt > indicatorSummaryRow.generated_at;
-        const indicatorSummaryBusy = !!(lessonPlanIndicatorId && lessonPlanAi?.indicatorSummaryCooldown[lessonPlanIndicatorId]);
 
         return (
           <div key={indicator.id} className="rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--bd)]">
@@ -275,19 +231,6 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
                 <i className="ti ti-plus" />
               </button>
             </div>
-
-            {/* لا يظهر زر المؤشر قبل أول شاهد له */}
-            {lessonPlanIndicatorId && lessonPlanAi && indicatorHasEvidence && (
-              <div className="px-3.5 pb-3">
-                <AiControls
-                  busy={indicatorSummaryBusy}
-                  hasEvidence={indicatorHasEvidence}
-                  updateAvailable={indicatorUpdateAvailable}
-                  onGenerate={() => lessonPlanAi.onGenerateIndicatorSummary(lessonPlanIndicatorId)}
-                  sentence={indicatorSummaryRow?.ai_sentence}
-                />
-              </div>
-            )}
 
             {count > 0 && (
               <div className="border-t border-[var(--bd)] divide-y divide-[var(--bd)]">

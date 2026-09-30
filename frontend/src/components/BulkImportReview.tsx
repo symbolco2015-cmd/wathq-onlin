@@ -299,6 +299,7 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
                         isBusy={rowBusy}
                         onOpen={() => setOpenDropdownId(row.id)}
                         onClose={() => setOpenDropdownId(null)}
+                        selectedLabel={sectionLabel ?? undefined}
                         onSelect={(sectionId) => {
                           setOpenDropdownId(null);
                           const numericId = Number(sectionId);

@@ -49,11 +49,10 @@ export default function BottomSheet({ isOpen, onClose, children }: BottomSheetPr
 
   const handleTouchEnd = () => {
     draggingRef.current = false;
-    if (dragY > DRAG_CLOSE_THRESHOLD) {
-      onClose();
-    } else {
-      setDragY(0);
-    }
+    // onClose قد يرفض الإغلاق (نموذج فيه تعديلات غير محفوظة) — فترتد الورقة
+    // إلى مكانها بدل أن تبقى معلّقة في منتصف السحب
+    if (dragY > DRAG_CLOSE_THRESHOLD) onClose();
+    setDragY(0);
   };
 
   return (
@@ -66,7 +65,7 @@ export default function BottomSheet({ isOpen, onClose, children }: BottomSheetPr
         className="relative overflow-hidden w-full max-w-2xl flex flex-col rounded-t-3xl border-t border-x border-[var(--em7)]/15 shadow-[0_-24px_60px_rgba(0,0,0,.6)] max-h-[88vh]"
         style={{
           background: 'var(--surf2)',
-          transform: `translateY(${visible ? dragY : '100%'}px)`,
+          transform: `translateY(${visible ? `${dragY}px` : '100%'})`,
           transition: draggingRef.current ? 'none' : 'transform .32s var(--sp)',
         }}
       >

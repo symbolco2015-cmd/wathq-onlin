@@ -6,6 +6,7 @@ import Sidebar from './Sidebar';
 import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
+import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
 import SectionView, { type SectionSummary } from './SectionView';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
@@ -85,6 +86,8 @@ interface SectionReclassifyDropdownProps {
   onOpen: () => void;
   onClose: () => void;
   onSelect: (sectionId: string) => void;
+  /** اسم القسم المختار — يُعرض على الزر بدل «اختر القسم» إن وُجد */
+  selectedLabel?: string;
 }
 
 // بديل مخصّص لـ <select>/<option> الأصليين — Safari/iOS يتجاهل تنسيق <option>
@@ -98,7 +101,7 @@ interface SectionReclassifyDropdownProps {
 const RECLASSIFY_MENU_MAX_H = 240;
 
 export function SectionReclassifyDropdown({
-  sections, isOpen, isBusy, onOpen, onClose, onSelect,
+  sections, isOpen, isBusy, onOpen, onClose, onSelect, selectedLabel,
 }: SectionReclassifyDropdownProps) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; openUpward: boolean }>({ top: 0, left: 0, openUpward: false });
@@ -137,7 +140,7 @@ export function SectionReclassifyDropdown({
         onClick={() => (isOpen ? onClose() : onOpen())}
         className="py-2 px-3 text-[12px] font-bold bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer disabled:opacity-50 disabled:cursor-wait flex items-center gap-1.5"
       >
-        اختر القسم
+        {selectedLabel ?? 'اختر القسم'}
         <i className={`ti ti-chevron-down text-[11px] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
@@ -315,6 +318,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     open: false, sectionId: 0, sub: '',
   });
   const closeMobileSheet = () => setMobileSheet(prev => ({ ...prev, open: false }));
+  // الخلفية والسحب يمرّان عبر requestClose حتى يسأل النموذج قبل تجاهل ما كُتب
+  const mobileFormRef = useRef<EvidenceFormHandle>(null);
   const handlePickSection = (sec: SectionData) => {
     setSectionPickerOpen(false);
     setMobileSheet({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' });
@@ -2072,8 +2077,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
       {/* Bottom Sheet — إضافة شاهد (الخطوة الثانية) — جوال فقط */}
       {supabaseEv && (
-        <BottomSheet isOpen={mobileSheet.open} onClose={closeMobileSheet}>
+        <BottomSheet isOpen={mobileSheet.open} onClose={() => mobileFormRef.current?.requestClose()}>
           <EvidenceForm
+            ref={mobileFormRef}
             isOpen={mobileSheet.open}
             onClose={closeMobileSheet}
             sectionId={mobileSheet.sectionId}

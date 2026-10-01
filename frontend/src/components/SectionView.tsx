@@ -11,10 +11,10 @@ import {
 // docs/design/wathq-prototype.html. المصدر الوحيد للشواهد جدول evidence
 // مجمّعة حسب indicator_id، والمؤشرات من section_indicators (sec.indicators).
 
-type Level = 'n' | 'p' | 'g' | 'x';
+export type Level = 'n' | 'p' | 'g' | 'x';
 
-const LEVEL_LABEL: Record<Level, string> = { n: 'لم يبدأ', p: 'جارٍ', g: 'أساسي', x: 'متجاوز' };
-const LEVEL_COLOR: Record<Level, string> = { n: 'var(--t3)', p: 'var(--prog)', g: 'var(--accent)', x: 'var(--st-gold)' };
+export const LEVEL_LABEL: Record<Level, string> = { n: 'لم يبدأ', p: 'جارٍ', g: 'أساسي', x: 'متجاوز' };
+export const LEVEL_COLOR: Record<Level, string> = { n: 'var(--t3)', p: 'var(--prog)', g: 'var(--accent)', x: 'var(--st-gold)' };
 
 /** مستوى القسم — lvl() في النموذج، بـ total من بيانات القسم لا رقم ثابت.
  *  total > 0 شرط لـ«أساسي»/«متجاوز» كي لا يُعدّ قسم بلا مؤشرات مكتملاً. */
@@ -33,11 +33,11 @@ export function nEv(n: number): string {
   return `${n} شاهداً`;
 }
 
-const TYPE_ICON: Record<EvidenceType, string> = {
+export const TYPE_ICON: Record<EvidenceType, string> = {
   image: 'ti-photo', file: 'ti-file-text', link: 'ti-link',
   note: 'ti-notes', audio: 'ti-microphone', video: 'ti-player-play',
 };
-const TYPE_LABEL: Record<EvidenceType, string> = {
+export const TYPE_LABEL: Record<EvidenceType, string> = {
   image: 'صورة', file: 'ملف', link: 'رابط',
   note: 'ملاحظة', audio: 'تسجيل صوتي', video: 'فيديو',
 };
@@ -72,16 +72,16 @@ export interface IndicatorHandlers {
 }
 
 // .btn.sm في docs/design/wathq-prototype.html
-const BTN_SM = 'self-start h-9 px-3 inline-flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bd2)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] whitespace-nowrap cursor-pointer';
+export const BTN_SM = 'self-start h-9 px-3 inline-flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bd2)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] whitespace-nowrap cursor-pointer';
 // .btn.gh.sm و.btn.pri.sm
-const BTN_GH_SM = 'h-9 px-3 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-transparent text-[length:var(--fs-sm)] font-bold text-[var(--t2)] whitespace-nowrap cursor-pointer disabled:opacity-40';
-const BTN_PRI_SM = 'h-9 px-3 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--accent)] text-[length:var(--fs-sm)] font-bold text-[var(--bg)] whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
+export const BTN_GH_SM = 'h-9 px-3 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-transparent text-[length:var(--fs-sm)] font-bold text-[var(--t2)] whitespace-nowrap cursor-pointer disabled:opacity-40';
+export const BTN_PRI_SM = 'h-9 px-3 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--accent)] text-[length:var(--fs-sm)] font-bold text-[var(--bg)] whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
 // أزرار نافذة الحذف: .btn و.btn.pri و.btn.dng و.btn.dngf
 const BTN_BASE = 'h-11 flex-1 px-4 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer';
-const BTN_GH = `${BTN_BASE} border-transparent text-[var(--t2)]`;
-const BTN_PRI = `${BTN_BASE} border-[var(--accent)] bg-[var(--accent)] text-[var(--bg)]`;
-const BTN_DNG = `${BTN_BASE} border-[var(--danger)]/35 text-[var(--danger)]`;
-const BTN_DNGF = `${BTN_BASE} border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)]`;
+export const BTN_GH = `${BTN_BASE} border-transparent text-[var(--t2)]`;
+export const BTN_PRI = `${BTN_BASE} border-[var(--accent)] bg-[var(--accent)] text-[var(--bg)]`;
+export const BTN_DNG = `${BTN_BASE} border-[var(--danger)]/35 text-[var(--danger)]`;
+export const BTN_DNGF = `${BTN_BASE} border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)]`;
 
 /** نموذج اسم المؤشر المخصص داخل الصفحة — cForm() في النموذج الأولي */
 function IndicatorNameForm({ title, submitLabel, initialName = '', officialNames, customNames, onCancel, onSubmit }: {
@@ -207,8 +207,10 @@ function DeleteIndicatorDialog({ indicator, evidenceCount, targets, onCancel, on
 /** شاهد بلا وصف — الوصف مصدر ملخص القسم */
 const noDesc = (ev: SupabaseEvidence) => !(ev.description ?? '').trim();
 
-function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete }: {
-  ev: SupabaseEvidence; menuOpen: boolean; onToggleMenu: () => void; onCloseMenu: () => void; onEdit: () => void; onDelete: () => void;
+export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete, canEdit = true }: {
+  ev: SupabaseEvidence; menuOpen: boolean; onToggleMenu: () => void; onCloseMenu: () => void; onEdit?: () => void; onDelete: () => void;
+  /** false يخفي «تعديل» من القائمة (شواهد الأقسام الخاصة) */
+  canEdit?: boolean;
 }) {
   const url = ev.file_url ?? ev.link_url ?? undefined;
   const content = (
@@ -247,14 +249,16 @@ function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete }: {
         <>
           <div className="fixed inset-0 z-20" onClick={onCloseMenu} />
           <div role="menu" className="absolute left-3.5 top-full mt-1 z-30 min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]">
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { onCloseMenu(); onEdit(); }}
-              className="w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold text-[var(--t1)] cursor-pointer"
-            >
-              <i className="ti ti-pencil text-[16px]" /> تعديل
-            </button>
+            {canEdit && onEdit && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { onCloseMenu(); onEdit(); }}
+                className="w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold text-[var(--t1)] cursor-pointer"
+              >
+                <i className="ti ti-pencil text-[16px]" /> تعديل
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -267,6 +271,67 @@ function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete }: {
         </>
       )}
     </div>
+  );
+}
+
+/** زر الرجوع «البنود» وبطاقة الرأس — مشترك بين شاشة القسم العادي والشاشات
+ *  الخاصة. Fragment حتى تبقى المسافة (gap) من حاوية الشاشة. */
+export function SectionHeader({ onBack, icon, title, level, evCount, progress }: {
+  onBack: () => void;
+  icon: string;
+  title: string;
+  /** شارة المستوى — اختيارية */
+  level?: Level;
+  evCount: number;
+  /** شريط «c من N مؤشرات رسمية» — اختياري */
+  progress?: { covered: number; total: number };
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onBack}
+        className="self-start h-9 px-1 inline-flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--t2)] cursor-pointer"
+      >
+        <i className="ti ti-arrow-right text-[16px]" />البنود
+      </button>
+
+      {/* بطاقة الرأس */}
+      <div className="bg-[var(--s1)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
+        <div className="flex items-center gap-3">
+          <span className="w-[46px] h-[46px] rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[24px] text-[var(--t2)] shrink-0">
+            <i className={`ti ${icon}`} />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] leading-[1.4]">{title}</h1>
+            <div className="flex gap-1.5 mt-1">
+              {level && (
+                <span
+                  className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap"
+                  style={{ color: LEVEL_COLOR[level] }}
+                >
+                  {LEVEL_LABEL[level]}
+                </span>
+              )}
+              <span className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--t3)]">
+                {nEv(evCount)}
+              </span>
+            </div>
+          </div>
+        </div>
+        {progress && (
+          <div className="flex items-center gap-2.5 mt-3 text-[length:var(--fs-xs)] text-[var(--t3)]">
+            <span className="shrink-0">{progress.covered} من {progress.total} مؤشرات رسمية</span>
+            <div className="flex-1 h-1.5 rounded-[var(--r-full)] bg-[var(--s3)] overflow-hidden">
+              <div
+                className="h-full rounded-[var(--r-full)] bg-[var(--accent)] transition-[width] duration-350"
+                style={{ width: `${progress.total > 0 ? (progress.covered / progress.total) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -314,45 +379,14 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
 
   return (
     <div className="flex flex-col gap-3 max-w-3xl pb-24 md:pb-0">
-      <button
-        type="button"
-        onClick={onBack}
-        className="self-start h-9 px-1 inline-flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--t2)] cursor-pointer"
-      >
-        <i className="ti ti-arrow-right text-[16px]" />البنود
-      </button>
-
-      {/* بطاقة الرأس */}
-      <div className="bg-[var(--s1)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
-        <div className="flex items-center gap-3">
-          <span className="w-[46px] h-[46px] rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[24px] text-[var(--t2)] shrink-0">
-            <i className={`ti ${section.icon}`} />
-          </span>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] leading-[1.4]">{section.ttl}</h1>
-            <div className="flex gap-1.5 mt-1">
-              <span
-                className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap"
-                style={{ color: LEVEL_COLOR[level] }}
-              >
-                {LEVEL_LABEL[level]}
-              </span>
-              <span className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--t3)]">
-                {nEv(n)}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 mt-3 text-[length:var(--fs-xs)] text-[var(--t3)]">
-          <span className="shrink-0">{covered} من {total} مؤشرات رسمية</span>
-          <div className="flex-1 h-1.5 rounded-[var(--r-full)] bg-[var(--s3)] overflow-hidden">
-            <div
-              className="h-full rounded-[var(--r-full)] bg-[var(--accent)] transition-[width] duration-350"
-              style={{ width: `${total > 0 ? (covered / total) * 100 : 0}%` }}
-            />
-          </div>
-        </div>
-      </div>
+      <SectionHeader
+        onBack={onBack}
+        icon={section.icon}
+        title={section.ttl}
+        level={level}
+        evCount={n}
+        progress={{ covered, total }}
+      />
 
       {/* ملخص القسم — يظهر فقط إن وُجد ملخص */}
       {sectionSummary && (

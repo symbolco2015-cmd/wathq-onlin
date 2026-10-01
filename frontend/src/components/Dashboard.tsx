@@ -27,7 +27,33 @@ const ARCHIVE_MONTHS_AR = [
   'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
 ];
 
-type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
+/** حدث يرسله زر «البنود» في شريط الجوال (Nav): يغلق أي شاشة ويمرّر إلى البطاقات */
+export const SHOW_SECTIONS_EVENT = 'wathq:show-sections';
+
+/** الشاشة المفتوحة فوق الرئيسية — قسم عادي برقمه، أو أحد الأقسام الخاصة */
+type OpenScreen =
+  | { kind: 'core'; id: number }
+  | { kind: 'strat' } | { kind: 'indiv' } | { kind: 'analysis' } | { kind: 'improvement' };
+/** history.state لكل مدخل شاشة؛ wathqDepth = عدد الشاشات فوق الرئيسية (1 فأكثر) */
+type ScreenHistoryState = { wathqScreen: OpenScreen; wathqDepth: number };
+
+const SPECIAL_KINDS = ['strat', 'indiv', 'analysis', 'improvement'] as const;
+
+/** يقرأ history.state بأمان — أي شكل غير معروف يُعامَل كأنه لا شاشة مفتوحة */
+function readScreenState(s: unknown): ScreenHistoryState | null {
+  if (!s || typeof s !== 'object') return null;
+  const { wathqScreen, wathqDepth } = s as { wathqScreen?: unknown; wathqDepth?: unknown };
+  if (typeof wathqDepth !== 'number' || wathqDepth < 1 || !wathqScreen || typeof wathqScreen !== 'object') return null;
+  const scr = wathqScreen as { kind?: unknown; id?: unknown };
+  if (scr.kind === 'core' && typeof scr.id === 'number') return { wathqScreen: { kind: 'core', id: scr.id }, wathqDepth };
+  const special = SPECIAL_KINDS.find(k => k === scr.kind);
+  return special ? { wathqScreen: { kind: special }, wathqDepth } : null;
+}
+
+const sameScreen = (a: OpenScreen, b: OpenScreen) =>
+  a.kind === b.kind && (a.kind !== 'core' || (b.kind === 'core' && a.id === b.id));
+
+type SupabaseEvidenceHook =ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
 export interface MonthlyProgressData {
   /** صفوف monthly_progress الخام لكل قسم/شهر — تُستخدم في calculatePointsLevel
@@ -660,33 +686,82 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // عند الانتقال لصفحة أخرى تصفّرها تلقائياً. الفتح يضيف مدخلاً في history
   // بالرابط نفسه، فزر الرجوع (المتصفح/الجوال) يغلق الشاشة عبر popstate بدل
   // الخروج من التطبيق. الحالة لا تُقرأ من الرابط، فالتحديث (F5) يعيد اللوحة.
-  const [openSectionId, setOpenSectionId] = useState<number | null>(null);
+  // كل فتح من شاشة مفتوحة يضيف مدخلاً (wathqDepth يزيد)، فزر المتصفح يرجع
+  // خطوة، وزر «البنود» يرجع إلى الرئيسية مباشرة بـ go(-depth).
+  // الأنواع الخاصة تجهيز فقط في 3.5ب: لا شاشة لها بعد، فتُعرض الرئيسية.
+  const [openScreen, setOpenScreen] = useState<OpenScreen | null>(null);
   const sectionReturnScrollY = useRef(0);
+  // بطاقة يُمرَّر إليها بعد الرجوع إلى الرئيسية (الشريط الجانبي وزر «البنود» في الجوال)
+  const pendingScrollId = useRef<number | null>(null);
 
   useEffect(() => {
     // بعد F5 والشاشة مفتوحة يبقى المدخل المضاف في السجل؛ تفريغه يمنع ضغطة
-    // رجوع أولى لا تفعل شيئاً مرئياً
-    if (window.history.state?.wathqSection != null) window.history.replaceState(null, '');
+    // رجوع أولى لا تفعل شيئاً مرئياً (wathqSection مفتاح ما قبل 3.5ب)
+    const st = window.history.state as Record<string, unknown> | null;
+    if (st?.wathqScreen != null || st?.wathqSection != null) window.history.replaceState(null, '');
     const onPopState = (e: PopStateEvent) => {
-      const id = (e.state as { wathqSection?: number } | null)?.wathqSection ?? null;
-      setOpenSectionId(id);
-      if (id == null) {
+      const screen = readScreenState(e.state)?.wathqScreen ?? null;
+      setOpenScreen(screen);
+      if (screen?.kind !== 'core') {
+        const target = pendingScrollId.current;
+        pendingScrollId.current = null;
         const y = sectionReturnScrollY.current;
-        requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' }));
+        requestAnimationFrame(() => {
+          if (target != null) document.getElementById(`sc-${target}`)?.scrollIntoView({ behavior: 'smooth' });
+          else window.scrollTo({ top: y, behavior: 'instant' });
+        });
       }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const openSection = (id: number) => {
-    sectionReturnScrollY.current = window.scrollY;
-    window.history.pushState({ wathqSection: id }, '');
-    setOpenSectionId(id);
+  const pushScreen = (screen: OpenScreen) => {
+    const cur = readScreenState(window.history.state);
+    if (cur && sameScreen(cur.wathqScreen, screen)) return;
+    const depth = (cur?.wathqDepth ?? 0) + 1;
+    if (depth === 1) sectionReturnScrollY.current = window.scrollY;
+    const next: ScreenHistoryState = { wathqScreen: screen, wathqDepth: depth };
+    window.history.pushState(next, '');
+    setOpenScreen(screen);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
-  const closeSection = () => window.history.back();
-  const openSectionData = openSectionId != null ? nonStratSections.find(s => s.id === openSectionId) ?? null : null;
+  const openSection = (id: number) => pushScreen({ kind: 'core', id });
+  /** يرجع إلى الرئيسية مهما كان العمق. يرجع false إن لم تكن شاشة مفتوحة. */
+  const closeToHome = () => {
+    const depth = readScreenState(window.history.state)?.wathqDepth ?? 0;
+    if (depth > 0) window.history.go(-depth);
+    return depth > 0;
+  };
+  /** يغلق أي شاشة مفتوحة ثم يمرّر إلى بطاقة القسم في الرئيسية */
+  const goHomeAndScroll = (id: number) => {
+    pendingScrollId.current = id;
+    if (closeToHome()) return; // التمرير في popstate
+    pendingScrollId.current = null;
+    requestAnimationFrame(() => document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' }));
+  };
+  // الشريط الجانبي: القسم العادي يفتح شاشته، والخاص يمرّر إلى بطاقته.
+  // عرض الأرشيف يُغلق أولاً، فلا شاشة ولا بطاقات فيه.
+  const handleSidebarSection = (id: number) => {
+    setArchiveMonth(null);
+    if (nonStratSections.some(s => s.id === id)) openSection(id);
+    else goHomeAndScroll(id);
+  };
+  const closeSection = () => { closeToHome(); };
+
+  // زر «البنود» في شريط الجوال السفلي (Nav في App)
+  const goHomeAndScrollRef = useRef(goHomeAndScroll);
+  goHomeAndScrollRef.current = goHomeAndScroll;
+  useEffect(() => {
+    const onShowSections = () => {
+      setArchiveMonth(null);
+      goHomeAndScrollRef.current(1);
+    };
+    window.addEventListener(SHOW_SECTIONS_EVENT, onShowSections);
+    return () => window.removeEventListener(SHOW_SECTIONS_EVENT, onShowSections);
+  }, []);
+
+  const openSectionData = openScreen?.kind === 'core' ? nonStratSections.find(s => s.id === openScreen.id) ?? null : null;
   // ملخص القسم للأقسام العادية فقط
   const openSectionIsCore = !!openSectionData && !openSectionData.isStrat && !openSectionData.isResultsSection;
 
@@ -810,6 +885,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         filledCount={completedSections}
         overallPct={overallPct}
         monthlyProgress={monthlyProgress}
+        onSectionClick={handleSidebarSection}
       />
       <main className="flex-1 p-3 sm:p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
         {archiveMonth ? archiveView : openSectionData ? (

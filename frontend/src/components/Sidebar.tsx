@@ -31,13 +31,11 @@ interface SidebarProps {
   filledCount: number;
   overallPct: number;
   monthlyProgress?: { getSectionMonthCount: (sectionId: number) => number };
+  /** النقر على قسم — Dashboard تقرر: فتح شاشة القسم العادي، أو التمرير إلى بطاقة القسم الخاص */
+  onSectionClick: (id: number) => void;
 }
 
-export default function Sidebar({ state, sections, totalCount, filledCount, overallPct, monthlyProgress }: SidebarProps) {
-  const scrollToSection = (id: number) => {
-    document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' });
-  };
-
+export default function Sidebar({ state, sections, totalCount, filledCount, overallPct, monthlyProgress, onSectionClick }: SidebarProps) {
   return (
     <aside className="w-[268px] shrink-0 bg-[#08120c]/90 border-l border-[var(--line)] py-6 px-3.5 sticky top-[72px] max-h-[calc(100vh-72px)] overflow-y-auto hidden lg:block hide-scrollbar" style={{ animation: 'slideL .6s var(--sp) both .1s' }}>
       <div className="flex items-center gap-3 py-4 px-3.5 mb-5.5 bg-gradient-to-br from-[var(--surf3)] to-[var(--surf2)] rounded-2xl border border-[var(--line)] relative overflow-hidden">
@@ -82,7 +80,7 @@ export default function Sidebar({ state, sections, totalCount, filledCount, over
           return (
             <div
               key={s.id}
-              onClick={() => scrollToSection(s.id)}
+              onClick={() => onSectionClick(s.id)}
               className="group py-2 px-2.5 rounded-xl cursor-pointer mb-px transition-all duration-[220ms] relative hover:bg-[var(--glass2)]"
               style={{ borderRight: `4px solid ${getBorderColor(subPct)}`, borderRadius: '12px 4px 4px 12px' }}
             >

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import type { PageType, UserProfile } from '../types';
+import { SHOW_SECTIONS_EVENT } from './Dashboard';
 
 interface NavProps {
   currentPage: PageType;
@@ -125,6 +126,11 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
             {/* البنود */}
             <button
               onClick={() => {
+                // على اللوحة: Dashboard تغلق أي شاشة قسم مفتوحة ثم تمرّر
+                if (currentPage === 'dashboard') {
+                  window.dispatchEvent(new Event(SHOW_SECTIONS_EVENT));
+                  return;
+                }
                 setPage('dashboard');
                 setTimeout(() => {
                   document.getElementById('sc-1')?.scrollIntoView({ behavior: 'smooth' });

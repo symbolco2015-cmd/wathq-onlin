@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { SectionData } from '../types';
+import type { SectionData, SectionIndicator } from '../types';
 import type { SupabaseEvidence, EvidenceType } from '../hooks/useSupabaseEvidence';
 import { formatDate } from '../utils';
+import {
+  CUSTOM_INDICATOR_LIMIT, CUSTOM_LIMIT_MSG, CUSTOM_NAME_MAX, validateIndicatorName,
+  type IndicatorResult,
+} from '../hooks/useCustomIndicators';
 
 // شاشة قسم عادي واحد — مطابقة لـ secView()/indCard()/evRow() في
 // docs/design/wathq-prototype.html. المصدر الوحيد للشواهد جدول evidence
@@ -55,10 +59,150 @@ interface SectionViewProps {
   onEditEv: (sectionId: number, ev: SupabaseEvidence) => void;
   sectionSummary?: SectionSummary | null;
   onToggleSummaryHidden?: (sectionId: number) => void;
+  /** إدارة المؤشرات المخصصة — للأقسام العادية فقط */
+  indicatorHandlers?: IndicatorHandlers;
+}
+
+/** إضافة مؤشر مخصص وإعادة تسميته وحذفه — المنفّذ في App.tsx */
+export interface IndicatorHandlers {
+  onAddIndicator: (sectionId: number, name: string) => Promise<IndicatorResult>;
+  onRenameIndicator: (indicatorId: string, name: string) => Promise<IndicatorResult>;
+  /** يبدأ الحذف المؤجّل (مع «تراجع»): نقل الشواهد إلى toId أو حذفها معه */
+  onDeleteIndicator: (indicatorId: string, mode: 'move' | 'delete', toId?: string, evidenceCount?: number) => void;
 }
 
 // .btn.sm في docs/design/wathq-prototype.html
 const BTN_SM = 'self-start h-9 px-3 inline-flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bd2)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] whitespace-nowrap cursor-pointer';
+// .btn.gh.sm و.btn.pri.sm
+const BTN_GH_SM = 'h-9 px-3 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-transparent text-[length:var(--fs-sm)] font-bold text-[var(--t2)] whitespace-nowrap cursor-pointer disabled:opacity-40';
+const BTN_PRI_SM = 'h-9 px-3 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--accent)] text-[length:var(--fs-sm)] font-bold text-[var(--bg)] whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
+// أزرار نافذة الحذف: .btn و.btn.pri و.btn.dng و.btn.dngf
+const BTN_BASE = 'h-11 flex-1 px-4 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer';
+const BTN_GH = `${BTN_BASE} border-transparent text-[var(--t2)]`;
+const BTN_PRI = `${BTN_BASE} border-[var(--accent)] bg-[var(--accent)] text-[var(--bg)]`;
+const BTN_DNG = `${BTN_BASE} border-[var(--danger)]/35 text-[var(--danger)]`;
+const BTN_DNGF = `${BTN_BASE} border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)]`;
+
+/** نموذج اسم المؤشر المخصص داخل الصفحة — cForm() في النموذج الأولي */
+function IndicatorNameForm({ title, submitLabel, initialName = '', officialNames, customNames, onCancel, onSubmit }: {
+  title: string;
+  submitLabel: string;
+  initialName?: string;
+  officialNames: string[];
+  /** أسماء المخصص الأخرى في القسم (بلا اسم المؤشر الذي يُعدَّل) */
+  customNames: string[];
+  onCancel: () => void;
+  onSubmit: (name: string) => Promise<IndicatorResult>;
+}) {
+  const [name, setName] = useState(initialName);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (busy) return;
+    // الاسم نفسه بلا تغيير — لا طلب
+    if (initialName && name.trim() === initialName.trim()) { onCancel(); return; }
+    const local = validateIndicatorName(name, officialNames, customNames);
+    if (local) { setErr(local); return; }
+    setBusy(true);
+    const r = await onSubmit(name);
+    setBusy(false);
+    if (r.ok) return; // الأب يغلق النموذج
+    if (r.field) setErr(r.field);
+  };
+
+  return (
+    <div className="p-4 rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--accent)]/35">
+      <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)] mb-2">{title}</div>
+      <input
+        autoFocus
+        dir="auto"
+        value={name}
+        maxLength={CUSTOM_NAME_MAX}
+        placeholder="مثال: المشاركة في الإذاعة المدرسية"
+        aria-invalid={!!err}
+        onChange={e => { setName(e.target.value); if (err) setErr(''); }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); void submit(); }
+          if (e.key === 'Escape') onCancel();
+        }}
+        className={`w-full h-11 px-3 rounded-[var(--r-sm)] border bg-[var(--bg)] text-[length:var(--fs-sm)] text-[var(--t1)] outline-none ${err ? 'border-[var(--danger)]' : 'border-[var(--bd2)] focus:border-[var(--accent)]'}`}
+      />
+      {err && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--danger)]">
+          <i className="ti ti-alert-circle text-[16px]" /> {err}
+        </div>
+      )}
+      <div className="flex gap-2 mt-3">
+        <button type="button" onClick={onCancel} disabled={busy} className={BTN_GH_SM}>إلغاء</button>
+        <button type="button" onClick={() => void submit()} disabled={busy} className={`${BTN_PRI_SM} mr-auto`}>
+          {busy && <i className="ti ti-loader animate-spin text-[16px]" />}{submitLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** نافذة حذف المؤشر المخصص — delInd() في النموذج الأولي */
+function DeleteIndicatorDialog({ indicator, evidenceCount, targets, onCancel, onConfirm }: {
+  indicator: SectionIndicator;
+  evidenceCount: number;
+  /** مؤشرات القسم الأخرى التي تُنقل إليها الشواهد */
+  targets: SectionIndicator[];
+  onCancel: () => void;
+  onConfirm: (mode: 'move' | 'delete', toId?: string) => void;
+}) {
+  const [toId, setToId] = useState(targets[0]?.id ?? '');
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/55" onClick={onCancel} />
+      <div role="dialog" aria-modal="true" aria-labelledby="del-ind-title" className="relative w-full max-w-[420px] bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-md)] p-4">
+        <h3 id="del-ind-title" className="flex items-center gap-2 text-[length:var(--fs-md)] font-bold text-[var(--t1)] leading-normal">
+          <i className="ti ti-trash text-[20px] text-[var(--danger)] shrink-0" />حذف «{indicator.name_ar}»
+        </h3>
+        {evidenceCount > 0 ? (
+          <>
+            <p className="mt-2 text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">في هذا المؤشر {nEv(evidenceCount)}. ماذا نفعل بها؟</p>
+            {targets.length > 0 && (
+              <div className="mt-3">
+                <label htmlFor="del-ind-to" className="block mb-1.5 text-[length:var(--fs-xs)] text-[var(--t3)]">نقلها إلى</label>
+                <select
+                  id="del-ind-to"
+                  value={toId}
+                  onChange={e => setToId(e.target.value)}
+                  className="w-full h-11 px-3 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--bg)] text-[length:var(--fs-sm)] text-[var(--t1)] outline-none focus:border-[var(--accent)] cursor-pointer"
+                >
+                  {targets.map(t => <option key={t.id} value={t.id}>{t.name_ar}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={() => onConfirm('delete')} className={BTN_DNG}>حذفها معه</button>
+              {targets.length > 0 && (
+                <button type="button" onClick={() => onConfirm('move', toId)} className={BTN_PRI}>نقل وحذف المؤشر</button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">المؤشر فارغ، ولن يُحذف أي شاهد.</p>
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={onCancel} className={BTN_GH}>إلغاء</button>
+              <button type="button" onClick={() => onConfirm('delete')} className={BTN_DNGF}>حذف</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** شاهد بلا وصف — الوصف مصدر ملخص القسم */
 const noDesc = (ev: SupabaseEvidence) => !(ev.description ?? '').trim();
@@ -126,15 +270,20 @@ function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete }: {
   );
 }
 
-export default function SectionView({ section, evidence, onBack, onAddEvClick, onDeleteEv, onEditEv, sectionSummary, onToggleSummaryHidden }: SectionViewProps) {
+export default function SectionView({ section, evidence, onBack, onAddEvClick, onDeleteEv, onEditEv, sectionSummary, onToggleSummaryHidden, indicatorHandlers }: SectionViewProps) {
   const [menuEvId, setMenuEvId] = useState<string | null>(null);
+  // المؤشرات المخصصة: قائمة ⋯ المفتوحة، والنموذج المفتوح (إضافة أو تعديل)، ونافذة الحذف
+  const [menuIndId, setMenuIndId] = useState<string | null>(null);
+  const [addingIndicator, setAddingIndicator] = useState(false);
+  const [editIndId, setEditIndId] = useState<string | null>(null);
+  const [deleteIndId, setDeleteIndId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!menuEvId) return;
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuEvId(null); };
+    if (!menuEvId && !menuIndId) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') { setMenuEvId(null); setMenuIndId(null); } };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [menuEvId]);
+  }, [menuEvId, menuIndId]);
 
   // كل شواهد القسم (section_id)، ثم شواهد كل مؤشر من الأحدث إلى الأقدم
   const sectionEvidence = evidence.filter(e => e.section_id === section.id);
@@ -157,6 +306,11 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
   const describedCount = visibleEvidence.length - undescribed.length;
   const newestUndescribed = undescribed.reduce<SupabaseEvidence | null>(
     (best, e) => (!best || e.created_at > best.created_at ? e : best), null);
+
+  const customs = section.indicators.filter(ind => ind.isCustom);
+  const officialNames = official.map(ind => ind.name_ar);
+  const customNamesExcept = (id?: string) => customs.filter(ind => ind.id !== id).map(ind => ind.name_ar);
+  const deleteInd = deleteIndId ? customs.find(ind => ind.id === deleteIndId) ?? null : null;
 
   return (
     <div className="flex flex-col gap-3 max-w-3xl pb-24 md:pb-0">
@@ -250,12 +404,32 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
           ? (count > 0 ? 'g' : '')
           : (count >= 2 ? 'x' : count === 1 ? 'g' : '');
 
+        // تعديل الاسم يحل محل البطاقة — indCard() في النموذج
+        if (indicatorHandlers && indicator.isCustom && editIndId === indicator.id) {
+          return (
+            <IndicatorNameForm
+              key={indicator.id}
+              title="تعديل المؤشر"
+              submitLabel="حفظ"
+              initialName={indicator.name_ar}
+              officialNames={officialNames}
+              customNames={customNamesExcept(indicator.id)}
+              onCancel={() => setEditIndId(null)}
+              onSubmit={async name => {
+                const r = await indicatorHandlers.onRenameIndicator(indicator.id, name);
+                if (r.ok) setEditIndId(null);
+                return r;
+              }}
+            />
+          );
+        }
+
         return (
           <div
             key={indicator.id}
             className={`rounded-[var(--r-md)] bg-[var(--s1)] border ${indicator.isCustom ? 'border-dashed border-[var(--bd2)]' : 'border-[var(--bd)]'}`}
           >
-            <div className="flex items-center gap-2.5 py-3 px-3.5">
+            <div className="relative flex items-center gap-2.5 py-3 px-3.5">
               <span
                 className={`w-[26px] h-[26px] rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[14px] border-[1.5px] ${
                   st === 'x' ? 'border-[var(--st-gold)] bg-[var(--st-gold)] text-[var(--bg)]'
@@ -269,6 +443,40 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
                 <b className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] leading-normal">{indicator.name_ar}</b>
                 <small className="text-[length:var(--fs-xs)] text-[var(--t3)]">{indicator.isCustom && 'مؤشر مخصص · '}{nEv(count)}</small>
               </span>
+              {indicatorHandlers && indicator.isCustom && (
+                <button
+                  type="button"
+                  aria-label="خيارات المؤشر"
+                  aria-expanded={menuIndId === indicator.id}
+                  onClick={() => setMenuIndId(prev => (prev === indicator.id ? null : indicator.id))}
+                  className="w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[16px] text-[var(--t2)] shrink-0 cursor-pointer"
+                >
+                  <i className="ti ti-dots" />
+                </button>
+              )}
+              {menuIndId === indicator.id && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setMenuIndId(null)} />
+                  <div role="menu" className="absolute left-3.5 top-full mt-1 z-30 min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setMenuIndId(null); setAddingIndicator(false); setEditIndId(indicator.id); }}
+                      className="w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold text-[var(--t1)] cursor-pointer"
+                    >
+                      <i className="ti ti-pencil text-[16px]" /> تعديل الاسم
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setMenuIndId(null); setDeleteIndId(indicator.id); }}
+                      className="w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold text-[var(--danger)] cursor-pointer"
+                    >
+                      <i className="ti ti-trash text-[16px]" /> حذف المؤشر
+                    </button>
+                  </div>
+                </>
+              )}
               <button
                 type="button"
                 aria-label="إضافة شاهد لهذا المؤشر"
@@ -297,6 +505,58 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
           </div>
         );
       })}
+
+      {/* المؤشرات المخصصة — secView() في النموذج */}
+      {indicatorHandlers && (
+        <>
+          {customs.length > 0 && (
+            <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
+              مؤشرات مخصصة: {customs.length} من {CUSTOM_INDICATOR_LIMIT}
+            </p>
+          )}
+          {customs.length >= CUSTOM_INDICATOR_LIMIT ? (
+            <p className="px-1 text-[length:var(--fs-sm)] text-[var(--t3)]">{CUSTOM_LIMIT_MSG}</p>
+          ) : addingIndicator ? (
+            <IndicatorNameForm
+              title="مؤشر مخصص جديد"
+              submitLabel="إضافة المؤشر"
+              officialNames={officialNames}
+              customNames={customNamesExcept()}
+              onCancel={() => setAddingIndicator(false)}
+              onSubmit={async name => {
+                const r = await indicatorHandlers.onAddIndicator(section.id, name);
+                if (r.ok) setAddingIndicator(false);
+                return r;
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setEditIndId(null); setAddingIndicator(true); }}
+              className="w-full h-11 rounded-[var(--r-md)] border-[1.5px] border-dashed border-[var(--bd2)] text-[length:var(--fs-sm)] font-bold text-[var(--t2)] flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <i className="ti ti-plus text-[16px]" />إضافة مؤشر مخصص
+            </button>
+          )}
+          <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)] leading-relaxed">
+            المؤشر المخصص لا يدخل في نسبة الجاهزية، وشواهده تُحسب في عداد الشهر وتظهر في صفحتك العامة.
+          </p>
+        </>
+      )}
+
+      {indicatorHandlers && deleteInd && (
+        <DeleteIndicatorDialog
+          indicator={deleteInd}
+          evidenceCount={byIndicator(deleteInd.id).length}
+          targets={section.indicators.filter(ind => ind.id !== deleteInd.id)}
+          onCancel={() => setDeleteIndId(null)}
+          onConfirm={(mode, toId) => {
+            const n = byIndicator(deleteInd.id).length;
+            setDeleteIndId(null);
+            indicatorHandlers.onDeleteIndicator(deleteInd.id, mode, toId, n);
+          }}
+        />
+      )}
     </div>
   );
 }

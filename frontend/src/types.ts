@@ -170,6 +170,9 @@ export interface HarvestSnapshot {
    * groupAnalysesBySubject/comparisonDelta المستخدَم بالعرض الحي)، وليست
    * مُعادة الحساب وقت العرض؛ Public.tsx يعرضها كما هي في وضع التقرير. */
   resultsComparisons: { subject: string; series: ComparisonPoint[] }[];
+  /** مؤشرات المعلم المخصصة التي عليها شاهد من شواهد الفترة — مخبوزة وقت
+   * التوليد، لأن العرض لا يستدعي أي RPC. غائبة في التقارير الأقدم من 3.4. */
+  customIndicators?: { id: string; section_id: number; name_ar: string }[];
   periodLabel: string;
   periodFrom: string;
   periodTo: string;

@@ -82,7 +82,7 @@ function buildSemesterOptions(academicDates: AcademicDate[]): SemesterOption[] {
  * إطلاقاً — يقرأ evidence/monthly_progress مباشرة بصلاحية المعلم العادية (RLS
  * الحالي كافٍ، هذه استعلامات مالك على جدوله الخاص).
  */
-export default function HarvestReportSheet({ isOpen, onClose, userId, state, academicDates, onToast }: HarvestReportSheetProps) {
+export default function HarvestReportSheet({ isOpen, onClose, userId, state, sections, academicDates, onToast }: HarvestReportSheetProps) {
   const semesterOptions = useMemo(() => buildSemesterOptions(academicDates || []), [academicDates]);
   const [selectedKey, setSelectedKey] = useState<string>('custom');
   const [customFrom, setCustomFrom] = useState('');
@@ -247,6 +247,15 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, aca
         };
       }
 
+      // 7) المؤشرات المخصصة التي عليها شاهد من شواهد الفترة — تُخبَز هنا حتى
+      // يعرض التقرير شواهدها (Public.tsx لا يعرض شاهداً بلا مؤشر في قسمه)
+      const periodIndicatorIds = new Set(rawEvidence.map(e => e.indicator_id).filter((id): id is string => !!id));
+      const customIndicators = sections.flatMap(sec =>
+        sec.indicators
+          .filter(ind => ind.isCustom && periodIndicatorIds.has(ind.id))
+          .map(ind => ({ id: ind.id, section_id: sec.id, name_ar: ind.name_ar }))
+      );
+
       const generatedAt = new Date().toISOString();
       const snapshot: HarvestSnapshot = {
         state: {
@@ -261,6 +270,7 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, aca
         evidence: scrubbedEvidence,
         resultsAnalysis,
         resultsComparisons,
+        customIndicators,
         pointsLevel: {
           points: pointsLevel.points,
           levelId: pointsLevel.levelId,

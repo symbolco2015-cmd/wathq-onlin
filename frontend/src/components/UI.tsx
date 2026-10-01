@@ -1,17 +1,36 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 
+/** زر داخل الرسالة، مثل «تراجع» — toast في النموذج الأولي */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastProps {
   msg: string;
   icon: string;
   show: boolean;
+  action?: ToastAction;
 }
 
-export function Toast({ msg, icon, show }: ToastProps) {
+export function Toast({ msg, icon, show, action }: ToastProps) {
+  // الرسالة لا تلتقط النقرات إلا وهي ظاهرة وفيها زر
+  const clickable = show && !!action;
   return (
-    <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 bg-gradient-to-br from-[var(--em2)] to-[var(--em4)] text-white py-3.5 px-7 rounded-[18px] text-[14px] font-bold z-[600] whitespace-nowrap pointer-events-none border border-[var(--em7)]/30 shadow-[inset_0_0_0_1px_rgba(82,196,120,.1),0_12px_40px_rgba(0,0,0,.6),0_0_30px_rgba(42,122,68,.3)] flex items-center gap-2.5 transition-all duration-500 ease-[var(--sp)] ${show ? 'translate-y-0 opacity-100' : 'translate-y-[100px] opacity-0'}`}>
+    <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 bg-gradient-to-br from-[var(--em2)] to-[var(--em4)] text-white py-3.5 px-7 rounded-[18px] text-[14px] font-bold z-[600] whitespace-nowrap ${clickable ? 'pointer-events-auto' : 'pointer-events-none'} border border-[var(--em7)]/30 shadow-[inset_0_0_0_1px_rgba(82,196,120,.1),0_12px_40px_rgba(0,0,0,.6),0_0_30px_rgba(42,122,68,.3)] flex items-center gap-2.5 transition-all duration-500 ease-[var(--sp)] ${show ? 'translate-y-0 opacity-100' : 'translate-y-[100px] opacity-0'}`}>
       <span className="text-[20px]" style={{ animation: show ? 'pulse .4s var(--bounce)' : 'none' }}>{icon}</span>
       <span>{msg}</span>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          tabIndex={show ? 0 : -1}
+          className="h-9 px-3 -my-2 rounded-[var(--r-sm)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] underline cursor-pointer"
+        >
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }

@@ -20,9 +20,11 @@ export function useSections() {
   const [sections, setSections] = useState<SectionData[]>([]);
   const [status, setStatus] = useState<SectionsStatus>('loading');
 
-  const load = useCallback(async () => {
-    if (!supabase) { setStatus('error'); return; }
-    setStatus('loading');
+  // silent: تحديث بعد إضافة/تعديل/حذف مؤشر مخصص — بلا حالة 'loading' (التي
+  // تستبدل التطبيق كله بشاشة البداية)، والفشل يُبقي الأقسام المحمّلة كما هي.
+  const load = useCallback(async (silent = false) => {
+    if (!supabase) { if (!silent) setStatus('error'); return; }
+    if (!silent) setStatus('loading');
     try {
       const { data, error } = await supabase
         .from('section_indicators')
@@ -52,6 +54,7 @@ export function useSections() {
       setStatus('ready');
     } catch (e) {
       console.error('[useSections] تعذّر تحميل مؤشرات الأقسام:', e);
+      if (silent) return;
       setSections([]);
       setStatus('error');
     }
@@ -59,5 +62,8 @@ export function useSections() {
 
   useEffect(() => { load(); }, [load]);
 
-  return { sections, status, reload: load };
+  const reload = useCallback(() => load(), [load]);
+  const refresh = useCallback(() => load(true), [load]);
+
+  return { sections, status, reload, refresh };
 }

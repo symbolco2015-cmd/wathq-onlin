@@ -132,6 +132,21 @@ export function useSupabaseEvidence(
     return true;
   };
 
+  /** ينقل كل شواهد مؤشر إلى مؤشر آخر في القسم نفسه — قبل حذف مؤشر مخصص.
+   *  القسم لا يتغيّر، فعدّاد الشهر لا يُمس. */
+  const moveIndicatorEvidence = async (fromId: string, toId: string): Promise<boolean> => {
+    if (!supabase || !portfolioId) return false;
+    const { error } = await supabase
+      .from('evidence')
+      .update({ indicator_id: toId })
+      .eq('indicator_id', fromId)
+      .eq('portfolio_id', portfolioId)
+      .select('id');
+    if (error) { console.error('[Supabase Evidence] move error:', error.message, error); return false; }
+    await fetch();
+    return true;
+  };
+
   const deleteEvidence = async (id: string): Promise<void> => {
     if (!supabase) return;
 
@@ -184,6 +199,7 @@ export function useSupabaseEvidence(
     loading,
     addEvidence,
     updateEvidence,
+    moveIndicatorEvidence,
     deleteEvidence,
     getBySection,
     refetch: fetch,

@@ -32,6 +32,21 @@ import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
 import { useSections } from './hooks/useSections';
 import { usePortfolioCompletion } from './hooks/usePortfolioCompletion';
 import type { ContinuityData } from './types';
+import { usePublicCustomIndicators } from './hooks/usePublicCustomIndicators';
+import type { PublicCustomIndicator } from './hooks/usePublicCustomIndicators';
+import { useCustomIndicators } from './hooks/useCustomIndicators';
+import type { IndicatorResult } from './hooks/useCustomIndicators';
+import type { ToastAction } from './components/UI';
+
+/** مهلة «تراجع» بعد حذف مؤشر مخصص — لا شيء يصل إلى القاعدة قبل انتهائها */
+const INDICATOR_UNDO_MS = 6000;
+
+/** حذف مؤشر مخصص معلّق: نقل شواهده إلى toId، أو حذفها معه */
+interface PendingIndicatorOp {
+  indicatorId: string;
+  mode: 'move' | 'delete';
+  toId?: string;
+}
 
 export default function App() {
   // Read ?share=USER_ID from URL — if present, show that user's public profile directly
@@ -43,7 +58,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>(
     shareUserId || reportId ? 'public' : 'dashboard'
   );
-  const [toastData, setToastData] = useState({ msg: '', icon: '✓', show: false });
+  const [toastData, setToastData] = useState<{ msg: string; icon: string; show: boolean; action?: ToastAction }>({ msg: '', icon: '✓', show: false });
   const { 
     state,
     user,
@@ -92,7 +107,7 @@ export default function App() {
   // مؤشرات section_indicators الحقيقية من القاعدة (انظر useSections.ts).
   // مستقل عن حالة تسجيل الدخول (يُستهلك أيضاً في مساري ?share= و?report=
   // العامّين أدناه)، لذا يُستدعى هنا بلا شرط.
-  const { sections, status: sectionsStatus, reload: reloadSections } = useSections();
+  const { sections, status: sectionsStatus, reload: reloadSections, refresh: refreshSections } = useSections();
 
   const monthlyProgress = useMonthlyProgress({
     userId: user?.id ?? null,
@@ -156,6 +171,10 @@ export default function App() {
   // ملخصات الأقسام العادية للعرض العام — عبر RPC آمنة (RLS تمنع قراءة
   // section_ai_summaries مباشرة لغير المالك، انظر usePublicSectionSummaries).
   const sharedSectionSummaries = usePublicSectionSummaries(shareUserId ?? null);
+
+  // المؤشرات المخصصة للعرض العام (التي عليها شواهد فقط) — عبر RPC آمنة، لأن
+  // useSections يحمّل مخصص المستخدم المسجّل لا مخصص صاحب الصفحة.
+  const sharedCustomIndicators = usePublicCustomIndicators(shareUserId ?? null);
 
   // تقرير حصاد فصلي (?report=) — عبر RPC get_harvest_report (القراءة المباشرة
   // على harvest_reports للمالك والأدمن فقط، انظر useHarvestReport).
@@ -286,10 +305,142 @@ export default function App() {
     onConfirm: () => {}
   });
 
-  const showToast = useCallback((msg: string, icon = '✓') => {
-    setToastData({ msg, icon, show: true });
-    setTimeout(() => setToastData(prev => ({ ...prev, show: false })), 3200);
+  // مؤقّت واحد للرسالة: رسالة جديدة تلغي مؤقّت السابقة فلا تُخفيها مبكراً.
+  // الرسالة التي فيها زر (مثل «تراجع») تبقى مدة أطول.
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((msg: string, icon = '✓', action?: ToastAction, durationMs?: number) => {
+    setToastData({ msg, icon, show: true, action });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(
+      () => setToastData(prev => ({ ...prev, show: false })),
+      durationMs ?? (action ? INDICATOR_UNDO_MS : 3200),
+    );
   }, []);
+  const hideToast = useCallback(() => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastData(prev => ({ ...prev, show: false }));
+  }, []);
+
+  // ── المؤشرات المخصصة: إضافة وإعادة تسمية وحذف مؤجّل ─────────────
+  const customIndicators = useCustomIndicators(user?.id ?? null);
+
+  const handleAddIndicator = async (sectionId: number, name: string): Promise<IndicatorResult> => {
+    const r = await customIndicators.addIndicator(sectionId, name);
+    if (r.ok) { await refreshSections(); showToast('أُضيف المؤشر المخصص'); }
+    else if (r.toast) showToast(r.toast, '⚠️');
+    return r;
+  };
+
+  const handleRenameIndicator = async (indicatorId: string, name: string): Promise<IndicatorResult> => {
+    const r = await customIndicators.renameIndicator(indicatorId, name);
+    if (r.ok) { await refreshSections(); showToast('حُفظ المؤشر'); }
+    else if (r.toast) showToast(r.toast, '⚠️');
+    return r;
+  };
+
+  // الحذف لا يصل إلى القاعدة إلا بعد INDICATOR_UNDO_MS بلا «تراجع»: حذف الشواهد
+  // يحذف ملفاتها من Storage نهائياً، فالتراجع بعد التنفيذ مستحيل. indicatorOps
+  // كل عملية لم تنتهِ بعد (معلّقة أو قيد التنفيذ) وتُطبَّق على العرض تفاؤلياً،
+  // وpendingOpRef العملية الوحيدة التي ما زال «تراجع» ممكناً لها. الحالة هنا لا
+  // في Dashboard، لأن Dashboard قد يُفكّ تركيبه (المعاينة مثلاً) فيضيع المؤقّت.
+  const [indicatorOps, setIndicatorOps] = useState<PendingIndicatorOp[]>([]);
+  const pendingOpRef = useRef<PendingIndicatorOp | null>(null);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // التنفيذ يقرأ أحدث شواهد ودوال، لا نسخة وقت بدء المهلة
+  const supabaseEvRef = useRef(supabaseEv);
+  supabaseEvRef.current = supabaseEv;
+
+  const commitIndicatorOp = useCallback(async (op: PendingIndicatorOp) => {
+    const ev = supabaseEvRef.current;
+    try {
+      if (op.mode === 'move' && op.toId) {
+        const moved = await ev.moveIndicatorEvidence(op.indicatorId, op.toId);
+        if (!moved) { showToast('تعذّر نقل الشواهد، ولم يُحذف المؤشر', '⚠️'); return; }
+        // إن فشل الحذف هنا فالشواهد في مكانها الجديد والمؤشر فارغ — لا ضرر
+        const deleted = await customIndicators.deleteIndicator(op.indicatorId);
+        if (!deleted) showToast('نُقلت الشواهد، وتعذّر حذف المؤشر', '⚠️');
+      } else {
+        const ids = ev.evidence.filter(e => e.indicator_id === op.indicatorId).map(e => e.id);
+        // deleteEvidence تحذف الملف من Storage وتُنقص عدّاد الشهر، وترمي عند الفشل
+        for (const id of ids) await ev.deleteEvidence(id);
+        const deleted = await customIndicators.deleteIndicator(op.indicatorId);
+        if (!deleted) showToast('حُذفت الشواهد، وتعذّر حذف المؤشر', '⚠️');
+      }
+    } catch (err) {
+      console.error('[commitIndicatorOp]', err);
+      showToast('تعذّر حذف المؤشر، حاول مجدداً', '⚠️');
+    } finally {
+      // نجح أو فشل: العرض يعود إلى ما في القاعدة فعلاً
+      await Promise.all([refreshSections(), supabaseEvRef.current.refetch()]);
+      setIndicatorOps(list => list.filter(o => o !== op));
+    }
+  }, [customIndicators, refreshSections, showToast]);
+
+  const undoIndicatorOp = useCallback((op: PendingIndicatorOp) => {
+    if (pendingOpRef.current !== op) return; // بدأ التنفيذ فعلاً
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+    pendingTimerRef.current = null;
+    pendingOpRef.current = null;
+    setIndicatorOps(list => list.filter(o => o !== op));
+    hideToast();
+  }, [hideToast]);
+
+  const handleDeleteIndicator = useCallback((indicatorId: string, mode: 'move' | 'delete', toId?: string, evidenceCount = 0) => {
+    // عملية واحدة معلّقة: السابقة تُنفَّذ فوراً قبل بدء الجديدة
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+    pendingTimerRef.current = null;
+    const prev = pendingOpRef.current;
+    pendingOpRef.current = null;
+    if (prev) void commitIndicatorOp(prev);
+
+    const op: PendingIndicatorOp = { indicatorId, mode, toId };
+    pendingOpRef.current = op;
+    setIndicatorOps(list => [...list, op]);
+    pendingTimerRef.current = setTimeout(() => {
+      pendingTimerRef.current = null;
+      if (pendingOpRef.current === op) pendingOpRef.current = null;
+      void commitIndicatorOp(op);
+    }, INDICATOR_UNDO_MS);
+
+    const msg = mode === 'move' ? 'حُذف المؤشر ونُقلت شواهده'
+      : evidenceCount > 0 ? 'حُذف المؤشر وشواهده' : 'حُذف المؤشر';
+    showToast(msg, '🗑️', { label: 'تراجع', onClick: () => undoIndicatorOp(op) });
+  }, [commitIndicatorOp, undoIndicatorOp, showToast]);
+
+  // إغلاق الصفحة أثناء المهلة: لا يُنفَّذ شيء، والمعلّق يسقط (الاتجاه الآمن)
+  useEffect(() => {
+    const onPageHide = () => {
+      if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+      pendingOpRef.current = null;
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
+
+  // العرض التفاؤلي: المؤشر المحذوف يختفي، وشواهده تختفي (حذف) أو تظهر تحت
+  // المؤشر المختار (نقل). القاعدة لم تتغيّر بعد.
+  const viewSections = useMemo(() => indicatorOps.length === 0 ? sections : sections.map(s => {
+    const indicators = s.indicators.filter(ind => !indicatorOps.some(op => op.indicatorId === ind.id));
+    return indicators.length === s.indicators.length ? s : { ...s, indicators, subs: indicators.map(ind => ind.name_ar) };
+  }), [sections, indicatorOps]);
+  const viewEvidence = useMemo(() => indicatorOps.length === 0 ? supabaseEv.evidence : supabaseEv.evidence.flatMap(e => {
+    let indicatorId = e.indicator_id;
+    for (const op of indicatorOps) {
+      if (op.indicatorId !== indicatorId) continue;
+      if (op.mode === 'delete') return [];
+      indicatorId = op.toId ?? indicatorId;
+    }
+    return indicatorId === e.indicator_id ? [e] : [{ ...e, indicator_id: indicatorId }];
+  }), [supabaseEv.evidence, indicatorOps]);
+  const viewSupabaseEv = indicatorOps.length === 0 ? supabaseEv : { ...supabaseEv, evidence: viewEvidence };
+
+  // معاينة المعلم لصفحته: مؤشراته المخصصة التي عليها شواهد فقط، كما يراها الزائر
+  const ownCustomIndicators = useMemo<PublicCustomIndicator[]>(() => viewSections.flatMap(s =>
+    s.indicators
+      .filter(ind => ind.isCustom && viewEvidence.some(e => e.indicator_id === ind.id))
+      .map(ind => ({ id: ind.id, section_id: s.id, name_ar: ind.name_ar }))
+  ), [viewSections, viewEvidence]);
 
   const spawnParticles = useCallback((rect: DOMRect) => {
     const colors = ['var(--em7)', 'var(--gold)', 'var(--em8)', '#fff'];
@@ -885,7 +1036,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={sections} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} sectionSummaries={sharedSectionSummaries} strategyNames={sharedStrategyNames} />
+          <Public state={sharedState} sections={sections} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} sectionSummaries={sharedSectionSummaries} strategyNames={sharedStrategyNames} customIndicators={sharedCustomIndicators} />
         </main>
       </>
     );
@@ -923,6 +1074,7 @@ export default function App() {
             resultsAnalysis={snapshot.resultsAnalysis}
             frozenResultsComparisons={snapshot.resultsComparisons}
             strategyNames={snapshot.strategyNames}
+            customIndicators={snapshot.customIndicators ?? []}
             reportMeta={{
               periodLabel: snapshot.periodLabel,
               periodFrom: snapshot.periodFrom,
@@ -978,7 +1130,7 @@ export default function App() {
         {currentPage === 'dashboard' && (
           <Dashboard
             state={state}
-            sections={sections}
+            sections={viewSections}
             onAddEvClick={openAddEvModal}
             onDeleteEv={handleDeleteEv}
             onEditEv={openEditEvModal}
@@ -987,7 +1139,7 @@ export default function App() {
             announcements={announcements}
             onMarkAsRead={markAnnouncementAsRead}
             academicDates={academicDates}
-            supabaseEv={supabaseEv}
+            supabaseEv={viewSupabaseEv}
             monthlyProgress={monthlyProgress}
             completion={portfolioCompletion.completion}
             completionError={portfolioCompletion.error}
@@ -996,18 +1148,22 @@ export default function App() {
             onToast={showToast}
             aiConsentGiven={!!state.aiSuggestConsentAt}
             onGiveAiConsent={setAiSuggestConsent}
+            onAddIndicator={handleAddIndicator}
+            onRenameIndicator={handleRenameIndicator}
+            onDeleteIndicator={handleDeleteIndicator}
           />
         )}
 
         {currentPage === 'public' && (
           <Public
             state={{ ...state, ai_summary: aiSummary, ai_top_achievement_evidence_id: aiTopAchievementEvidenceId, completion: portfolioCompletion.completion ?? undefined }}
-            sections={sections}
+            sections={viewSections}
             continuity={ownContinuity}
-            evidence={supabaseEv.evidence}
+            evidence={viewEvidence}
             resultsAnalysis={ownResultsAnalysisPublic}
             sectionSummaries={ownSectionSummaries}
             strategyNames={strategyNames}
+            customIndicators={ownCustomIndicators}
           />
         )}
         

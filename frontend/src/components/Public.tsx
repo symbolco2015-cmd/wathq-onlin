@@ -4,6 +4,7 @@ import { calculatePointsLevel, getCompletionColor, getCompletionLabel, supabaseE
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
+import type { PublicCustomIndicator } from '../hooks/usePublicCustomIndicators';
 import { findIndicatorByName, toEvRow, type EvRow } from '../indicators';
 import PdfPreview, { PdfPreviewFallback } from './PdfPreview';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
@@ -63,6 +64,10 @@ interface PublicProps {
    *  usePublicTeachingStrategies (مسار ?share=)، أو snapshot.strategyNames
    *  المُخبوز وقت التوليد (مسار ?report=). افتراضي {} إن غاب. */
   strategyNames?: Record<string, string>;
+  /** مؤشرات صاحب الصفحة المخصصة التي عليها شواهد — get_shared_custom_indicators
+   *  (مسار ?share=)، أو snapshot.customIndicators (مسار ?report=)، أو مخصص
+   *  المالك نفسه (المعاينة). تُعرض كأي مؤشر، ولا تدخل في أي نسبة. */
+  customIndicators?: PublicCustomIndicator[];
 }
 
 /** يستخرج معرّف فيديو يوتيوب من أي صيغة رابط شائعة (watch؟v=, youtu.be/, embed/, shorts/)،
@@ -604,14 +609,19 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
   );
 }
 
-export default function Public({ state, sections: allSections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, sectionSummaries, strategyNames = {} }: PublicProps) {
-  // المؤشرات المخصصة مستبعدة من الصفحة كلها (العرض والحساب والتجميع): useSections
-  // يحمّل مخصص المعلم المسجّل، وهو قد يكون زائراً يفتح صفحة غيره. عرضها هنا
-  // يأتي في 3.4 عبر get_shared_custom_indicators.
+const NO_CUSTOM_INDICATORS: PublicCustomIndicator[] = [];
+
+export default function Public({ state, sections: allSections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, sectionSummaries, strategyNames = {}, customIndicators = NO_CUSTOM_INDICATORS }: PublicProps) {
+  // مخصص useSections مستبعد دائماً: يحمّل مخصص المعلم المسجّل، وهو قد يكون
+  // زائراً يفتح صفحة غيره. مخصص صاحب الصفحة يأتي من customIndicators فقط،
+  // ويُلحَق بعد الرسمية في قسمه بلا أي تمييز بصري.
   const sections = useMemo(() => allSections.map(s => {
-    const indicators = s.indicators.filter(ind => !ind.isCustom);
+    const custom = customIndicators
+      .filter(ci => ci.section_id === s.id)
+      .map(ci => ({ id: ci.id, name_ar: ci.name_ar, isCustom: true }));
+    const indicators = [...s.indicators.filter(ind => !ind.isCustom), ...custom];
     return { ...s, indicators, subs: indicators.map(ind => ind.name_ar) };
-  }), [allSections]);
+  }), [allSections, customIndicators]);
   const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
@@ -776,8 +786,10 @@ export default function Public({ state, sections: allSections, isSharedView, con
         const orphans = secEvidence.filter(e => !e.indicator_id || !known.has(e.indicator_id)).map(e => e.id);
         console.error(`[Public] شواهد في القسم ${sec.id} لا تطابق أي مؤشر من مؤشراته:`, orphans);
       }
-      const filled = sec.indicators.filter(ind => secEvidence.some(e => e.indicator_id === ind.id)).length;
-      const total = sec.indicators.length;
+      // النسبة من المؤشرات الرسمية فقط — المخصص يُعرض ولا يُحسب
+      const official = sec.indicators.filter(ind => !ind.isCustom);
+      const filled = official.filter(ind => secEvidence.some(e => e.indicator_id === ind.id)).length;
+      const total = official.length;
       return {
         ...sec,
         fullName: sec.ttl,

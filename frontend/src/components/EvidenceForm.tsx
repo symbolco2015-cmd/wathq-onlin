@@ -14,6 +14,8 @@ type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEviden
 interface Indicator {
   id: string;
   name_ar: string;
+  /** مؤشر مخصص للمعلم — RLS تُرجع الرسمية ومخصص المعلم فقط، والوزن 99 يضعه بعد الرسمية */
+  portfolio_id: string | null;
 }
 
 interface LessonPlanTemplate {
@@ -384,7 +386,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     setIndicatorsStatus('loading');
     supabase
       .from('section_indicators')
-      .select('id, name_ar')
+      .select('id, name_ar, portfolio_id')
       .eq('section_id', sectionId)
       .order('weight', { ascending: true })
       .order('name_ar', { ascending: true })
@@ -996,7 +998,10 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
                   ind.id === indicatorId ? 'border-[var(--accent)]' : 'border-[var(--bd)] hover:border-[var(--bd2)]'
                 }`}
               >
-                <span className="flex-1">{ind.name_ar}</span>
+                <span className="flex-1">
+                  {ind.name_ar}
+                  {ind.portfolio_id !== null && <small className="text-[length:var(--fs-xs)] text-[var(--t3)]"> · مخصص</small>}
+                </span>
                 {ind.id === indicatorId && <i className="ti ti-check text-[20px] text-[var(--accent)]" />}
               </button>
             ))}

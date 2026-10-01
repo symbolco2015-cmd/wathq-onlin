@@ -8,7 +8,7 @@ import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import SectionView, { type SectionSummary } from './SectionView';
+import SectionView, { type SectionSummary, type IndicatorHandlers } from './SectionView';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
@@ -44,7 +44,7 @@ export interface MonthlyProgressData {
   getSectionYearTotal: (sectionId: number) => number;
 }
 
-interface DashboardProps {
+type DashboardProps = {
   state: AppState;
   sections: SectionData[];
   supabaseEv?: SupabaseEvidenceHook;
@@ -72,7 +72,7 @@ interface DashboardProps {
   onToast?: (msg: string, icon?: string) => void;
   aiConsentGiven?: boolean;
   onGiveAiConsent?: () => void;
-}
+} & Partial<IndicatorHandlers>
 
 const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   pdf: {icon: 'ti-file-type-pdf', cls: 'bg-[linear-gradient(135deg,rgba(185,28,28,.2),rgba(185,28,28,.1))] text-[#f87171] border border-[#b91c1c]/20', label: 'PDF'},
@@ -180,7 +180,7 @@ export function SectionReclassifyDropdown({
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator }: DashboardProps) {
   const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
@@ -822,6 +822,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             onEditEv={onEditEv}
             sectionSummary={openSectionIsCore ? sectionSummaries[openSectionData.id] ?? null : null}
             onToggleSummaryHidden={openSectionIsCore ? toggleSummaryHidden : undefined}
+            indicatorHandlers={openSectionIsCore && onAddIndicator && onRenameIndicator && onDeleteIndicator
+              ? { onAddIndicator, onRenameIndicator, onDeleteIndicator }
+              : undefined}
           />
         ) : <>
         {/* بطاقة الملف الشخصي المضغوطة — جوال فقط */}

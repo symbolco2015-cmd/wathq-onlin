@@ -181,7 +181,7 @@ Core tables: `portfolios` (id, `state` JSONB — profile/settings only, `share_e
 `evidence_type` — currently `file`/`image`/`link`/`note`/`audio`/`video`),
 `sections` (`section_type`: `core`/`strategy`/`results` — replaces any
 hardcoded section-ID list in code), `section_indicators` (`portfolio_id`
-NULL = official indicator, otherwise a teacher's custom indicator — max 5
+NULL = official indicator, otherwise a teacher's custom indicator, allowed in `core` sections only (enforced by trigger) — max 5
 per teacher per section, enforced by trigger, weight forced to 99 (`numeric(4,2)`, max 99.99) so it
 sorts after the officials, excluded from every readiness calculation;
 `created_at`),

@@ -41,6 +41,7 @@ export function validateIndicatorName(
 function translateError(error: { code?: string; message?: string }): IndicatorResult {
   const msg = error.message ?? '';
   if (msg.includes('custom_indicator_limit')) return { ok: false, field: CUSTOM_LIMIT_MSG };
+  if (msg.includes('custom_indicator_section_not_allowed')) return { ok: false, field: 'لا يمكن إضافة مؤشر مخصص في هذا البند' };
   if (msg.includes('custom_indicator_duplicate_official')) return { ok: false, field: DUPLICATE_OFFICIAL_MSG };
   if (error.code === '23505') return { ok: false, field: DUPLICATE_MSG };
   if (error.code === '23514') return { ok: false, field: LENGTH_MSG };

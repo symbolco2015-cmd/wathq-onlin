@@ -740,7 +740,10 @@ export default function Public({ state, sections: allSections, isSharedView, con
     indicator ? (evidence ?? []).filter(e => e.indicator_id === indicator.id).map(toEvRow) : [];
   const indivDiffIndicator = useMemo(() => findIndicatorByName(stratSection, 'الفروق الفردية'), [stratSection]);
   const indivDiffSub = indivDiffIndicator?.name_ar;
-  const indivDiffEvs = evidenceForIndicator(indivDiffIndicator);
+  // شواهد الاستراتيجيات (strategy_id) تُعرض في بطاقة الاستراتيجيات وحدها
+  const indivDiffEvs = indivDiffIndicator
+    ? (evidence ?? []).filter(e => e.indicator_id === indivDiffIndicator.id && !e.strategy_id).map(toEvRow)
+    : [];
 
   // مؤشر بند 5 "خطط علاجية وإثرائية" — بالاسم لتحديد المؤشر فقط، ثم الربط
   // بـ indicator_id (انظر بطاقة بند 5 أدناه).

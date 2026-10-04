@@ -73,7 +73,7 @@ export interface EvidenceFormProps {
 /** الشاهد الموجود الذي يُفتح عليه وضع التعديل */
 export type ExistingEvidence = Pick<SupabaseEvidence,
   'id' | 'evidence_type' | 'file_url' | 'link_url' | 'title' | 'description' | 'impact' |
-  'context_grade' | 'context_subject' | 'academic_term' | 'self_reflection' | 'frequency' | 'indicator_id'>;
+  'context_grade' | 'context_subject' | 'academic_term' | 'self_reflection' | 'frequency' | 'indicator_id' | 'strategy_id'>;
 
 /** ما تكشفه EvidenceForm لحاويتها (EvidenceModal / BottomSheet): كل طرق
  *  الإغلاق من خارج النموذج (الخلفية، السحب) تمر عبر requestClose حتى يسأل
@@ -403,15 +403,27 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     loadIndicators();
   }, [isOpen, loadIndicators]);
 
+  // شاهد الاستراتيجية (إضافة بـ strategyId، أو تعديل شاهد له strategy_id):
+  // مؤشره الابتدائي «توظيف استراتيجيات تدريس متنوعة»، ولا يُنقل إلى «مراعاة
+  // الفروق الفردية» — ذاك مؤشر شواهد بلا استراتيجية. التحديد بالاسم لا بالمعرّف.
+  const isStrategyEvidence = isEdit ? !!initial?.strategy_id : !!strategyId;
+  const pickableIndicators = isStrategyEvidence
+    ? indicators.filter(ind => !ind.name_ar.includes('الفروق الفردية'))
+    : indicators;
+  const defaultStrategyIndicatorId = isStrategyEvidence && !isEdit
+    ? indicators.find(ind => ind.name_ar.includes('توظيف استراتيجيات'))?.id
+    : undefined;
+  const effectivePresetId = presetIndicatorId ?? defaultStrategyIndicatorId;
+
   // المؤشر المحدد مسبقاً — يُطبَّق فقط حين تكتمل قائمة مؤشرات القسم ويكون ضمنها،
   // ويصير هو القيمة الابتدائية (فلا يُعدّ تطبيقه تعديلاً من المعلم).
   useEffect(() => {
-    if (!isOpen || !presetIndicatorId || indicatorsStatus !== 'ready') return;
-    if (indicators.some(ind => ind.id === presetIndicatorId)) {
-      setIndicatorId(presetIndicatorId);
-      if (initialRef.current) initialRef.current = { ...initialRef.current, indicatorId: presetIndicatorId };
+    if (!isOpen || !effectivePresetId || indicatorsStatus !== 'ready') return;
+    if (indicators.some(ind => ind.id === effectivePresetId)) {
+      setIndicatorId(effectivePresetId);
+      if (initialRef.current) initialRef.current = { ...initialRef.current, indicatorId: effectivePresetId };
     }
-  }, [isOpen, presetIndicatorId, indicatorsStatus, indicators]);
+  }, [isOpen, effectivePresetId, indicatorsStatus, indicators]);
 
   // بوابة صلاحية ميزة "اقتراح تلقائي من الصورة" (Beta) — يديرها الأدمن عبر
   // feature_flags/portfolio_feature_overrides في قاعدة البيانات، وليست قائمة مكتوبة بالكود.
@@ -989,7 +1001,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
             </div>
           )}
           <div className="flex flex-col gap-1">
-            {indicators.map(ind => (
+            {pickableIndicators.map(ind => (
               <button
                 key={ind.id}
                 type="button"

@@ -9,7 +9,7 @@ import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
 import SectionView, { type SectionSummary, type IndicatorHandlers } from './SectionView';
-import { IndivDiffView, StrategiesView, AnalysisView } from './SpecialSectionViews';
+import { IndivDiffView, StrategiesView, AnalysisView, ImprovementView } from './SpecialSectionViews';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
@@ -20,7 +20,7 @@ import BulkImportPicker from './BulkImportPicker';
 import BulkImportReview from './BulkImportReview';
 import HarvestReportSheet from './HarvestReportSheet';
 import AnalysisSectionCard, { AnalysisSectionBody } from './ResultsAnalysis/AnalysisSectionCard';
-import ImprovementActionsCard from './ResultsAnalysis/ImprovementActionsCard';
+import ImprovementActionsCard, { ImprovementActionsBody, countImprovementActions } from './ResultsAnalysis/ImprovementActionsCard';
 import { useResultsAnalysis } from './ResultsAnalysis/useResultsAnalysis';
 
 const ARCHIVE_MONTHS_AR = [
@@ -201,7 +201,6 @@ export function SectionReclassifyDropdown({
 }
 
 export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator }: DashboardProps) {
-  const [openSecs, setOpenSecs] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
   const [reminderDismissed, setReminderDismissed] = useState(false);
@@ -567,6 +566,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const resultsSections = sections.filter(s => s.isResultsSection);
   const improvementSection = resultsSections.find(s => s.id === 5) ?? null;
   const analysisSection = resultsSections.find(s => s.id === 10) ?? null;
+  // عدد تنبيهات بند 5 — رأس الرئيسية وسطر حالة الشاشة من الحساب نفسه
+  const improvementActionCount = useMemo(
+    () => countImprovementActions(resultsAnalysis.analyses, resultsAnalysis.gradeBands),
+    [resultsAnalysis.analyses, resultsAnalysis.gradeBands],
+  );
   const nonStratSections = sections.filter(s => !s.isStrat && !s.isResultsSection);
 
   // عدّاد بطاقة الاستراتيجيات (شهري + تراكمي) — القسم هجين (استراتيجيات +
@@ -664,10 +668,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     setActiveAnn(null);
   };
 
-  const toggleSec = (id: number) => {
-    setOpenSecs(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
   // شاشة القسم العادي (SectionView) — الحالة هنا لا في App: كل ما تحتاجه
   // الشاشة (sections/supabaseEv/ملخصات بند 6) موجود في Dashboard، وإزالته
   // عند الانتقال لصفحة أخرى تصفّرها تلقائياً. الفتح يضيف مدخلاً في history
@@ -675,7 +675,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // الخروج من التطبيق. الحالة لا تُقرأ من الرابط، فالتحديث (F5) يعيد اللوحة.
   // كل فتح من شاشة مفتوحة يضيف مدخلاً (wathqDepth يزيد)، فزر المتصفح يرجع
   // خطوة، وزر «البنود» يرجع إلى الرئيسية مباشرة بـ go(-depth).
-  // strat وindiv (3.5ج) وanalysis (3.5د) لها شاشة؛ improvement لا شاشة له بعد، فتُعرض الرئيسية.
+  // كل الأنواع لها شاشة: core (3.5ب)، strat وindiv (3.5ج)، analysis (3.5د)، improvement (3.5هـ).
   const [openScreen, setOpenScreen] = useState<OpenScreen | null>(null);
   const sectionReturnScrollY = useRef(0);
   // بطاقة يُمرَّر إليها بعد الرجوع إلى الرئيسية (الشريط الجانبي وزر «البنود» في الجوال)
@@ -689,8 +689,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     const onPopState = (e: PopStateEvent) => {
       const screen = readScreenState(e.state)?.wathqScreen ?? null;
       setOpenScreen(screen);
-      // الرجوع إلى الرئيسية (أو نوع بلا شاشة بعد) يستعيد موضع التمرير
-      if (!screen || screen.kind === 'improvement') {
+      // الرجوع إلى الرئيسية يستعيد موضع التمرير
+      if (!screen) {
         const target = pendingScrollId.current;
         pendingScrollId.current = null;
         const y = sectionReturnScrollY.current;
@@ -728,13 +728,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     pendingScrollId.current = null;
     requestAnimationFrame(() => document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' }));
   };
-  // الشريط الجانبي: القسم العادي يفتح شاشته، والاستراتيجيات و10 شاشتيهما، و5
-  // يمرّر إلى بطاقته. عرض الأرشيف يُغلق أولاً، فلا شاشة ولا بطاقات فيه.
+  // الشريط الجانبي: كل قسم يفتح شاشته (العادي والاستراتيجيات و10 و5)، والتمرير
+  // احتياط لمعرّف غير متوقّع. عرض الأرشيف يُغلق أولاً، فلا شاشة ولا بطاقات فيه.
   const handleSidebarSection = (id: number) => {
     setArchiveMonth(null);
     if (nonStratSections.some(s => s.id === id)) openSection(id);
     else if (stratSection && id === stratSection.id) pushScreen({ kind: 'strat' });
     else if (analysisSection && id === analysisSection.id) pushScreen({ kind: 'analysis' });
+    else if (improvementSection && id === improvementSection.id) pushScreen({ kind: 'improvement' });
     else goHomeAndScroll(id);
   };
   const closeSection = () => { closeToHome(); };
@@ -938,6 +939,26 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               onFocusHandled={() => setFocusAnalysisId(null)}
             />
           </AnalysisView>
+        ) : openScreen?.kind === 'improvement' && improvementSection ? (
+          <ImprovementView
+            icon={improvementSection.icon}
+            title={improvementSection.ttl}
+            actionCount={improvementActionCount}
+            loading={resultsAnalysis.loading}
+            onBack={closeSection}
+          >
+            <ImprovementActionsBody
+              section={improvementSection}
+              userId={userId}
+              supabaseEv={supabaseEv}
+              gradeBands={resultsAnalysis.gradeBands}
+              analyses={resultsAnalysis.analyses}
+              runSmartCheck={resultsAnalysis.runSmartCheck}
+              onEvidenceSaved={onEvidenceSaved}
+              onToast={onToast}
+              onViewInAnalysis={handleViewInAnalysis}
+            />
+          </ImprovementView>
         ) : <>
         {/* بطاقة الملف الشخصي المضغوطة — جوال فقط */}
         <div className="lg:hidden flex items-center gap-3 mb-3 px-1" style={{ animation: 'fadeUp .4s var(--sp) both' }}>
@@ -1725,10 +1746,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               مثبّتتان دائماً هنا خارج شبكة الأقسام، نفس معاملة قسم الاستراتيجيات
               أعلاه (isResultsSection مُستبعد من nonStratSections/sortedFilteredSections)،
               وبنفس نمط التجاور جنباً إلى جنب (grid sm:grid-cols-2 items-start).
-              بطاقة 10 رأس فقط يفتح شاشة قسمه (3.5د). items-start إلزامي هنا:
-              بلا هذا، فتح بطاقة 5 (openSecs[improvementSection.id]) يمدّد رأس
-              بطاقة 10 المجاورة لنفس ارتفاع الصف (افتراضي CSS Grid
-              align-items:stretch). ترتيب العرض:
+              البطاقتان رأسان فقط، كل منهما يفتح شاشة قسمه (3.5د و3.5هـ). ترتيب العرض:
               التحليل أولاً (مصدر البيانات) ثم قائمة الإجراءات المُولَّدة منه —
               بلا ترابط في الحسابات، فقط تسلسل منطقي للقراءة. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
@@ -1744,17 +1762,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           {improvementSection && (
             <ImprovementActionsCard
               section={improvementSection}
-              userId={userId}
-              supabaseEv={supabaseEv}
-              gradeBands={resultsAnalysis.gradeBands}
-              analyses={resultsAnalysis.analyses}
+              actionCount={improvementActionCount}
               loading={resultsAnalysis.loading}
-              runSmartCheck={resultsAnalysis.runSmartCheck}
-              onEvidenceSaved={onEvidenceSaved}
-              onToast={onToast}
-              isOpen={!!openSecs[improvementSection.id]}
-              onToggle={() => toggleSec(improvementSection.id)}
-              onViewInAnalysis={handleViewInAnalysis}
+              onOpen={() => pushScreen({ kind: 'improvement' })}
             />
           )}
           </div>

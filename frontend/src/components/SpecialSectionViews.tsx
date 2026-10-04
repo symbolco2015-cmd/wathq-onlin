@@ -3,7 +3,7 @@ import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { SectionHeader, EvRow, nEv } from './SectionView';
 
 // شاشات الأقسام الخاصة «مراعاة الفروق الفردية» و«التنويع في استراتيجيات
-// التدريس» و«تحليل نتائج المتعلمين» — بتصميم شاشة القسم العادي (SectionView)،
+// التدريس» و«تحليل نتائج المتعلمين» و«تحسين نتائج المتعلمين» — بتصميم شاشة القسم العادي (SectionView)،
 // بلا مستوى ولا شريط مؤشرات ولا «تعديل». الحسابات كلها في Dashboard، وهنا العرض فقط.
 
 const newestFirst = (evs: SupabaseEvidence[]) =>
@@ -194,6 +194,29 @@ export function AnalysisView({ icon, title, analysisCount, loading, onBack, chil
           {children}
         </div>
       )}
+    </div>
+  );
+}
+
+/** شاشة «تحسين نتائج المتعلمين» — الرأس وسطر الحالة، والتنبيهات
+ *  (ImprovementActionsBody) تصل من Dashboard كـ children، كل تنبيه بطاقة مستقلة */
+export function ImprovementView({ icon, title, actionCount, loading, onBack, children }: {
+  icon: string;
+  title: string;
+  actionCount: number;
+  loading: boolean;
+  onBack: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 max-w-3xl pb-24 md:pb-0">
+      <SectionHeader onBack={onBack} icon={icon} title={title} />
+
+      <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
+        {loading ? 'جارٍ التحميل…' : actionCount > 0 ? `${actionCount} إجراء يحتاج متابعة` : 'لا إجراءات حالياً'}
+      </p>
+
+      {!loading && children}
     </div>
   );
 }

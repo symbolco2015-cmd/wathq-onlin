@@ -62,9 +62,9 @@ export default function BottomSheet({ isOpen, onClose, children }: BottomSheetPr
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative overflow-hidden w-full max-w-2xl flex flex-col rounded-t-3xl border-t border-x border-[var(--em7)]/15 shadow-[0_-24px_60px_rgba(0,0,0,.6)] max-h-[88vh]"
+        className="relative overflow-hidden w-full max-w-2xl flex flex-col rounded-t-3xl border-t border-x border-[var(--bd2)] max-h-[88vh]"
         style={{
-          background: 'var(--surf2)',
+          background: 'var(--s1)',
           transform: `translateY(${visible ? `${dragY}px` : '100%'})`,
           transition: draggingRef.current ? 'none' : 'transform .32s var(--sp)',
         }}
@@ -76,7 +76,7 @@ export default function BottomSheet({ isOpen, onClose, children }: BottomSheetPr
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="w-10 h-1.5 rounded-full bg-[var(--text3)]/35" />
+          <div className="w-10 h-1.5 rounded-full bg-[var(--bd2)]" />
         </div>
 
         {children}

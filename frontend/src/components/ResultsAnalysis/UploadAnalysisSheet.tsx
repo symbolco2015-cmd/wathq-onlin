@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SelectDropdown } from '../UI';
+import { BTN_GH, BTN_PRI, BTN_SM } from '../SectionView';
 import ResultsBarChart from './ResultsBarChart';
 import { parseFile } from './parseFile';
 import { computeSummary, deriveUniformClassSection, deriveUniformSubject, detectColumns } from './logic';
@@ -13,8 +14,12 @@ interface UploadAnalysisSheetProps {
   onToast: (msg: string, icon?: string) => void;
 }
 
-const INPUT_CLS = 'w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-xl text-[13.5px] font-[var(--font)] text-white outline-none transition-all duration-200 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_3px_rgba(42,122,68,.12)]';
-const LABEL_CLS = 'text-[11.5px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5 flex items-center gap-1.5';
+// نفس ثوابت الحقول في EvidenceForm.tsx (نص مكرر، بلا استيراد منه)
+const INPUT_CLS = 'w-full h-11 px-3 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--bg)] text-[length:var(--fs-sm)] text-[var(--t1)] outline-none transition-colors duration-150 placeholder:text-[var(--t3)] focus:border-[var(--accent)]';
+const LABEL_CLS = 'text-[length:var(--fs-sm)] font-bold text-[var(--t1)] mb-2 flex items-center gap-1.5';
+const ICON_BTN_SM_CLS = 'w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] text-[var(--t2)] flex items-center justify-center text-[20px] shrink-0 cursor-pointer hover:text-[var(--t1)]';
+const SPIN_CLS = 'animate-spin motion-reduce:animate-none';
+const NOTE_CLS = 'flex items-start gap-2 text-[length:var(--fs-xs)] bg-[var(--s2)] border rounded-[var(--r-sm)] p-3';
 
 export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSaved, onToast }: UploadAnalysisSheetProps) {
   const [fileName, setFileName] = useState('');
@@ -108,48 +113,47 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
 
   return (
     <>
-      <div className="absolute top-0 right-[10%] left-[10%] h-[1.5px] bg-gradient-to-r from-transparent via-[var(--em7)] to-transparent" />
-      <div className="flex items-center gap-4 px-7 pt-7 pb-5 border-b border-[var(--line)] shrink-0">
-        <div className="w-[48px] h-[48px] rounded-2xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[22px] border border-[var(--em7)]/20 shadow-[0_4px_16px_rgba(42,122,68,.3)]">
+      <div className="flex items-center gap-2.5 px-[18px] pt-3.5 pb-2.5 shrink-0">
+        <span className="w-9 h-9 rounded-[var(--r-sm)] bg-[var(--s2)] text-[var(--t2)] flex items-center justify-center text-[20px] shrink-0">
           <i className="ti ti-file-spreadsheet" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">رفع كشف درجات</div>
+          <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-0.5">CSV أو Excel — يُعالَج بالكامل داخل متصفحك</div>
         </div>
-        <div className="flex-1">
-          <div className="text-[18px] font-black text-white">رفع كشف درجات</div>
-          <div className="text-[12px] text-[var(--text4)] mt-0.5">CSV أو Excel — يُعالَج بالكامل داخل متصفحك</div>
-        </div>
-        <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]">
+        <button onClick={onClose} className={ICON_BTN_SM_CLS}>
           <i className="ti ti-x" />
         </button>
       </div>
 
-      <div className="overflow-y-auto flex-1 px-7 py-6 space-y-5">
-        {/* اختيار الملف */}
+      <div className="overflow-y-auto flex-1 px-[18px] pt-1 pb-4 space-y-4">
+        {/* اختيار الملف — شكل .drop ثم .picked في نموذج الشاهد */}
         <div>
-          <div className={LABEL_CLS}><i className="ti ti-upload text-[var(--em7)]" /> الملف <span className="text-red-400">*</span></div>
+          <div className={LABEL_CLS}><i className="ti ti-upload text-[16px] text-[var(--t2)]" /> الملف <span className="text-[var(--danger)]">*</span></div>
           <input type="file" id="results-analysis-file" className="hidden" accept=".csv,.xlsx" onChange={handleFileChange} />
           <label
             htmlFor="results-analysis-file"
-            className={`block border-[1.5px] border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all duration-250 ${
-              parsed ? 'border-[var(--em8)]/40 bg-[var(--em7)]/5' : parsing ? 'border-[var(--em7)]/20 opacity-80 cursor-wait' : 'border-white/10 hover:border-[var(--em7)]/30 hover:bg-white/3'
+            className={`block rounded-[var(--r-md)] p-[18px] text-center text-[length:var(--fs-sm)] text-[var(--t3)] cursor-pointer transition-colors duration-150 ${
+              parsed ? 'border border-[var(--bd)] bg-[var(--s2)]' : parsing ? 'border-[1.5px] border-dashed border-[var(--bd2)] opacity-80 cursor-wait' : 'border-[1.5px] border-dashed border-[var(--bd2)] hover:border-[var(--t3)]'
             }`}
           >
             {parsing ? (
-              <div className="flex flex-col items-center py-1">
-                <i className="ti ti-loader animate-spin text-[32px] text-[var(--em8)] mb-2" />
-                <p className="text-[13px] text-white font-bold">جاري القراءة...</p>
+              <div className="flex flex-col items-center">
+                <i className={`ti ti-loader text-[24px] text-[var(--t2)] mb-1 ${SPIN_CLS}`} />
+                <p className="text-[var(--t2)]">جاري القراءة...</p>
               </div>
             ) : parsed ? (
-              <div className="flex flex-col items-center py-1">
-                <i className="ti ti-file-check text-[32px] text-[var(--em8)] mb-2" />
-                <p className="text-[13px] text-[var(--em8)] font-black">{parsed.rows.length} صف · {parsed.headers.length} عمود</p>
-                <span className="text-[11.5px] text-white mt-1.5 font-semibold" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{fileName}</span>
-                <span className="text-[10.5px] text-[var(--text4)] mt-1">انقر لاستبدال الملف</span>
+              <div className="flex flex-col items-center">
+                <i className="ti ti-file-check text-[24px] text-[var(--t2)] mb-1" />
+                <p className="font-bold text-[var(--t1)]">{parsed.rows.length} صف · {parsed.headers.length} عمود</p>
+                <span className="text-[length:var(--fs-xs)] text-[var(--t2)] mt-1" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{fileName}</span>
+                <span className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">انقر لاستبدال الملف</span>
               </div>
             ) : (
-              <div className="py-1">
-                <i className="ti ti-cloud-upload text-[32px] text-[var(--em6)] mb-2 block" />
-                <p className="text-[13px] text-[var(--text3)] font-semibold">انقر لاختيار الملف</p>
-                <span className="text-[11px] text-[var(--text4)] mt-0.5 block">CSV · XLSX</span>
+              <div>
+                <i className="ti ti-cloud-upload text-[24px] mb-1 block" />
+                <p>انقر لاختيار الملف</p>
+                <span className="text-[length:var(--fs-xs)] mt-0.5 block">CSV · XLSX</span>
               </div>
             )}
           </label>
@@ -157,42 +161,42 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
 
         {/* تحديد الأعمدة — تظهر دائماً بعد القراءة، مُعبَّأة تلقائياً حين يمكن ذلك */}
         {parsed && (
-          <div className="bg-white/3 border border-[var(--line2)] rounded-2xl p-4 space-y-3.5">
-            <div className="text-[11.5px] font-extrabold text-[var(--text4)] tracking-wide flex items-center gap-1.5">
-              <i className="ti ti-columns" /> تحديد الأعمدة
+          <div className="bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4 space-y-3">
+            <div className="text-[length:var(--fs-xs)] font-bold text-[var(--t3)] flex items-center gap-1.5">
+              <i className="ti ti-columns text-[16px]" /> تحديد الأعمدة
             </div>
 
             {scoreDetectionFailed && (
-              <div className="flex items-start gap-2 text-[12px] text-[var(--gold3)] bg-[var(--gold)]/10 border border-[var(--gold)]/25 rounded-xl p-3">
-                <i className="ti ti-alert-triangle text-[15px] shrink-0 mt-0.5" />
+              <div className={`${NOTE_CLS} text-[var(--t1)] border-[var(--warn)]/35`}>
+                <i className="ti ti-alert-triangle text-[16px] text-[var(--warn)] shrink-0" />
                 <span>تعذّر تحديد عمود الدرجة تلقائياً — اخترْه يدوياً من القائمة أدناه</span>
               </div>
             )}
 
             {nameDetectionFailed && (
-              <div className="flex items-start gap-2 text-[12px] text-[var(--text3)] bg-white/3 border border-[var(--line2)] rounded-xl p-3">
-                <i className="ti ti-info-circle text-[15px] shrink-0 mt-0.5" />
+              <div className={`${NOTE_CLS} text-[var(--t2)] border-[var(--bd)]`}>
+                <i className="ti ti-info-circle text-[16px] text-[var(--info)] shrink-0" />
                 <span>تعذّر تحديد عمود الاسم تلقائياً — اخترْه يدوياً من القائمة، أو تابع بدون أسماء (سيظهر الطلاب كـ"طالب 1"، "طالب 2"... مع بقاء درجاتهم كاملة في التحليل)</span>
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className={LABEL_CLS + ' !mb-1'}>عمود الدرجة <span className="text-red-400">*</span></div>
+                <div className={LABEL_CLS}>عمود الدرجة <span className="text-[var(--danger)]">*</span></div>
                 <SelectDropdown options={columnOptions} value={scoreCol} onChange={setScoreCol} placeholder="اختر العمود" triggerClassName={INPUT_CLS + ' cursor-pointer'} />
               </div>
               <div>
-                <div className={LABEL_CLS + ' !mb-1'}>عمود الاسم</div>
+                <div className={LABEL_CLS}>عمود الاسم</div>
                 <SelectDropdown options={columnOptions} value={nameCol} onChange={setNameCol} placeholder="— بدون أسماء —" triggerClassName={INPUT_CLS + ' cursor-pointer'} allowClear />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className={LABEL_CLS + ' !mb-1'}>عمود الشعبة/الفصل</div>
+                <div className={LABEL_CLS}>عمود الشعبة/الفصل</div>
                 <SelectDropdown options={columnOptions} value={sectionCol} onChange={setSectionCol} placeholder="— بدون —" triggerClassName={INPUT_CLS + ' cursor-pointer'} allowClear />
               </div>
               <div>
-                <div className={LABEL_CLS + ' !mb-1'}>عمود المادة</div>
+                <div className={LABEL_CLS}>عمود المادة</div>
                 <SelectDropdown options={columnOptions} value={subjectCol} onChange={setSubjectCol} placeholder="— بدون —" triggerClassName={INPUT_CLS + ' cursor-pointer'} allowClear />
               </div>
             </div>
@@ -200,9 +204,9 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
             <button
               onClick={handleAnalyze}
               disabled={!canAnalyze}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--em6)]/15 border border-[var(--em6)]/30 text-[var(--em8)] text-[12.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className={BTN_SM + ' w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed'}
             >
-              <i className="ti ti-chart-bar" /> تحليل البيانات
+              <i className="ti ti-chart-bar text-[20px]" /> تحليل البيانات
             </button>
           </div>
         )}
@@ -211,38 +215,38 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
         {summary && (
           <div className="space-y-4">
             {summary.skippedRows > 0 && (
-              <div className="flex items-start gap-2 text-[12px] text-[var(--text3)] bg-white/3 border border-[var(--line2)] rounded-xl p-3">
-                <i className="ti ti-info-circle text-[15px] shrink-0 mt-0.5" />
+              <div className={`${NOTE_CLS} text-[var(--t2)] border-[var(--bd)]`}>
+                <i className="ti ti-info-circle text-[16px] text-[var(--info)] shrink-0" />
                 <span>{summary.skippedRows} صف تم تجاهلها لعدم احتوائها درجة صالحة (0-100)</span>
               </div>
             )}
 
             <div>
-              <div className={LABEL_CLS}><i className="ti ti-book text-[var(--em7)]" /> المادة الدراسية <span className="text-red-400">*</span></div>
+              <div className={LABEL_CLS}><i className="ti ti-book text-[16px] text-[var(--t2)]" /> المادة الدراسية <span className="text-[var(--danger)]">*</span></div>
               <input type="text" className={INPUT_CLS} placeholder="مثال: الرياضيات" value={subject} onChange={e => setSubject(e.target.value)} />
             </div>
 
-            <div className="bg-white/3 border border-[var(--line2)] rounded-2xl p-4">
+            <div className="bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
               <div className="grid grid-cols-3 gap-3 mb-4 text-center">
                 <div>
-                  <div className="text-[22px] font-black text-white">{summary.totalStudents}</div>
-                  <div className="text-[10.5px] text-[var(--text4)] mt-0.5">طالب</div>
+                  <div className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">{summary.totalStudents}</div>
+                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-0.5">طالب</div>
                 </div>
                 <div>
-                  <div className="text-[22px] font-black text-[var(--em8)]">{summary.average.toFixed(1)}</div>
-                  <div className="text-[10.5px] text-[var(--text4)] mt-0.5">المتوسط</div>
+                  <div className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">{summary.average.toFixed(1)}</div>
+                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-0.5">المتوسط</div>
                 </div>
                 <div>
-                  <div className="text-[22px] font-black text-white">{summary.stdDev.toFixed(1)}</div>
-                  <div className="text-[10.5px] text-[var(--text4)] mt-0.5">الانحراف المعياري</div>
+                  <div className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">{summary.stdDev.toFixed(1)}</div>
+                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-0.5">الانحراف المعياري</div>
                 </div>
               </div>
               <ResultsBarChart summary={summary} bands={bands} />
             </div>
 
             {summary.inflationDetected && (
-              <div className="flex items-start gap-2 text-[12px] text-[var(--gold3)] bg-[var(--gold)]/10 border border-[var(--gold)]/25 rounded-xl p-3">
-                <i className="ti ti-alert-triangle text-[15px] shrink-0 mt-0.5" />
+              <div className={`${NOTE_CLS} text-[var(--t1)] border-[var(--warn)]/35`}>
+                <i className="ti ti-alert-triangle text-[16px] text-[var(--warn)] shrink-0" />
                 <span>مؤشرات على تضخم في الدرجات — نسبة عالية من الدرجات المرتفعة جداً أو تكدّس ضعيف. يُنصح بتنويع أدوات التقييم لقياس الفروق الفردية بدقة أكبر.</span>
               </div>
             )}
@@ -250,16 +254,16 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-3 px-7 py-5 border-t border-[var(--line)] shrink-0">
-        <button onClick={onClose} className="py-2.5 px-6 rounded-xl border border-[var(--line2)] bg-transparent text-[13.5px] font-bold text-[var(--text3)] hover:text-white hover:bg-white/5 transition-all duration-200 font-[var(--font)] cursor-pointer">
+      <div className="flex gap-2 px-[18px] pt-3 pb-[18px] border-t border-[var(--bd)] shrink-0">
+        <button onClick={onClose} className={BTN_GH}>
           إلغاء
         </button>
         <button
           onClick={handleSave}
           disabled={!summary || saving}
-          className="flex items-center gap-2 py-2.5 px-7 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[13.5px] font-extrabold shadow-[0_6px_20px_rgba(42,122,68,.45)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(42,122,68,.6)] transition-all duration-250 disabled:opacity-40 disabled:cursor-not-allowed font-[var(--font)] cursor-pointer"
+          className={BTN_PRI + ' disabled:opacity-40 disabled:cursor-not-allowed'}
         >
-          {saving ? <><i className="ti ti-loader animate-spin" /> جاري الحفظ...</> : <><i className="ti ti-check" /> حفظ التحليل</>}
+          {saving ? <><i className={`ti ti-loader ${SPIN_CLS}`} /> جاري الحفظ...</> : <><i className="ti ti-check" /> حفظ التحليل</>}
         </button>
       </div>
     </>

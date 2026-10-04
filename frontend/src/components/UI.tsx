@@ -160,15 +160,15 @@ export function SelectDropdown({ options, value, onChange, placeholder, triggerC
         onClick={() => setIsOpen(o => !o)}
         className={triggerClassName + ' flex items-center justify-between gap-2'}
       >
-        <span className={selected ? 'text-white' : 'text-[var(--text4)]'}>{selected ? selected.label : placeholder}</span>
-        <i className={`ti ti-chevron-down text-[13px] text-[var(--text4)] transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+        <span className={selected ? 'text-[var(--t1)]' : 'text-[var(--t3)]'}>{selected ? selected.label : placeholder}</span>
+        <i className={`ti ti-chevron-down text-[16px] text-[var(--t3)] transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && createPortal(
         <>
           <div className="fixed inset-0 z-[600]" onClick={() => setIsOpen(false)} />
           <div
-            className="fixed z-[601] max-h-[240px] overflow-y-auto rounded-xl border border-[var(--line2)] bg-[var(--surf2)] shadow-[0_12px_32px_rgba(0,0,0,.45)] py-1.5"
+            className="fixed z-[601] max-h-[240px] overflow-y-auto rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)] py-1"
             style={{
               top: pos.openUpward ? undefined : pos.top,
               bottom: pos.openUpward ? window.innerHeight - pos.top : undefined,
@@ -181,7 +181,7 @@ export function SelectDropdown({ options, value, onChange, placeholder, triggerC
               <button
                 type="button"
                 onClick={() => { onChange(''); setIsOpen(false); }}
-                className="w-full text-right px-3.5 py-2.5 text-[12.5px] font-bold text-[var(--text4)] hover:bg-white/5 transition-colors cursor-pointer"
+                className="w-full text-right px-3 py-2.5 text-[length:var(--fs-sm)] text-[var(--t3)] hover:bg-[var(--s3)] transition-colors duration-150 cursor-pointer"
               >
                 {placeholder}
               </button>
@@ -191,8 +191,8 @@ export function SelectDropdown({ options, value, onChange, placeholder, triggerC
                 key={opt.value}
                 type="button"
                 onClick={() => { onChange(opt.value); setIsOpen(false); }}
-                className={`w-full text-right px-3.5 py-2.5 text-[12.5px] font-bold transition-colors cursor-pointer ${
-                  opt.value === value ? 'text-[var(--gold3)] bg-[var(--gold)]/10' : 'text-white hover:bg-[var(--gold)]/10 hover:text-[var(--gold3)]'
+                className={`w-full text-right px-3 py-2.5 text-[length:var(--fs-sm)] transition-colors duration-150 cursor-pointer ${
+                  opt.value === value ? 'font-bold text-[var(--t1)] bg-[var(--s3)]' : 'text-[var(--t2)] hover:bg-[var(--s3)] hover:text-[var(--t1)]'
                 }`}
               >
                 {opt.label}

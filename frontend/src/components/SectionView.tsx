@@ -282,7 +282,8 @@ export function SectionHeader({ onBack, icon, title, level, evCount, progress }:
   title: string;
   /** شارة المستوى — اختيارية */
   level?: Level;
-  evCount: number;
+  /** شارة عدد الشواهد — اختيارية */
+  evCount?: number;
   /** شريط «c من N مؤشرات رسمية» — اختياري */
   progress?: { covered: number; total: number };
 }) {
@@ -313,9 +314,11 @@ export function SectionHeader({ onBack, icon, title, level, evCount, progress }:
                   {LEVEL_LABEL[level]}
                 </span>
               )}
-              <span className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--t3)]">
-                {nEv(evCount)}
-              </span>
+              {evCount !== undefined && (
+                <span className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--t3)]">
+                  {nEv(evCount)}
+                </span>
+              )}
             </div>
           </div>
         </div>

@@ -46,7 +46,10 @@ export default function ImprovementActionsCard({
   onEvidenceSaved, onToast, isOpen, onToggle, onViewInAnalysis,
 }: ImprovementActionsCardProps) {
   const [checks, setChecks] = useState<ChecksMap>({});
-  const [addEvidenceTarget, setAddEvidenceTarget] = useState<{ open: boolean; sub: string }>({ open: false, sub: '' });
+  const [addEvidenceTarget, setAddEvidenceTarget] = useState<{ open: boolean; sub: string; indicatorId?: string }>({ open: false, sub: '' });
+  // مؤشر «تنفيذ خطط علاجية وإثرائية» بالاسم لا بالمعرّف. التكريم يُربط به أيضاً
+  // (إثراء للمتفوقين)، والمعلم يستطيع تغييره في النموذج.
+  const remedialIndicatorId = section.indicators.find(i => !i.isCustom && i.name_ar.includes('خطط علاجية'))?.id;
 
   const noToast = () => {};
   const excellentBand = gradeBands[0];
@@ -83,7 +86,7 @@ export default function ImprovementActionsCard({
             subtitle="هل وثّقت خطة علاجية لهذه المجموعة؟"
             check={checks[checkKey(a.id, 'remedial')] ?? { loading: false, result: null }}
             onSmartCheck={() => handleSmartCheck(a, 'remedial')}
-            onAddEvidence={() => setAddEvidenceTarget({ open: true, sub: REMEDIAL_SUB })}
+            onAddEvidence={() => setAddEvidenceTarget({ open: true, sub: REMEDIAL_SUB, indicatorId: remedialIndicatorId })}
             onViewContext={() => onViewInAnalysis(a.id)}
           />
         ),
@@ -103,7 +106,7 @@ export default function ImprovementActionsCard({
             subtitle="هل قدّمت تكريماً؟"
             check={checks[checkKey(a.id, 'honor')] ?? { loading: false, result: null }}
             onSmartCheck={() => handleSmartCheck(a, 'honor')}
-            onAddEvidence={() => setAddEvidenceTarget({ open: true, sub: HONOR_SUB })}
+            onAddEvidence={() => setAddEvidenceTarget({ open: true, sub: HONOR_SUB, indicatorId: remedialIndicatorId })}
             onViewContext={() => onViewInAnalysis(a.id)}
           />
         ),
@@ -173,6 +176,7 @@ export default function ImprovementActionsCard({
           onClose={() => setAddEvidenceTarget({ open: false, sub: '' })}
           sectionId={section.id}
           sub={addEvidenceTarget.sub}
+          indicatorId={addEvidenceTarget.indicatorId}
           userId={userId}
           supabaseEv={supabaseEv}
           onEvidenceSaved={onEvidenceSaved ?? (() => {})}

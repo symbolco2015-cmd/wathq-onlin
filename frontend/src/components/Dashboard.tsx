@@ -9,7 +9,7 @@ import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
 import SectionView, { type SectionSummary, type IndicatorHandlers } from './SectionView';
-import { IndivDiffView, StrategiesView } from './SpecialSectionViews';
+import { IndivDiffView, StrategiesView, AnalysisView } from './SpecialSectionViews';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
@@ -19,7 +19,7 @@ import { supabase } from '../supabaseClient';
 import BulkImportPicker from './BulkImportPicker';
 import BulkImportReview from './BulkImportReview';
 import HarvestReportSheet from './HarvestReportSheet';
-import AnalysisSectionCard from './ResultsAnalysis/AnalysisSectionCard';
+import AnalysisSectionCard, { AnalysisSectionBody } from './ResultsAnalysis/AnalysisSectionCard';
 import ImprovementActionsCard from './ResultsAnalysis/ImprovementActionsCard';
 import { useResultsAnalysis } from './ResultsAnalysis/useResultsAnalysis';
 
@@ -317,16 +317,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // (تحليل) وبند 5 (تحسين)، بدل نسختين مستقلتين من useResultsAnalysis؛ رفع
   // تحليل جديد من بطاقة 10 يظهر فوراً في قائمة إجراءات بطاقة 5 بلا حاجة لإعادة
   // جلب منفصلة. focusAnalysisId يحمل طلب تنقّل "اعرض السياق الكامل" من بطاقة
-  // 5 إلى تبويب تحليل محدد في بطاقة 10 — بروتوكول استهلاك مرة واحدة (تُصفَّر
-  // فوراً بعد أن تستهلكها بطاقة 10 عبر onFocusHandled).
+  // 5 إلى تبويب تحليل محدد في شاشة 10 — بروتوكول استهلاك مرة واحدة (تُصفَّر
+  // فوراً بعد أن يستهلكها جسم شاشة 10 عبر onFocusHandled).
   const resultsAnalysis = useResultsAnalysis(userId);
   const [focusAnalysisId, setFocusAnalysisId] = useState<string | null>(null);
   const handleViewInAnalysis = (analysisId: string) => {
     setFocusAnalysisId(analysisId);
-    setOpenSecs(prev => ({ ...prev, 10: true }));
-    requestAnimationFrame(() => {
-      document.getElementById('sc-10')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    pushScreen({ kind: 'analysis' });
   };
 
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
@@ -678,7 +675,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // الخروج من التطبيق. الحالة لا تُقرأ من الرابط، فالتحديث (F5) يعيد اللوحة.
   // كل فتح من شاشة مفتوحة يضيف مدخلاً (wathqDepth يزيد)، فزر المتصفح يرجع
   // خطوة، وزر «البنود» يرجع إلى الرئيسية مباشرة بـ go(-depth).
-  // strat وindiv لهما شاشة (3.5ج)؛ analysis وimprovement لا شاشة لهما بعد، فتُعرض الرئيسية.
+  // strat وindiv (3.5ج) وanalysis (3.5د) لها شاشة؛ improvement لا شاشة له بعد، فتُعرض الرئيسية.
   const [openScreen, setOpenScreen] = useState<OpenScreen | null>(null);
   const sectionReturnScrollY = useRef(0);
   // بطاقة يُمرَّر إليها بعد الرجوع إلى الرئيسية (الشريط الجانبي وزر «البنود» في الجوال)
@@ -693,7 +690,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       const screen = readScreenState(e.state)?.wathqScreen ?? null;
       setOpenScreen(screen);
       // الرجوع إلى الرئيسية (أو نوع بلا شاشة بعد) يستعيد موضع التمرير
-      if (!screen || screen.kind === 'analysis' || screen.kind === 'improvement') {
+      if (!screen || screen.kind === 'improvement') {
         const target = pendingScrollId.current;
         pendingScrollId.current = null;
         const y = sectionReturnScrollY.current;
@@ -731,12 +728,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     pendingScrollId.current = null;
     requestAnimationFrame(() => document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' }));
   };
-  // الشريط الجانبي: القسم العادي يفتح شاشته، والاستراتيجيات شاشتها، و5/10
-  // يمرّران إلى بطاقتيهما. عرض الأرشيف يُغلق أولاً، فلا شاشة ولا بطاقات فيه.
+  // الشريط الجانبي: القسم العادي يفتح شاشته، والاستراتيجيات و10 شاشتيهما، و5
+  // يمرّر إلى بطاقته. عرض الأرشيف يُغلق أولاً، فلا شاشة ولا بطاقات فيه.
   const handleSidebarSection = (id: number) => {
     setArchiveMonth(null);
     if (nonStratSections.some(s => s.id === id)) openSection(id);
     else if (stratSection && id === stratSection.id) pushScreen({ kind: 'strat' });
+    else if (analysisSection && id === analysisSection.id) pushScreen({ kind: 'analysis' });
     else goHomeAndScroll(id);
   };
   const closeSection = () => { closeToHome(); };
@@ -919,6 +917,27 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             onAdd={() => onAddEvClick(stratSection.id, indivDiffIndicator.name_ar, undefined, indivDiffIndicator.id)}
             onDeleteEv={onDeleteEv}
           />
+        ) : openScreen?.kind === 'analysis' && analysisSection ? (
+          <AnalysisView
+            icon={analysisSection.icon}
+            title={analysisSection.ttl}
+            analysisCount={resultsAnalysis.analyses.length}
+            loading={resultsAnalysis.loading}
+            onBack={closeSection}
+          >
+            <AnalysisSectionBody
+              sections={sections}
+              userId={userId}
+              supabaseEv={supabaseEv}
+              gradeBands={resultsAnalysis.gradeBands}
+              analyses={resultsAnalysis.analyses}
+              saveAnalysis={resultsAnalysis.saveAnalysis}
+              onEvidenceSaved={onEvidenceSaved}
+              onToast={onToast}
+              focusAnalysisId={focusAnalysisId}
+              onFocusHandled={() => setFocusAnalysisId(null)}
+            />
+          </AnalysisView>
         ) : <>
         {/* بطاقة الملف الشخصي المضغوطة — جوال فقط */}
         <div className="lg:hidden flex items-center gap-3 mb-3 px-1" style={{ animation: 'fadeUp .4s var(--sp) both' }}>
@@ -1706,30 +1725,19 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               مثبّتتان دائماً هنا خارج شبكة الأقسام، نفس معاملة قسم الاستراتيجيات
               أعلاه (isResultsSection مُستبعد من nonStratSections/sortedFilteredSections)،
               وبنفس نمط التجاور جنباً إلى جنب (grid sm:grid-cols-2 items-start).
-              items-start إلزامي هنا للسبب نفسه الموثّق أعلاه عند بطاقتي
-              الاستراتيجيات/الفروق الفردية: بلا هذا، فتح إحدى البطاقتين يمدّد
-              حاوية البطاقة المغلقة المجاورة لنفس ارتفاع الصف (افتراضي CSS Grid
-              align-items:stretch) رغم أن openSecs[analysisSection.id]/
-              openSecs[improvementSection.id] مستقلان تماماً. ترتيب العرض:
+              بطاقة 10 رأس فقط يفتح شاشة قسمه (3.5د). items-start إلزامي هنا:
+              بلا هذا، فتح بطاقة 5 (openSecs[improvementSection.id]) يمدّد رأس
+              بطاقة 10 المجاورة لنفس ارتفاع الصف (افتراضي CSS Grid
+              align-items:stretch). ترتيب العرض:
               التحليل أولاً (مصدر البيانات) ثم قائمة الإجراءات المُولَّدة منه —
               بلا ترابط في الحسابات، فقط تسلسل منطقي للقراءة. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
           {analysisSection && (
             <AnalysisSectionCard
               section={analysisSection}
-              sections={sections}
-              userId={userId}
-              supabaseEv={supabaseEv}
-              gradeBands={resultsAnalysis.gradeBands}
-              analyses={resultsAnalysis.analyses}
+              analysisCount={resultsAnalysis.analyses.length}
               loading={resultsAnalysis.loading}
-              saveAnalysis={resultsAnalysis.saveAnalysis}
-              onEvidenceSaved={onEvidenceSaved}
-              onToast={onToast}
-              isOpen={!!openSecs[analysisSection.id]}
-              onToggle={() => toggleSec(analysisSection.id)}
-              focusAnalysisId={focusAnalysisId}
-              onFocusHandled={() => setFocusAnalysisId(null)}
+              onOpen={() => pushScreen({ kind: 'analysis' })}
             />
           )}
 

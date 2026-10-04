@@ -2,9 +2,9 @@ import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { SectionHeader, EvRow, nEv } from './SectionView';
 
-// شاشتا القسمين الخاصين «مراعاة الفروق الفردية» و«التنويع في استراتيجيات
-// التدريس» — بتصميم شاشة القسم العادي (SectionView)، بلا مستوى ولا شريط
-// مؤشرات ولا «تعديل». الحسابات كلها في Dashboard، وهنا العرض فقط.
+// شاشات الأقسام الخاصة «مراعاة الفروق الفردية» و«التنويع في استراتيجيات
+// التدريس» و«تحليل نتائج المتعلمين» — بتصميم شاشة القسم العادي (SectionView)،
+// بلا مستوى ولا شريط مؤشرات ولا «تعديل». الحسابات كلها في Dashboard، وهنا العرض فقط.
 
 const newestFirst = (evs: SupabaseEvidence[]) =>
   [...evs].sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
@@ -167,6 +167,33 @@ export function StrategiesView({ icon, title, evCount, monthName, usedThisMonth,
       >
         <i className="ti ti-plus text-[16px]" />إضافة استراتيجية جديدة
       </button>
+    </div>
+  );
+}
+
+/** شاشة «تحليل نتائج المتعلمين» — الرأس وسطر الحالة، والأداة (AnalysisSectionBody)
+ *  تصل من Dashboard كـ children ولا تُركَّب إلا بعد انتهاء التحميل */
+export function AnalysisView({ icon, title, analysisCount, loading, onBack, children }: {
+  icon: string;
+  title: string;
+  analysisCount: number;
+  loading: boolean;
+  onBack: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 max-w-3xl pb-24 md:pb-0">
+      <SectionHeader onBack={onBack} icon={icon} title={title} />
+
+      <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
+        {loading ? 'جارٍ التحميل…' : analysisCount > 0 ? `${analysisCount} تحليل محفوظ` : 'لا تحليلات بعد'}
+      </p>
+
+      {!loading && (
+        <div className="bg-[var(--s1)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
+          {children}
+        </div>
+      )}
     </div>
   );
 }

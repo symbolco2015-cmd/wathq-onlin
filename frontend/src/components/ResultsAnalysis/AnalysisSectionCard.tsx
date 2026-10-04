@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import BottomSheet from '../BottomSheet';
 import type { EvidenceFormProps } from '../EvidenceForm';
+import { BTN_SM, BTN_GH_SM, BTN_PRI_SM } from '../SectionView';
 import UploadAnalysisSheet from './UploadAnalysisSheet';
 import ResultsBarChart from './ResultsBarChart';
 import ComparisonChart from './ComparisonChart';
@@ -14,17 +15,47 @@ type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvi
 
 interface AnalysisSectionCardProps {
   section: SectionData;
+  analysisCount: number;
+  loading: boolean;
+  onOpen: () => void;
+}
+
+/**
+ * رأس بند 10 "تحليل نتائج المتعلمين" في الرئيسية — مثبّت خارج شبكة الأقسام
+ * (نفس معاملة قسم الاستراتيجيات). الضغط يفتح شاشة القسم (3.5د)، والأداة نفسها
+ * في AnalysisSectionBody أدناه.
+ */
+export default function AnalysisSectionCard({ section, analysisCount, loading, onOpen }: AnalysisSectionCardProps) {
+  if (loading) return null;
+
+  return (
+    <div id={`sc-${section.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', borderRight: '4px solid var(--violet)' }}>
+      <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={onOpen}>
+        <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border transition-all duration-350 ${analysisCount > 0 ? 'bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20' : 'bg-white/5 text-[var(--text4)] border-[var(--line2)]'}`}>
+          <i className={`ti ${section.icon}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{section.ttl}</div>
+          <div className={`flex items-center gap-1.5 mt-1 sm:mt-1.5 text-[10.5px] sm:text-[11.5px] font-bold ${analysisCount > 0 ? 'text-[var(--em8)]' : 'text-[var(--text4)]'}`}>
+            <i className={`ti ${analysisCount > 0 ? 'ti-circle-check' : 'ti-circle-dashed'} text-[11px]`} />
+            {analysisCount > 0 ? `${analysisCount} تحليل محفوظ` : 'لا تحليلات بعد'}
+          </div>
+        </div>
+        <i className="ti ti-chevron-left text-[22px] shrink-0 text-[var(--text4)]" />
+      </div>
+    </div>
+  );
+}
+
+interface AnalysisSectionBodyProps {
   sections: SectionData[];
   userId: string | undefined;
   supabaseEv?: SupabaseEvidenceHook;
   gradeBands: GradeBand[];
   analyses: ResultsAnalysisRow[];
-  loading: boolean;
   saveAnalysis: (subject: string, classSection: string | null, summary: AnalysisSummary) => Promise<ResultsAnalysisRow | null>;
   onEvidenceSaved?: EvidenceFormProps['onEvidenceSaved'];
   onToast?: (msg: string, icon?: string) => void;
-  isOpen: boolean;
-  onToggle: () => void;
   /** معرّف تحليل يجب فتح تبويبه مباشرة — يصل من بطاقة "تحسين نتائج المتعلمين"
    *  عبر زر "اعرض السياق الكامل". يُستهلك مرة واحدة ثم يُعاد تصفيره بالمستدعي. */
   focusAnalysisId: string | null;
@@ -36,14 +67,14 @@ type Tab =
   | { kind: 'compare'; id: string; label: string; subject: string };
 
 /**
- * بطاقة بند 10 "تحليل نتائج المتعلمين" — مثبّتة دائماً خارج شبكة الأقسام
- * الـ11 (نفس معاملة قسم الاستراتيجيات)، محتواها بالكامل أداة تحليل النتائج:
- * تبويب لكل تحليل محفوظ + تبويب "مقارنة" تلقائي لكل مادة لها تحليلان فأكثر.
+ * جسم شاشة بند 10 — أداة تحليل النتائج: تبويب لكل تحليل محفوظ + تبويب
+ * "مقارنة" تلقائي لكل مادة لها تحليلان فأكثر. يُركَّب فقط بعد انتهاء التحميل
+ * (الشاشة تعرض "جارٍ التحميل…" قبله)، فطلب التركيز يجد تبويباته من أول render.
  */
-export default function AnalysisSectionCard({
-  section, sections, userId, supabaseEv, gradeBands, analyses, loading,
-  saveAnalysis, onEvidenceSaved, onToast, isOpen, onToggle, focusAnalysisId, onFocusHandled,
-}: AnalysisSectionCardProps) {
+export function AnalysisSectionBody({
+  sections, userId, supabaseEv, gradeBands, analyses,
+  saveAnalysis, onEvidenceSaved, onToast, focusAnalysisId, onFocusHandled,
+}: AnalysisSectionBodyProps) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -76,92 +107,66 @@ export default function AnalysisSectionCard({
     if (!focusAnalysisId) return;
     if (!tabs.some(t => t.id === focusAnalysisId)) return;
     setActiveTabId(focusAnalysisId);
-    if (!isOpen) onToggle();
     onFocusHandled();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusAnalysisId]);
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
 
-  if (loading) return null;
-
   return (
-    <div id={`sc-${section.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', borderRight: '4px solid var(--violet)' }}>
-      <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={onToggle}>
-        <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border transition-all duration-350 ${analyses.length > 0 ? 'bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20' : 'bg-white/5 text-[var(--text4)] border-[var(--line2)]'}`}>
-          <i className={`ti ${section.icon}`} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{section.ttl}</div>
-          <div className={`flex items-center gap-1.5 mt-1 sm:mt-1.5 text-[10.5px] sm:text-[11.5px] font-bold ${analyses.length > 0 ? 'text-[var(--em8)]' : 'text-[var(--text4)]'}`}>
-            <i className={`ti ${analyses.length > 0 ? 'ti-circle-check' : 'ti-circle-dashed'} text-[11px]`} />
-            {analyses.length > 0 ? `${analyses.length} تحليل محفوظ` : 'لا تحليلات بعد'}
-          </div>
-        </div>
-        <i className={`ti ti-chevron-down text-[22px] shrink-0 transition-all duration-400 ${isOpen ? 'rotate-180 text-[var(--em7)]' : 'text-[var(--text4)]'}`} />
-      </div>
-
-      <div className={`overflow-hidden transition-all duration-500 ease-[var(--ease)] ${isOpen ? 'max-h-[9999px] opacity-100 border-t border-[var(--line)]' : 'max-h-0 opacity-0 border-t-0'}`}>
-        <div className="py-5 px-4 sm:px-6">
-          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
-              {tabs.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveTabId(t.id)}
-                  className={`shrink-0 py-2 px-3.5 rounded-xl text-[12px] font-bold whitespace-nowrap transition-all cursor-pointer border ${
-                    activeTabId === t.id
-                      ? t.kind === 'compare'
-                        ? 'bg-[var(--gold)]/15 border-[var(--gold)]/40 text-[var(--gold3)]'
-                        : 'bg-[var(--em7)]/15 border-[var(--em7)]/40 text-[var(--em8)]'
-                      : 'bg-white/5 border-[var(--line2)] text-[var(--text3)] hover:bg-white/10'
-                  }`}
-                >
-                  {t.kind === 'compare' && <i className="ti ti-chart-line ml-1" />}
-                  {t.label}
-                </button>
-              ))}
-            </div>
+    <>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
+          {tabs.map(t => (
             <button
-              onClick={() => setUploadOpen(true)}
-              className="shrink-0 inline-flex items-center gap-1.5 py-2.5 px-4 rounded-xl text-[12.5px] font-bold bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white border border-[var(--em7)]/30 hover:-translate-y-0.5 transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTabId(t.id)}
+              className={`shrink-0 h-9 px-3 inline-flex items-center gap-1.5 rounded-[var(--r-sm)] border text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer ${
+                activeTabId === t.id
+                  ? 'bg-[var(--s2)] border-[var(--bd2)] text-[var(--t1)]'
+                  : 'border-[var(--bd)] text-[var(--t2)]'
+              }`}
             >
-              <i className="ti ti-upload text-[14px]" /> رفع {analyses.length > 0 ? 'جديد' : 'كشف درجات'}
+              {t.kind === 'compare' && <i className="ti ti-chart-line text-[16px]" />}
+              {t.label}
             </button>
-          </div>
-
-          {tabs.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
-                <i className="ti ti-chart-dots-off" />
-              </div>
-              <p className="text-[var(--text3)] text-[13.5px]">ارفع أول كشف درجات لبدء التحليل</p>
-            </div>
-          )}
-
-          {activeTab?.kind === 'compare' && (
-            <div id="analysis-print-target" className="print-card bg-white/3 border border-[var(--line2)] rounded-2xl p-4">
-              <ComparisonChart subject={activeTab.subject} series={buildComparisonSeries(analyses, activeTab.subject)} />
-            </div>
-          )}
-
-          {activeTab?.kind === 'analysis' && (
-            <AnalysisTabBody
-              analysis={activeTab.analysis}
-              bands={gradeBands}
-              onConvertClick={() => setConvertOpen(true)}
-            />
-          )}
+          ))}
         </div>
+        <button type="button" onClick={() => setUploadOpen(true)} className={`${BTN_PRI_SM} shrink-0`}>
+          <i className="ti ti-upload text-[16px]" /> رفع {analyses.length > 0 ? 'جديد' : 'كشف درجات'}
+        </button>
       </div>
+
+      {tabs.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-8 text-center">
+          <div className="w-14 h-14 rounded-[var(--r-full)] bg-[var(--s2)] flex items-center justify-center text-[32px] text-[var(--t3)] mb-3">
+            <i className="ti ti-chart-dots-off" />
+          </div>
+          <p className="text-[length:var(--fs-sm)] text-[var(--t2)]">ارفع أول كشف درجات لبدء التحليل</p>
+        </div>
+      )}
+
+      {activeTab?.kind === 'compare' && (
+        <div id="analysis-print-target" className="print-card bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
+          <ComparisonChart subject={activeTab.subject} series={buildComparisonSeries(analyses, activeTab.subject)} />
+        </div>
+      )}
+
+      {activeTab?.kind === 'analysis' && (
+        <AnalysisTabBody
+          analysis={activeTab.analysis}
+          bands={gradeBands}
+          onConvertClick={() => setConvertOpen(true)}
+        />
+      )}
 
       <BottomSheet isOpen={uploadOpen} onClose={() => setUploadOpen(false)}>
         <UploadAnalysisSheet
           onClose={() => setUploadOpen(false)}
           bands={gradeBands}
           saveAnalysis={saveAnalysis}
-          onSaved={(row) => { setUploadOpen(false); setActiveTabId(row.id); if (!isOpen) onToggle(); }}
+          onSaved={(row) => { setUploadOpen(false); setActiveTabId(row.id); }}
           onToast={onToast ?? noToast}
         />
       </BottomSheet>
@@ -178,7 +183,7 @@ export default function AnalysisSectionCard({
           onClose={() => setConvertOpen(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -187,6 +192,10 @@ interface AnalysisTabBodyProps {
   bands: GradeBand[];
   onConvertClick: () => void;
 }
+
+const STAT_NUM = 'text-[length:var(--fs-lg)] font-bold text-[var(--t1)]';
+const STAT_LABEL = 'text-[length:var(--fs-xs)] text-[var(--t3)] mt-1';
+const BLOCK_TITLE = 'text-[length:var(--fs-xs)] font-bold text-[var(--t3)]';
 
 function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyProps) {
   const weakBand = bands[bands.length - 1];
@@ -199,72 +208,66 @@ function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyPro
   return (
     <div id="analysis-print-target" className="print-card space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-[12px] text-[var(--text4)]">{dateLabel}</div>
+        <div className="text-[length:var(--fs-xs)] text-[var(--t3)]">{dateLabel}</div>
         <div className="flex items-center gap-2 print:hidden">
-          <button
-            onClick={onConvertClick}
-            className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-lg bg-[var(--gold)]/10 border border-[var(--gold)]/25 text-[var(--gold3)] text-[12px] font-bold cursor-pointer hover:bg-[var(--gold)]/15 transition-colors"
-          >
-            <i className="ti ti-photo-share" /> تحويل لشاهد
+          <button type="button" onClick={onConvertClick} className={BTN_SM.replace('self-start ', '')}>
+            <i className="ti ti-photo-share text-[16px]" /> تحويل لشاهد
           </button>
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-lg bg-white/5 border border-[var(--line2)] text-[var(--text2)] text-[12px] font-bold cursor-pointer hover:bg-white/10 transition-colors"
-          >
-            <i className="ti ti-printer" /> طباعة / تصدير
+          <button type="button" onClick={handlePrint} className={BTN_GH_SM}>
+            <i className="ti ti-printer text-[16px]" /> طباعة / تصدير
           </button>
         </div>
       </div>
 
-      <div className="bg-white/3 border border-[var(--line2)] rounded-2xl p-4">
+      <div className="bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 text-center">
           <div>
-            <div className="text-[20px] font-black text-white">{analysis.summary.totalStudents}</div>
-            <div className="text-[10.5px] text-[var(--text4)] mt-0.5">طالب</div>
+            <div className={STAT_NUM}>{analysis.summary.totalStudents}</div>
+            <div className={STAT_LABEL}>طالب</div>
           </div>
           <div>
-            <div className="text-[20px] font-black text-[var(--em8)]">{analysis.summary.average.toFixed(1)}</div>
-            <div className="text-[10.5px] text-[var(--text4)] mt-0.5">المتوسط</div>
+            <div className={STAT_NUM}>{analysis.summary.average.toFixed(1)}</div>
+            <div className={STAT_LABEL}>المتوسط</div>
           </div>
           <div>
-            <div className="text-[20px] font-black text-white">{gap.toFixed(1)}</div>
-            <div className="text-[10.5px] text-[var(--text4)] mt-0.5">مؤشر الفجوة</div>
+            <div className={STAT_NUM}>{gap.toFixed(1)}</div>
+            <div className={STAT_LABEL}>مؤشر الفجوة</div>
           </div>
           <div>
-            <div className="text-[20px] font-black text-white">{analysis.summary.stdDev.toFixed(1)}</div>
-            <div className="text-[10.5px] text-[var(--text4)] mt-0.5">الانحراف المعياري</div>
+            <div className={STAT_NUM}>{analysis.summary.stdDev.toFixed(1)}</div>
+            <div className={STAT_LABEL}>الانحراف المعياري</div>
           </div>
         </div>
         <ResultsBarChart summary={analysis.summary} bands={bands} />
       </div>
 
       {(remedial.nearSuccess.length > 0 || remedial.largerGap.length > 0) && (
-        <div className="bg-white/3 border border-[var(--line2)] rounded-2xl p-4">
-          <div className="text-[11px] font-extrabold text-[var(--text4)] tracking-widest uppercase mb-3">التجميع العلاجي</div>
+        <div className="bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
+          <div className={`${BLOCK_TITLE} mb-3`}>التجميع العلاجي</div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-[var(--gold)]/8 border border-[var(--gold)]/20 rounded-xl p-3 text-center">
-              <div className="text-[20px] font-black text-[var(--gold3)]">{remedial.nearSuccess.length}</div>
-              <div className="text-[11px] text-[var(--text3)] mt-0.5">قريبون من النجاح</div>
+            <div className="bg-[var(--s2)] border border-[var(--warn)]/35 rounded-[var(--r-sm)] p-3 text-center">
+              <div className="text-[length:var(--fs-lg)] font-bold text-[var(--warn)]">{remedial.nearSuccess.length}</div>
+              <div className="text-[length:var(--fs-xs)] text-[var(--t2)] mt-1">قريبون من النجاح</div>
             </div>
-            <div className="bg-red-500/8 border border-red-500/20 rounded-xl p-3 text-center">
-              <div className="text-[20px] font-black text-red-400">{remedial.largerGap.length}</div>
-              <div className="text-[11px] text-[var(--text3)] mt-0.5">فجوة أكبر</div>
+            <div className="bg-[var(--s2)] border border-[var(--danger)]/35 rounded-[var(--r-sm)] p-3 text-center">
+              <div className="text-[length:var(--fs-lg)] font-bold text-[var(--danger)]">{remedial.largerGap.length}</div>
+              <div className="text-[length:var(--fs-xs)] text-[var(--t2)] mt-1">فجوة أكبر</div>
             </div>
           </div>
         </div>
       )}
 
       <div>
-        <div className="text-[11px] font-extrabold text-[var(--text4)] tracking-widest uppercase mb-2.5">الطلاب ({analysis.summary.totalStudents})</div>
-        <div className="rounded-2xl border border-[var(--line2)] overflow-hidden">
-          <div className="max-h-64 overflow-y-auto divide-y divide-[var(--line)]">
+        <div className={`${BLOCK_TITLE} mb-2`}>الطلاب ({analysis.summary.totalStudents})</div>
+        <div className="rounded-[var(--r-md)] border border-[var(--bd)] overflow-hidden">
+          <div className="max-h-64 overflow-y-auto divide-y divide-[var(--bd)]">
             {analysis.summary.students.map((s, i) => {
               const band = bands.find(b => b.id === s.bandId);
               return (
-                <div key={i} className="flex items-center justify-between gap-3 py-2.5 px-3.5 text-[12.5px]">
-                  <span className="text-white font-semibold truncate">{s.name}{s.section ? ` · ${s.section}` : ''}</span>
+                <div key={i} className="flex items-center justify-between gap-3 py-2.5 px-3.5 text-[length:var(--fs-sm)]">
+                  <span className="text-[var(--t1)] truncate">{s.name}{s.section ? ` · ${s.section}` : ''}</span>
                   <div className="flex items-center gap-2 shrink-0">
-                    {s.inDangerZone && <i className="ti ti-alert-triangle text-[13px] text-[var(--gold3)]" title="ضمن منطقة الخطر" />}
+                    {s.inDangerZone && <i className="ti ti-alert-triangle text-[16px] text-[var(--warn)]" title="ضمن منطقة الخطر" />}
                     <span className="font-bold" style={{ color: band?.color }}>{s.score}</span>
                   </div>
                 </div>

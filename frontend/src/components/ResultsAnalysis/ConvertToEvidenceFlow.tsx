@@ -31,7 +31,7 @@ interface ConvertToEvidenceFlowProps {
 export default function ConvertToEvidenceFlow({ analysis, bands, sections, userId, supabaseEv, onEvidenceSaved, onToast, onClose }: ConvertToEvidenceFlowProps) {
   const [includeNames, setIncludeNames] = useState(false);
   const [sectionId, setSectionId] = useState('');
-  const [sub, setSub] = useState('');
+  const [indicatorId, setIndicatorId] = useState('');
   const [converting, setConverting] = useState(false);
   const [prefill, setPrefill] = useState<{ title: string; fileUrl: string; fileName: string } | null>(null);
   const captureRef = useRef<HTMLDivElement>(null);
@@ -43,8 +43,10 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
   // الآن، فلا مؤشرات فرعية عادية متبقية فيهما لتحويل الرسم إليها.
   const nonStratSections = sections.filter(s => !s.isStrat && !s.isResultsSection);
   const chosenSection = nonStratSections.find(s => s.id === Number(sectionId));
-  const subOptions = chosenSection ? chosenSection.subs : [];
-  const effectiveSub = sub || subOptions[0] || 'عام';
+  // البند مؤشر بمعرّفه، يُمرَّر للنموذج مختاراً. بلا اختيار صريح لا يُختار
+  // شيء نيابةً عن المعلم، فيفتح النموذج على «اختر المؤشر».
+  const indicatorOptions = chosenSection ? chosenSection.indicators : [];
+  const chosenIndicator = indicatorOptions.find(ind => ind.id === indicatorId);
 
   const handleConvert = async () => {
     if (converting) return;
@@ -80,7 +82,8 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
         isOpen
         onClose={onClose}
         sectionId={Number(sectionId)}
-        sub={effectiveSub}
+        sub={chosenIndicator?.name_ar ?? ''}
+        indicatorId={chosenIndicator?.id}
         userId={userId}
         supabaseEv={supabaseEv}
         onEvidenceSaved={onEvidenceSaved}
@@ -122,21 +125,21 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-[11.5px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5">القسم <span className="text-red-400">*</span></div>
+              <div className="text-[11.5px] font-extrabold text-[var(--text4)] mb-1.5">القسم <span className="text-red-400">*</span></div>
               <SelectDropdown
                 options={nonStratSections.map(s => ({ value: String(s.id), label: s.ttl }))}
                 value={sectionId}
-                onChange={v => { setSectionId(v); setSub(''); }}
+                onChange={v => { setSectionId(v); setIndicatorId(''); }}
                 placeholder="اختر القسم"
                 triggerClassName="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-xl text-[13px] text-white cursor-pointer"
               />
             </div>
             <div>
-              <div className="text-[11.5px] font-extrabold text-[var(--text4)] tracking-wide uppercase mb-1.5">البند الفرعي</div>
+              <div className="text-[11.5px] font-extrabold text-[var(--text4)] mb-1.5">البند الفرعي</div>
               <SelectDropdown
-                options={subOptions.map(s => ({ value: s, label: s }))}
-                value={effectiveSub}
-                onChange={setSub}
+                options={indicatorOptions.map(ind => ({ value: ind.id, label: ind.name_ar }))}
+                value={indicatorId}
+                onChange={setIndicatorId}
                 placeholder="اختر البند"
                 triggerClassName="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-xl text-[13px] text-white cursor-pointer disabled:opacity-40"
               />

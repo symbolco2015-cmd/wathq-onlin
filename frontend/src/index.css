@@ -68,8 +68,6 @@ body{
 @keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
-@keyframes slideR{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
-@keyframes slideL{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
 @keyframes float{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-10px) rotate(2deg)}}
 @keyframes floatR{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(1.08)}}
@@ -79,36 +77,19 @@ body{
 @keyframes splashBar{0%{right:-40%}100%{right:100%}}
 @keyframes splashFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes skShimmer{0%{background-position:120% 0}100%{background-position:-120% 0}}
-@keyframes goldShimmer{
-  0%{background-position:200% center}
-  100%{background-position:-200% center}
-}
-@keyframes borderGlow{
-  0%,100%{box-shadow:0 0 0 1px rgba(201,162,39,.2),0 0 20px rgba(201,162,39,.0)}
-  50%{box-shadow:0 0 0 1px rgba(201,162,39,.6),0 0 30px rgba(201,162,39,.15)}
-}
 @keyframes ripple{0%{transform:scale(0);opacity:.4}100%{transform:scale(4);opacity:0}}
 @keyframes orbMove{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(80px,-60px) scale(1.1)}66%{transform:translate(-40px,50px) scale(.9)}}
 @keyframes orbMove2{0%,100%{transform:translate(0,0)}50%{transform:translate(-70px,40px)}}
 @keyframes navIn{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}
-@keyframes countUp{from{opacity:0;transform:scale(.5) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
-@keyframes particleFly{
-  0%{transform:translateY(0) translateX(0) scale(1);opacity:1}
-  100%{transform:translateY(-80px) translateX(var(--px,20px)) scale(0);opacity:0}
-}
 @keyframes scanLine{
   0%{transform:translateY(-100%)}
   100%{transform:translateY(100vh)}
 }
-@keyframes typeWriter{from{width:0}to{width:100%}}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 @keyframes gradientFlow{
   0%{background-position:0% 50%}
   50%{background-position:100% 50%}
   100%{background-position:0% 50%}
 }
-@keyframes waveIn{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0% 0 0)}}
-@keyframes dropIn{from{opacity:0;transform:translateY(-15px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes sweepBlade{
   0%   { transform: translateX(-60vw) skewX(-14deg); opacity: 0; }
   12%  { opacity: .85; }

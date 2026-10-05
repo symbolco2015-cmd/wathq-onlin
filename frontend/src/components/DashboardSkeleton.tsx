@@ -80,7 +80,7 @@ export default function DashboardSkeleton() {
       </div>
 
       {/* سطح المكتب: عمود صفوف مع عمود الملخص (الشهر، ثم الزر، ثم التراكمية) */}
-      <div className="hidden lg:grid grid-cols-[minmax(0,1fr)_300px] gap-[22px] items-start px-[26px] pt-[22px] pb-10">
+      <div className="hidden lg:grid grid-cols-[minmax(0,1fr)_300px] gap-8 items-start px-8 pt-9 pb-10">
         <div className="flex flex-col gap-3 min-w-0">
           <Row /><Row /><Row /><Row /><Row />
         </div>

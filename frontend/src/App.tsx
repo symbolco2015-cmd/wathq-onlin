@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import type { PageType, SectionData, UserProfile } from './types';
+import type { PageType } from './types';
 import { useAppStore } from './hooks/useAppStore';
 import { useAdminStore } from './hooks/useAdminStore';
 import { usePublicProfile } from './hooks/usePublicProfile';
@@ -72,7 +72,6 @@ export default function App() {
     announcements,
     markNotificationsSeen,
     academicDates,
-    updateYearStartMonth,
     shareEnabled,
     updateShareEnabled,
     setAiSuggestConsent,
@@ -485,7 +484,6 @@ export default function App() {
     const Body = () => {
       const [localMode, setLocalMode] = useState(mode);
       const [localSelectedId, setLocalSelectedId] = useState('');
-      const [localNewName, setLocalNewName] = useState('');
 
       const inputCls = 'w-full py-3.5 px-4 bg-white/5 border-[1.5px] border-[var(--line2)] rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15)]';
 
@@ -529,7 +527,7 @@ export default function App() {
                 autoFocus
                 className={inputCls}
                 placeholder="مثال: التعلم بالاستقصاء"
-                onChange={e => { newName = e.target.value; setLocalNewName(e.target.value); }}
+                onChange={e => { newName = e.target.value; }}
               />
             </div>
           )}
@@ -1110,7 +1108,7 @@ export default function App() {
       <Background />
       {/* Hide the navigation bar on the login page — only show it after the user signs in */}
       {user && currentPage !== 'auth' && (
-        <Nav currentPage={currentPage} setPage={setCurrentPage} onToast={showToast} profile={state.profile} onOpenProfileSettings={openProfileSettings} isAdmin={isAdmin} isLoggedIn={!!user} />
+        <Nav currentPage={currentPage} setPage={setCurrentPage} profile={state.profile} onOpenProfileSettings={openProfileSettings} isAdmin={isAdmin} isLoggedIn={!!user} />
       )}
 
       <main className="lg:pb-0 pb-[80px]">

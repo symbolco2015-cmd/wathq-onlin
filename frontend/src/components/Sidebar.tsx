@@ -34,6 +34,9 @@ interface SidebarProps {
   activeKey: string | null;
 }
 
+// نقطة الحالة — .navs .dt في النموذج: «لم يبدأ» بـ --idle، لا بلون نص الشارة --t3
+const DOT_COLOR: Record<Level, string> = { ...LEVEL_COLOR, n: 'var(--idle)' };
+
 const NAV_BTN = 'w-full h-9 px-2 flex items-center gap-2 rounded-[var(--r-sm)] text-right text-[length:var(--fs-sm)] transition-colors duration-150 cursor-pointer';
 
 function navClass(active: boolean) {
@@ -58,7 +61,7 @@ export default function Sidebar({ monthCard, cumulativeCard, onAddEvidence, core
               <button key={s.id} type="button" onClick={() => onOpenCore(s.id)} aria-current={active ? 'page' : undefined} className={navClass(active)}>
                 <i className={`ti ${s.icon} text-[16px] text-[var(--t2)] shrink-0`} />
                 <span className="flex-1 min-w-0 truncate">{s.ttl}</span>
-                <span className="w-2 h-2 rounded-[var(--r-full)] shrink-0" style={{ backgroundColor: LEVEL_COLOR[s.level] }} />
+                <span className="w-2 h-2 rounded-[var(--r-full)] shrink-0" style={{ backgroundColor: DOT_COLOR[s.level] }} />
               </button>
             );
           })}

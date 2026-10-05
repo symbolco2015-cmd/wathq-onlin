@@ -683,8 +683,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   }, [allEvidence, sections]);
   const getSectionStat = (sectionId: number) => evStats.bySections.find(s => s.sectionId === sectionId);
 
-  // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب/الترتيب/
-  // التلوين — له بطاقة مخصّصة مثبّتة دائماً في آخر قائمة الأقسام (انظر أسفل).
+  // قسم "التنويع في استراتيجيات التدريس" مُستبعد من صفوف الأقسام ونسبها —
+  // له بطاقة في شبكة الأقسام الخاصة (SpecGrid).
   // نفس الاستبعاد يشمل الآن بندي 5 و10 (isResultsSection) — محتواهما بالكامل
   // واجهة أداة تحليل النتائج، لا مؤشرات فرعية عادية تُحتسب ضمن هذا النظام.
   const stratSection = sections.find(s => s.isStrat) ?? null;
@@ -860,18 +860,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     : openScreen?.kind === 'indiv' && stratSection && indivDiffIndicator ? 'indiv'
     : null;
 
-  // صفوف الرئيسية مرتبة: الأقل اكتمالاً أولاً (قسم الاستراتيجيات مستبعد — له بطاقته في الشبكة).
-  // عند تساوي نسبة الشهر الحالي (شائع بسبب سقف 100% عند 3+ أدلة)، يُرجَّح
-  // القسم الأقل عدد أدلة هذا الشهر — فهو الأحوج فعلياً للعمل رغم تساوي النسبة
-  const sortedSections = [...nonStratSections].sort((a, b) => {
-    const pctDiff = getMonthlyPct(a.id) - getMonthlyPct(b.id);
-    if (pctDiff !== 0) return pctDiff;
-    const countA = monthlyProgress?.getSectionMonthCount(a.id) ?? 0;
-    const countB = monthlyProgress?.getSectionMonthCount(b.id) ?? 0;
-    return countA - countB;
-  });
-
-  // stats (calculateEvaluation) حُذفت 14 سبتمبر 2026 — راجع utils.ts للتفاصيل.
   // إجمالي الأدلة من Supabase مباشرة — يتزامن بعد كل حذف أو إضافة
   const totalEvs = supabaseEv
     ? sections.reduce((sum, s) => sum + supabaseEv.getBySection(s.id).length, 0)
@@ -1186,10 +1174,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
         {/* SECTIONS */}
         <div id="sections-list" className="flex flex-col gap-2 sm:gap-3.5 pb-[100px] lg:pb-0 scroll-mt-24">
-          {sortedSections.map((sec, i) => {
+          {/* بترتيب sections الثابت، كتنقل عمود الملخص */}
+          {nonStratSections.map((sec, i) => {
             // كل أدلة القسم (section_id) بما فيها ما ليس له مؤشر
             const secTotalEvs = supabaseEv?.getBySection(sec.id).length ?? 0;
-            // completionPct: نشاط الشهر الحالي (يتحكم بالترتيب وتلوين الحدود — لا تغيير)
+            // completionPct: نشاط الشهر الحالي (يتحكم بتلوين الحدود)
             const secStat = getSectionStat(sec.id);
             const completionPct = getMonthlyPct(sec.id);
             const filledSubs = secStat?.filledSubs ?? 0;
@@ -1201,7 +1190,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             const monthlyDepth = monthlyProgress && filledSubs > 0
               ? monthlyProgress.getSectionMonthCount(sec.id) / filledSubs
               : 0;
-            // منطق "الشارة الذهبية": بلوغ 3 أدلة هذا الشهر (الحد الأدنى) = احتفال بصري، لا يؤثر على completionPct/الترتيب/borderColor
+            // منطق "الشارة الذهبية": بلوغ 3 أدلة هذا الشهر (الحد الأدنى) = احتفال بصري، لا يؤثر على completionPct/borderColor
             const monthCount = monthlyProgress?.getSectionMonthCount(sec.id) ?? 0;
             const isGoldAchieved = monthCount >= 3;
             const overflowCount = monthCount - 3;
@@ -1223,7 +1212,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                    <div className="flex-1 min-w-0">
                      <div className="flex items-center gap-1.5 flex-wrap">
                        <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{sec.ttl}</div>
-                       {/* شارة "أساسي مُحقَّق" — تظهر عند بلوغ 3 أدلة هذا الشهر (الحد الأدنى)، احتفال بصري بدل توقف صامت، لا تؤثر على الترتيب/التلوين */}
+                       {/* شارة "أساسي مُحقَّق" — تظهر عند بلوغ 3 أدلة هذا الشهر (الحد الأدنى)، احتفال بصري بدل توقف صامت، لا تؤثر على التلوين */}
                        {isGoldAchieved && (
                          <span
                            className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black text-[var(--gold3)] bg-[var(--gold)]/12 border border-[var(--gold)]/35 py-0.5 px-1.5 rounded-md leading-none"
@@ -1250,7 +1239,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                          </span>
                        </div>
                      )}
-                     {/* شريط التقدم — نشاط الشهر الحالي (الترتيب والتلوين يعتمدان عليه، بلا أي تغيير) */}
+                     {/* شريط التقدم — نشاط الشهر الحالي (التلوين يعتمد عليه) */}
                      <div className="mt-2.5 flex items-center gap-2">
                        <div className="flex-1 h-[5px] rounded-full bg-white/8 overflow-hidden">
                          <div
@@ -1271,7 +1260,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                          />
                        </div>
                      </div>
-                     {/* تسمية الشهر الحالي + شريط التراكم الحقيقي — معلومة إضافية فقط، لا تؤثر على الترتيب/التلوين أعلاه */}
+                     {/* تسمية الشهر الحالي + شريط التراكم الحقيقي — معلومة إضافية فقط، لا تؤثر على التلوين أعلاه */}
                      <div className="flex items-center justify-between mt-1 gap-2">
                        <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold shrink-0">نشاط هذا الشهر</span>
                        <div className="flex items-center gap-1.5 min-w-0">

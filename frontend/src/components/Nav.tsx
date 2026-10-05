@@ -6,14 +6,13 @@ import { BTN_GH_SM } from './SectionView';
 interface NavProps {
   currentPage: PageType;
   setPage: (page: PageType) => void;
-  onToast: (msg: string, icon?: string) => void;
   profile: UserProfile;
   onOpenProfileSettings: () => void;
   isAdmin?: boolean;
   isLoggedIn?: boolean;
 }
 
-export default function Nav({ currentPage, setPage, onToast, profile, onOpenProfileSettings, isAdmin = false, isLoggedIn = false }: NavProps) {
+export default function Nav({ currentPage, setPage, profile, onOpenProfileSettings, isAdmin = false, isLoggedIn = false }: NavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
   const lastScrollY = useRef(0);

@@ -98,7 +98,7 @@ export function IndivDiffView({ title, evidence, onBack, onAdd, onDeleteEv }: {
   const [menuEvId, setMenuEvId] = useEvMenu();
   const n = evidence.length;
   return (
-    <div className="flex flex-col gap-3 max-w-3xl pb-24 lg:pb-0">
+    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
       <SectionHeader onBack={onBack} icon="ti-users" title={title} evCount={n} />
       <ItemCard
         name={title}
@@ -139,7 +139,7 @@ export function StrategiesView({ icon, title, evCount, yearEvCount, monthName, u
 }) {
   const [menuEvId, setMenuEvId] = useEvMenu();
   return (
-    <div className="flex flex-col gap-3 max-w-3xl pb-24 lg:pb-0">
+    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
       <SectionHeader onBack={onBack} icon={icon} title={title} evCount={evCount} />
 
       {monthName && (
@@ -185,7 +185,7 @@ export function AnalysisView({ icon, title, analysisCount, loading, onBack, chil
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 max-w-3xl pb-24 lg:pb-0">
+    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
       <SectionHeader onBack={onBack} icon={icon} title={title} />
 
       <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
@@ -212,7 +212,7 @@ export function ImprovementView({ icon, title, actionCount, loading, onBack, chi
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 max-w-3xl pb-24 lg:pb-0">
+    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
       <SectionHeader onBack={onBack} icon={icon} title={title} />
 
       <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">

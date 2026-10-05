@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import type { PageType, UserProfile } from '../types';
-import { SHOW_SECTIONS_EVENT } from './Dashboard';
+import { SHOW_SECTIONS_EVENT, OPEN_TOOLS_EVENT } from './Dashboard';
+import { BTN_GH_SM } from './SectionView';
 
 interface NavProps {
   currentPage: PageType;
@@ -87,7 +88,20 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
           })}
         </div>
 
-        <div 
+        <div className="flex items-center gap-2">
+        {/* قائمة «أدوات» — في اللوحة فقط؛ Dashboard تملك حالة فتحها */}
+        {isLoggedIn && currentPage === 'dashboard' && (
+          <button
+            type="button"
+            aria-label="أدوات"
+            onClick={() => window.dispatchEvent(new Event(OPEN_TOOLS_EVENT))}
+            className={`${BTN_GH_SM} hover:text-[var(--t1)]`}
+          >
+            <i className="ti ti-tools text-[20px]" />
+            <span className="hidden md:inline">أدوات</span>
+          </button>
+        )}
+        <div
           className="flex items-center gap-2 sm:gap-3 py-1.5 sm:py-2 px-3 sm:px-4 rounded-xl cursor-pointer border border-transparent transition-all duration-300 hover:bg-[var(--glass2)] hover:border-[var(--line2)]"
           onClick={onOpenProfileSettings}
         >
@@ -106,6 +120,7 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
             <div className="text-[11px] text-[var(--text4)]">{profile.role}</div>
           </div>
           <i className="ti ti-chevron-down text-[14px] text-[var(--text4)] sm:mr-0.5"></i>
+        </div>
         </div>
       </nav>
 

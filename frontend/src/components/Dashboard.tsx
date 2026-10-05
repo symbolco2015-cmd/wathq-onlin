@@ -23,6 +23,7 @@ import { AnalysisSectionBody } from './ResultsAnalysis/AnalysisSectionCard';
 import { ImprovementActionsBody, countImprovementActions } from './ResultsAnalysis/ImprovementActionsCard';
 import { SpecCard, SpecGrid } from './SpecGrid';
 import { useResultsAnalysis } from './ResultsAnalysis/useResultsAnalysis';
+import ToolsSheet, { type ArchiveMonth } from './ToolsSheet';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -31,11 +32,14 @@ const ARCHIVE_MONTHS_AR = [
 
 /** حدث يرسله زر «البنود» في شريط الجوال (Nav): يغلق أي شاشة ويمرّر إلى البطاقات */
 export const SHOW_SECTIONS_EVENT = 'wathq:show-sections';
+/** حدث يرسله زر «أدوات» في الشريط العلوي (Nav): يفتح قائمة الأدوات */
+export const OPEN_TOOLS_EVENT = 'wathq:open-tools';
 
-/** الشاشة المفتوحة فوق الرئيسية — قسم عادي برقمه، أو أحد الأقسام الخاصة */
+/** الشاشة المفتوحة فوق الرئيسية — قسم عادي برقمه، أو أحد الأقسام الخاصة، أو أرشيف شهر سابق */
 type OpenScreen =
   | { kind: 'core'; id: number }
-  | { kind: 'strat' } | { kind: 'indiv' } | { kind: 'analysis' } | { kind: 'improvement' };
+  | { kind: 'strat' } | { kind: 'indiv' } | { kind: 'analysis' } | { kind: 'improvement' }
+  | { kind: 'archive'; month: ArchiveMonth };
 /** history.state لكل مدخل شاشة؛ wathqDepth = عدد الشاشات فوق الرئيسية (1 فأكثر) */
 type ScreenHistoryState = { wathqScreen: OpenScreen; wathqDepth: number };
 
@@ -48,12 +52,23 @@ function readScreenState(s: unknown): ScreenHistoryState | null {
   if (typeof wathqDepth !== 'number' || wathqDepth < 1 || !wathqScreen || typeof wathqScreen !== 'object') return null;
   const scr = wathqScreen as { kind?: unknown; id?: unknown };
   if (scr.kind === 'core' && typeof scr.id === 'number') return { wathqScreen: { kind: 'core', id: scr.id }, wathqDepth };
+  if (scr.kind === 'archive') {
+    // اسم الشهر يُعاد بناؤه من رقمه، لا يُؤخذ من المخزّن
+    const m = (wathqScreen as { month?: { year?: unknown; month?: unknown } }).month;
+    if (m && typeof m.year === 'number' && typeof m.month === 'number' && m.month >= 1 && m.month <= 12) {
+      return { wathqScreen: { kind: 'archive', month: { year: m.year, month: m.month, label: ARCHIVE_MONTHS_AR[m.month - 1] } }, wathqDepth };
+    }
+    return null;
+  }
   const special = SPECIAL_KINDS.find(k => k === scr.kind);
   return special ? { wathqScreen: { kind: special }, wathqDepth } : null;
 }
 
-const sameScreen = (a: OpenScreen, b: OpenScreen) =>
-  a.kind === b.kind && (a.kind !== 'core' || (b.kind === 'core' && a.id === b.id));
+const sameScreen = (a: OpenScreen, b: OpenScreen) => {
+  if (a.kind === 'core') return b.kind === 'core' && a.id === b.id;
+  if (a.kind === 'archive') return b.kind === 'archive' && a.month.year === b.month.year && a.month.month === b.month.month;
+  return a.kind === b.kind;
+};
 
 type SupabaseEvidenceHook =ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -231,23 +246,13 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     }
     return null;
   }, [academicDates]);
-  // ── أرشيف الأشهر السابقة ─────────────────────────────────────────────
-  const archiveBtnRef = useRef<HTMLButtonElement>(null);
-  const [archiveDropdownPos, setArchiveDropdownPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-  const [archiveDropdownOpen, setArchiveDropdownOpen] = useState(false);
+  // الشاشة المفتوحة فوق الرئيسية (انظر pushScreen بالأسفل) — معرّفة هنا لأن
+  // الأرشيف أحد أنواعها، واشتقاقاته التالية تحتاجه
+  const [openScreen, setOpenScreen] = useState<OpenScreen | null>(null);
 
-  useLayoutEffect(() => {
-    if (!archiveDropdownOpen || !archiveBtnRef.current) return;
-    const update = () => {
-      if (!archiveBtnRef.current) return;
-      const rect = archiveBtnRef.current.getBoundingClientRect();
-      setArchiveDropdownPos({ top: rect.bottom + 8, left: rect.left });
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, [archiveDropdownOpen]);
-  const [archiveMonth, setArchiveMonth] = useState<{ year: number; month: number; label: string } | null>(null);
+  // ── أرشيف الأشهر السابقة ─────────────────────────────────────────────
+  // شاشة في تاريخ المتصفح: تُفتح بـ pushScreen من قائمة «أدوات»، وتُغلق بالرجوع
+  const archiveMonth = openScreen?.kind === 'archive' ? openScreen.month : null;
   const [archiveAddTarget, setArchiveAddTarget] = useState<{ open: boolean; sectionId: number; sub: string }>({
     open: false, sectionId: 0, sub: '',
   });
@@ -264,7 +269,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // حقل date النصي في ev القديم غير القابل للفرز بثقة.
   const archiveMonths = useMemo(() => {
     if (!supabaseEv || !monthlyProgress) return [];
-    const seen = new Map<string, { year: number; month: number; label: string }>();
+    const seen = new Map<string, ArchiveMonth>();
     for (const e of supabaseEv.evidence) {
       const d = new Date(e.created_at);
       const year = d.getFullYear();
@@ -373,6 +378,19 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     return () => { cancelled = true; };
   }, []);
 
+  // بوابة ميزة "الاستيراد الجماعي" — تتحكم بظهور عنصره في قائمة «أدوات» (الزر العائم لا يتأثر)
+  const [bulkImportEnabled, setBulkImportEnabled] = useState(false);
+  useEffect(() => {
+    if (!supabase) { setBulkImportEnabled(false); return; }
+    let cancelled = false;
+    supabase.rpc('is_feature_enabled', { p_feature: 'bulk_import' }).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) { console.warn('[Dashboard] تعذّر التحقق من صلاحية ميزة الاستيراد الجماعي:', error.message); setBulkImportEnabled(false); return; }
+      setBulkImportEnabled(!!data);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   // عدد ملفات الاستيراد الجماعي الجاهزة للمراجعة (status='classified' أو 'failed'
   // — الفاشل يُصنَّف يدوياً في شاشة المراجعة نفسها، فبدونه لا يصل معلم كل صوره
   // فاشلة إلى المراجعة أبداً) — يُجلب
@@ -428,6 +446,21 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   useEffect(() => {
     refetchSummaryStatus();
   }, [refetchSummaryStatus]);
+
+  // قائمة «أدوات» — تُفتح بحدث من زر الشريط العلوي (OPEN_TOOLS_EVENT)
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const closeTools = useCallback(() => setToolsOpen(false), []);
+  useEffect(() => {
+    const onOpenTools = () => setToolsOpen(true);
+    window.addEventListener(OPEN_TOOLS_EVENT, onOpenTools);
+    return () => window.removeEventListener(OPEN_TOOLS_EVENT, onOpenTools);
+  }, []);
+  // كل فتح يعيد قراءة share_enabled وحالة الملخص، فيتحدث النص بعد تغيير المشاركة من الإعدادات
+  useEffect(() => {
+    if (toolsOpen) refetchSummaryStatus();
+  }, [toolsOpen, refetchSummaryStatus]);
+  // أي تغيّر في الشاشة (بما فيه رجوع المتصفح) يغلق القائمة
+  useEffect(() => { setToolsOpen(false); }, [openScreen]);
 
   const SUMMARY_COOLDOWN_DAYS = 7;
   const summaryDaysSince = summaryStatus?.generatedAt
@@ -683,8 +716,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // الخروج من التطبيق. الحالة لا تُقرأ من الرابط، فالتحديث (F5) يعيد اللوحة.
   // كل فتح من شاشة مفتوحة يضيف مدخلاً (wathqDepth يزيد)، فزر المتصفح يرجع
   // خطوة، وزر «البنود» يرجع إلى الرئيسية مباشرة بـ go(-depth).
-  // كل الأنواع لها شاشة: core (3.5ب)، strat وindiv (3.5ج)، analysis (3.5د)، improvement (3.5هـ).
-  const [openScreen, setOpenScreen] = useState<OpenScreen | null>(null);
+  // كل الأنواع لها شاشة: core (3.5ب)، strat وindiv (3.5ج)، analysis (3.5د)، improvement (3.5هـ)، archive (4.2).
+  // حالة openScreen نفسها معرّفة أعلى المكوّن (قبل اشتقاقات الأرشيف).
   const sectionReturnScrollY = useRef(0);
   // بطاقة يُمرَّر إليها بعد الرجوع إلى الرئيسية (الشريط الجانبي وزر «البنود» في الجوال)
   const pendingScrollId = useRef<number | null>(null);
@@ -737,9 +770,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     requestAnimationFrame(() => document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' }));
   };
   // الشريط الجانبي: كل قسم يفتح شاشته (العادي والاستراتيجيات و10 و5)، والتمرير
-  // احتياط لمعرّف غير متوقّع. عرض الأرشيف يُغلق أولاً، فلا شاشة ولا بطاقات فيه.
+  // احتياط لمعرّف غير متوقّع. من الأرشيف تُفتح الشاشة فوقه كأي شاشة أخرى.
   const handleSidebarSection = (id: number) => {
-    setArchiveMonth(null);
     if (nonStratSections.some(s => s.id === id)) openSection(id);
     else if (stratSection && id === stratSection.id) pushScreen({ kind: 'strat' });
     else if (analysisSection && id === analysisSection.id) pushScreen({ kind: 'analysis' });
@@ -752,10 +784,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const goHomeAndScrollRef = useRef(goHomeAndScroll);
   goHomeAndScrollRef.current = goHomeAndScroll;
   useEffect(() => {
-    const onShowSections = () => {
-      setArchiveMonth(null);
-      goHomeAndScrollRef.current(1);
-    };
+    // الأرشيف شاشة، فيُغلق مع غيره عبر closeToHome
+    const onShowSections = () => goHomeAndScrollRef.current(1);
     window.addEventListener(SHOW_SECTIONS_EVENT, onShowSections);
     return () => window.removeEventListener(SHOW_SECTIONS_EVENT, onShowSections);
   }, []);
@@ -807,7 +837,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     <div style={{ animation: 'fadeUp .4s var(--sp) both' }}>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <button
-          onClick={() => setArchiveMonth(null)}
+          onClick={closeSection}
           className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl border border-[var(--line2)] bg-white/5 text-[13px] font-bold text-[var(--text3)] hover:text-white hover:bg-white/10 transition-all duration-200 cursor-pointer font-[var(--font)]"
         >
           <i className="ti ti-arrow-right" /> العودة للوحة الرئيسية
@@ -817,6 +847,22 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           أرشيف {archiveMonth.label} {archiveMonth.year}
         </div>
       </div>
+
+      {/* المعدل الشهري — منقول من الرئيسية (4.2)، بنفس مصدر monthlyProgress */}
+      {monthlyProgress && (
+        <div className="mb-4 p-4 rounded-[var(--r-md)] border border-[var(--bd)] bg-[var(--s1)]">
+          <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mb-2">المعدل الشهري</div>
+          <div className="flex items-end gap-2 mb-2">
+            <div className="text-[length:var(--fs-xl)] font-bold text-[var(--t1)] leading-none">{monthlyProgress.monthlyAvg}</div>
+            <div className="text-[length:var(--fs-sm)] text-[var(--t3)]">شاهد / شهر</div>
+          </div>
+          <div className="text-[length:var(--fs-xs)] text-[var(--t3)]">
+            إجمالي <span className="font-bold text-[var(--t1)]">{monthlyProgress.yearTotal}</span> شاهد
+            خلال <span className="font-bold text-[var(--t1)]">{monthlyProgress.monthsElapsed}</span>{' '}
+            {monthlyProgress.monthsElapsed === 1 ? 'شهر' : 'أشهر'} من بداية السنة
+          </div>
+        </div>
+      )}
 
       {isArchiveEditable ? (
         <div className="mb-5 rounded-[18px] p-4 sm:p-5 border border-[var(--gold)]/25 bg-[var(--gold)]/8 flex items-center gap-3">
@@ -1088,76 +1134,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           </div>
         )}
 
-        {/* بانر: ملخص الملف العام بالذكاء الاصطناعي — مستقل تماماً عن البانرات
-            أعلاه (مصدر البيانات: عمودا ai_summary_stale/ai_summary_generated_at
-            على portfolios، وليس evidence أو bulk_import_queue). يظهر دائماً طالما
-            summaryStatus محمَّل — حتى لمن لم يفعّل المشاركة العامة بعد، مع
-            summaryHelperText يوجّهه لتفعيلها أولاً، بدل إخفاء الميزة كلياً. */}
-        {summaryStatus && (
-          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--em7)]/25 bg-gradient-to-br from-[var(--em7)]/10 via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
-            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--em7)]/40 to-transparent" />
-            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--em7)]/10 border border-[var(--em7)]/20 flex items-center justify-center text-[22px] text-[var(--em8)]">
-                  <i className="ti ti-sparkles" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] font-bold text-[var(--em8)]/80 tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
-                    <i className="ti ti-file-text text-[12px]" /> ملخص الملف العام
-                  </div>
-                  <div className="text-[15px] font-extrabold text-white leading-snug">
-                    ملخص وأبرز إنجاز بالذكاء الاصطناعي لصفحة المشاركة
-                  </div>
-                  {summaryHelperText && (
-                    <div className="text-[12.5px] text-[var(--text3)] mt-1">{summaryHelperText}</div>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={handleRefreshSummary}
-                disabled={summaryButtonDisabled}
-                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--em6)] to-[var(--em8)] text-white border border-[var(--em7)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(42,122,68,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
-              >
-                {summaryRefreshBusy ? (
-                  <><i className="ti ti-loader animate-spin text-[15px]" /> جارٍ التحديث...</>
-                ) : (
-                  <><i className="ti ti-refresh text-[15px]" /> تحديث الملخص الآن</>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* بانر: تقرير حصاد فصلي — مستقل تماماً عن بانر ملخص الملف أعلاه (مصدر
-            البيانات: evidence/monthly_progress ضمن مدى زمني مختار، لقطة ثابتة
-            وليست حية) */}
-        {userId && (
-          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold)]/10 via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
-            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
-            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[22px] text-[var(--gold3)]">
-                  <i className="ti ti-chart-bar-popular" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] font-bold text-[var(--gold3)] tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
-                    <i className="ti ti-file-report text-[12px]" /> تقرير حصاد فصلي
-                  </div>
-                  <div className="text-[15px] font-extrabold text-white leading-snug">
-                    رابط ثابت يعرض شواهد فصل دراسي محدد فقط — لا يتأثر بأي تعديل لاحق
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsHarvestReportOpen(true)}
-                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
-              >
-                <i className="ti ti-file-report text-[15px]" /> توليد تقرير
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* NEXT STEP CARD */}
         {nextSectionData && (
           <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-amber-500/25 bg-gradient-to-br from-amber-950/40 via-amber-900/20 to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .55s var(--sp) both 0.05s' }}>
@@ -1194,47 +1170,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           </div>
         )}
 
-        {/* أرشيف الأشهر السابقة — زر + قائمة منسدلة عبر portal */}
-        {supabaseEv && monthlyProgress && archiveMonths.length > 0 && (
-          <div className="relative mb-3 flex justify-end" style={{ animation: 'fadeUp .4s var(--sp) both 0.06s' }}>
-            <button
-              ref={archiveBtnRef}
-              onClick={() => setArchiveDropdownOpen(prev => !prev)}
-              className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl border border-[var(--line2)] bg-white/5 text-[12.5px] font-bold text-[var(--text2)] hover:bg-white/10 hover:border-[var(--em7)]/30 transition-all duration-200 cursor-pointer font-[var(--font)]"
-            >
-              <i className="ti ti-archive text-[15px] text-[var(--em7)]" /> أرشيف الأشهر السابقة
-              <i className={`ti ti-chevron-down text-[13px] transition-transform duration-250 ${archiveDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {archiveDropdownOpen && createPortal(
-              <>
-                <div className="fixed inset-0 z-[60]" onClick={() => setArchiveDropdownOpen(false)} />
-                <div
-                  className="fixed z-[200] w-56 max-h-72 overflow-y-auto rounded-2xl border border-[var(--line2)] bg-[var(--surf2)] shadow-[0_20px_50px_rgba(0,0,0,.5)] p-2"
-                  style={{
-                    top: archiveDropdownPos.top,
-                    left: archiveDropdownPos.left,
-                    animation: 'scaleIn .2s var(--sp) both',
-                  }}
-                >
-                  {archiveMonths.map(m => (
-                    <button
-                      key={`${m.year}-${m.month}`}
-                      onClick={() => { setArchiveMonth(m); setArchiveDropdownOpen(false); }}
-                      className="w-full text-right py-2.5 px-3 rounded-xl text-[13px] font-bold text-[var(--text2)] hover:bg-[var(--em7)]/10 hover:text-[var(--em8)] transition-all duration-150 cursor-pointer font-[var(--font)]"
-                    >
-                      {m.label} {m.year}
-                    </button>
-                  ))}
-                </div>
-              </>,
-              document.body
-            )}
-          </div>
-        )}
-
         {/* MONTHLY PROGRESS CARDS */}
         {monthlyProgress && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5" style={{ animation: 'fadeUp .5s var(--sp) both 0.08s' }}>
+          <div className="grid grid-cols-1 gap-4 mb-5" style={{ animation: 'fadeUp .5s var(--sp) both 0.08s' }}>
 
             {/* البطاقة 1 — عداد الشهر الحالي */}
             {(() => {
@@ -1274,23 +1212,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                 </div>
               );
             })()}
-
-            {/* البطاقة 2 — المعدل الشهري */}
-            <div className="rounded-[22px] p-5 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] relative overflow-hidden">
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_100%_0%,rgba(201,162,39,.04),transparent_70%)]" />
-              <div className="relative z-10">
-                <div className="text-[10.5px] font-extrabold text-[var(--text4)] tracking-widest uppercase mb-3">المعدل الشهري</div>
-                <div className="flex items-end gap-2 mb-3">
-                  <div className="text-[38px] font-black text-white leading-none font-[var(--font)]">{monthlyProgress.monthlyAvg}</div>
-                  <div className="text-[14px] font-bold text-[var(--text3)] mb-1">شاهد / شهر</div>
-                </div>
-                <div className="text-[12px] text-[var(--text4)] leading-relaxed">
-                  إجمالي <span className="text-white font-bold">{monthlyProgress.yearTotal}</span> شاهد
-                  خلال <span className="text-white font-bold">{monthlyProgress.monthsElapsed}</span>{' '}
-                  {monthlyProgress.monthsElapsed === 1 ? 'شهر' : 'أشهر'} من بداية السنة
-                </div>
-              </div>
-            </div>
+            {/* بطاقة المعدل الشهري انتقلت إلى أعلى عرض الأرشيف (4.2) */}
           </div>
         )}
 
@@ -2060,6 +1982,21 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         sections={sections}
         academicDates={academicDates}
         onToast={onToast}
+      />
+
+      {/* قائمة «أدوات» — تُفتح من زر الشريط العلوي (OPEN_TOOLS_EVENT) */}
+      <ToolsSheet
+        isOpen={toolsOpen}
+        onClose={closeTools}
+        summaryHelperText={summaryHelperText}
+        summaryButtonDisabled={summaryButtonDisabled}
+        summaryRefreshBusy={summaryRefreshBusy}
+        onRefreshSummary={handleRefreshSummary}
+        onOpenHarvest={() => { setToolsOpen(false); setIsHarvestReportOpen(true); }}
+        onOpenAnalysis={analysisSection ? () => { setToolsOpen(false); pushScreen({ kind: 'analysis' }); } : undefined}
+        onOpenBulkImport={bulkImportEnabled ? () => { setToolsOpen(false); setIsBulkImportOpen(true); } : undefined}
+        archiveMonths={archiveMonths}
+        onPickArchiveMonth={m => { setToolsOpen(false); pushScreen({ kind: 'archive', month: m }); }}
       />
 
       {/* Bottom Sheet — إضافة شاهد (الخطوة الثانية) — جوال فقط */}

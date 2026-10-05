@@ -1113,7 +1113,7 @@ export default function App() {
         <Nav currentPage={currentPage} setPage={setCurrentPage} onToast={showToast} profile={state.profile} onOpenProfileSettings={openProfileSettings} isAdmin={isAdmin} isLoggedIn={!!user} />
       )}
 
-      <main className="md:pb-0 pb-[80px]">
+      <main className="lg:pb-0 pb-[80px]">
         {currentPage === 'auth' && (
           <Auth
             onLoginSuccess={() => setCurrentPage('dashboard')}

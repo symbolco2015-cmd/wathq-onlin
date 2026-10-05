@@ -780,8 +780,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // كل الأنواع لها شاشة: core (3.5ب)، strat وindiv (3.5ج)، analysis (3.5د)، improvement (3.5هـ)، archive (4.2).
   // حالة openScreen نفسها معرّفة أعلى المكوّن (قبل اشتقاقات الأرشيف).
   const sectionReturnScrollY = useRef(0);
-  // بطاقة يُمرَّر إليها بعد الرجوع إلى الرئيسية (الشريط الجانبي وزر «البنود» في الجوال)
-  const pendingScrollId = useRef<number | null>(null);
+  // تمرير إلى بداية قائمة الأقسام بعد الرجوع إلى الرئيسية (زر «البنود»)
+  const pendingScrollToList = useRef(false);
 
   useEffect(() => {
     // بعد F5 والشاشة مفتوحة يبقى المدخل المضاف في السجل؛ تفريغه يمنع ضغطة
@@ -793,11 +793,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       setOpenScreen(screen);
       // الرجوع إلى الرئيسية يستعيد موضع التمرير
       if (!screen) {
-        const target = pendingScrollId.current;
-        pendingScrollId.current = null;
+        const toList = pendingScrollToList.current;
+        pendingScrollToList.current = false;
         const y = sectionReturnScrollY.current;
         requestAnimationFrame(() => {
-          if (target != null) document.getElementById(`sc-${target}`)?.scrollIntoView({ behavior: 'smooth' });
+          if (toList) document.getElementById('sections-list')?.scrollIntoView({ behavior: 'smooth' });
           else window.scrollTo({ top: y, behavior: 'instant' });
         });
       }
@@ -823,12 +823,12 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     if (depth > 0) window.history.go(-depth);
     return depth > 0;
   };
-  /** يغلق أي شاشة مفتوحة ثم يمرّر إلى بطاقة القسم في الرئيسية */
-  const goHomeAndScroll = (id: number) => {
-    pendingScrollId.current = id;
+  /** يغلق أي شاشة مفتوحة ثم يمرّر إلى بداية قائمة الأقسام في الرئيسية */
+  const goHomeAndScroll = () => {
+    pendingScrollToList.current = true;
     if (closeToHome()) return; // التمرير في popstate
-    pendingScrollId.current = null;
-    requestAnimationFrame(() => document.getElementById(`sc-${id}`)?.scrollIntoView({ behavior: 'smooth' }));
+    pendingScrollToList.current = false;
+    requestAnimationFrame(() => document.getElementById('sections-list')?.scrollIntoView({ behavior: 'smooth' }));
   };
   // الشريط الجانبي: كل قسم يفتح شاشته (العادي والاستراتيجيات و10 و5)، والتمرير
   // احتياط لمعرّف غير متوقّع. من الأرشيف تُفتح الشاشة فوقه كأي شاشة أخرى.
@@ -837,7 +837,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     else if (stratSection && id === stratSection.id) pushScreen({ kind: 'strat' });
     else if (analysisSection && id === analysisSection.id) pushScreen({ kind: 'analysis' });
     else if (improvementSection && id === improvementSection.id) pushScreen({ kind: 'improvement' });
-    else goHomeAndScroll(id);
+    else goHomeAndScroll();
   };
   const closeSection = () => { closeToHome(); };
 
@@ -846,7 +846,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   goHomeAndScrollRef.current = goHomeAndScroll;
   useEffect(() => {
     // الأرشيف شاشة، فيُغلق مع غيره عبر closeToHome
-    const onShowSections = () => goHomeAndScrollRef.current(1);
+    const onShowSections = () => goHomeAndScrollRef.current();
     window.addEventListener(SHOW_SECTIONS_EVENT, onShowSections);
     return () => window.removeEventListener(SHOW_SECTIONS_EVENT, onShowSections);
   }, []);
@@ -939,7 +939,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
       )}
 
-      <div className="flex flex-col gap-3.5 pb-[100px] md:pb-0">
+      <div className="flex flex-col gap-3.5 pb-[100px] lg:pb-0">
         {archiveSectionsToShow.map(sec => {
           const secEv = archiveEvidenceBySection[sec.id] || [];
           return (
@@ -1414,7 +1414,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         )}
 
         {/* SECTIONS */}
-        <div className="flex flex-col gap-2 sm:gap-3.5 pb-[100px] md:pb-0">
+        <div id="sections-list" className="flex flex-col gap-2 sm:gap-3.5 pb-[100px] lg:pb-0 scroll-mt-24">
           {sortedFilteredSections.map((sec, i) => {
             // كل أدلة القسم (section_id) بما فيها ما ليس له مؤشر
             const secTotalEvs = supabaseEv?.getBySection(sec.id).length ?? 0;
@@ -1565,8 +1565,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             );
           })}
 
-          {/* شبكة الأقسام الخاصة (4.1) — كل بطاقة تفتح شاشة قسمها. معرّفات sc-*
-              يستهلكها التمرير عند الرجوع (popstate وgoHomeAndScroll). بطاقتا 10 و5
+          {/* شبكة الأقسام الخاصة (4.1) — كل بطاقة تفتح شاشة قسمها. التمرير عند
+              الرجوع يستهدف sections-list لا معرّفات sc-*. بطاقتا 10 و5
               تظهران أثناء تحميل resultsAnalysis بسطر «جارٍ التحميل…» فلا تقفز الشبكة. */}
           <SpecGrid>
             {stratSection && (
@@ -1629,7 +1629,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       {/* FAB Speed Dial — Mobile only */}
       {fabExpanded && (
         <div
-          className="md:hidden fixed inset-0 z-[240] bg-black/40"
+          className="lg:hidden fixed inset-0 z-[240] bg-black/40"
           onClick={() => setFabExpanded(false)}
         />
       )}
@@ -1642,7 +1642,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         onChange={quickCapture.onFileSelected}
       />
 
-      <div className="md:hidden fixed z-[250] flex flex-col items-end gap-3" style={{ bottom: '80px', left: '16px' }}>
+      <div className="lg:hidden fixed z-[250] flex flex-col items-end gap-3" style={{ bottom: '80px', left: '16px' }}>
         {fabExpanded && (
           <>
             <button

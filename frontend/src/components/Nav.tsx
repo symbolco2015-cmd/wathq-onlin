@@ -71,7 +71,7 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
           <span className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">وثّق</span>
         </div>
 
-        <div className="hidden md:flex gap-0.5 bg-[var(--glass)] p-1 rounded-xl border border-[var(--line)]">
+        <div className="hidden lg:flex gap-0.5 bg-[var(--glass)] p-1 rounded-xl border border-[var(--line)]">
           {[
             ...(!isLoggedIn ? [{ id: 'auth', icon: 'ti-login', label: 'الدخول' }] : []),
             { id: 'dashboard', icon: 'ti-layout-dashboard', label: 'لوحة التحكم' },
@@ -152,7 +152,7 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
       </nav>
 
       {/* Mobile Bottom Navigation */}
-      <div className={`md:hidden fixed bottom-0 left-0 right-0 h-[64px] bg-[#060f0a]/90 backdrop-blur-[28px] border-t border-[var(--line)] flex items-center justify-around z-[300] px-2 shadow-[0_-4px_24px_rgba(0,0,0,0.4)] transition-transform duration-300 ${!mobileNavVisible ? 'translate-y-full' : 'translate-y-0'}`}>
+      <div className={`lg:hidden fixed bottom-0 left-0 right-0 h-[64px] bg-[#060f0a]/90 backdrop-blur-[28px] border-t border-[var(--line)] flex items-center justify-around z-[300] px-2 shadow-[0_-4px_24px_rgba(0,0,0,0.4)] transition-transform duration-300 ${!mobileNavVisible ? 'translate-y-full' : 'translate-y-0'}`}>
         {isLoggedIn ? (
           <>
             {/* الرئيسية */}
@@ -168,14 +168,14 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
             {/* البنود */}
             <button
               onClick={() => {
-                // على اللوحة: Dashboard تغلق أي شاشة قسم مفتوحة ثم تمرّر
+                // على اللوحة: Dashboard تغلق أي شاشة مفتوحة ثم تمرّر إلى بداية قائمة الأقسام
                 if (currentPage === 'dashboard') {
                   window.dispatchEvent(new Event(SHOW_SECTIONS_EVENT));
                   return;
                 }
                 setPage('dashboard');
                 setTimeout(() => {
-                  document.getElementById('sc-1')?.scrollIntoView({ behavior: 'smooth' });
+                  document.getElementById('sections-list')?.scrollIntoView({ behavior: 'smooth' });
                 }, 200);
               }}
               className="flex flex-col items-center justify-center w-full h-full relative transition-all duration-300 text-[var(--text4)]"

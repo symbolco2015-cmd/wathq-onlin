@@ -381,7 +381,7 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
   const deleteInd = deleteIndId ? customs.find(ind => ind.id === deleteIndId) ?? null : null;
 
   return (
-    <div className="flex flex-col gap-3 max-w-3xl pb-24 md:pb-0">
+    <div className="flex flex-col gap-3 max-w-3xl pb-24 lg:pb-0">
       <SectionHeader
         onBack={onBack}
         icon={section.icon}

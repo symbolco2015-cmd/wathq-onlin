@@ -68,7 +68,7 @@ export default function DashboardSkeleton() {
       </div>
 
       {/* الجوال: بطاقة ملخص ثم 4 صفوف */}
-      <div className="md:hidden px-[14px] pt-[14px] pb-[90px]">
+      <div className="lg:hidden px-[14px] pt-[14px] pb-[90px]">
         <div className="flex flex-col gap-3">
           <Summary />
           <div>
@@ -78,7 +78,7 @@ export default function DashboardSkeleton() {
       </div>
 
       {/* سطح المكتب: عمود صفوف مع عمود جانبي */}
-      <div className="hidden md:grid grid-cols-[minmax(0,1fr)_300px] gap-[22px] items-start px-[26px] pt-[22px] pb-10">
+      <div className="hidden lg:grid grid-cols-[minmax(0,1fr)_300px] gap-[22px] items-start px-[26px] pt-[22px] pb-10">
         <div className="flex flex-col gap-3 min-w-0">
           <Row /><Row /><Row /><Row /><Row />
         </div>

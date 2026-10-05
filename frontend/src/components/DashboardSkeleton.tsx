@@ -67,17 +67,19 @@ export default function DashboardSkeleton() {
         <Sk style={{ width: 40, height: 40 }} />
       </div>
 
-      {/* الجوال: بطاقة ملخص ثم 4 صفوف */}
+      {/* الجوال والتابلت: بطاقتا الملخص (عمودان من 640px) ثم 4 صفوف */}
       <div className="lg:hidden px-[14px] pt-[14px] pb-[90px]">
         <div className="flex flex-col gap-3">
-          <Summary />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Summary /><Summary />
+          </div>
           <div>
             <Row /><Row /><Row /><Row />
           </div>
         </div>
       </div>
 
-      {/* سطح المكتب: عمود صفوف مع عمود جانبي */}
+      {/* سطح المكتب: عمود صفوف مع عمود الملخص (الشهر، ثم الزر، ثم التراكمية) */}
       <div className="hidden lg:grid grid-cols-[minmax(0,1fr)_300px] gap-[22px] items-start px-[26px] pt-[22px] pb-10">
         <div className="flex flex-col gap-3 min-w-0">
           <Row /><Row /><Row /><Row /><Row />
@@ -85,6 +87,7 @@ export default function DashboardSkeleton() {
         <div className="flex flex-col gap-3 sticky top-[78px]">
           <Summary />
           <Sk style={{ height: 46 }} />
+          <Summary />
         </div>
       </div>
     </div>

@@ -2,15 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } fr
 import { createPortal } from 'react-dom';
 import type { AppState, SectionData, Announcement, AcademicDate } from '../types';
 import { findIndicatorByName } from '../indicators';
-import Sidebar from './Sidebar';
+import Sidebar, { type SidebarCoreItem, type SidebarSpecialItem } from './Sidebar';
+import { MonthCard, CumulativeCard } from './SummaryCards';
 import EvidenceList from './EvidenceList';
 import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import SectionView, { nEv, type SectionSummary, type IndicatorHandlers } from './SectionView';
+import SectionView, { nEv, sectionLevel, type SectionSummary, type IndicatorHandlers } from './SectionView';
 import { IndivDiffView, StrategiesView, AnalysisView, ImprovementView } from './SpecialSectionViews';
-import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
+import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, formatDate, formatHijri } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
@@ -71,6 +72,20 @@ function readScreenState(s: unknown): ScreenHistoryState | null {
   }
   const special = SPECIAL_KINDS.find(k => k === scr.kind);
   return special ? { wathqScreen: { kind: special }, wathqDepth } : null;
+}
+
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+/** سطح المكتب (lg) — عمود الملخص ونافذة المنتقي؛ تحته الورقة السفلية */
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isDesktop;
 }
 
 const sameScreen = (a: OpenScreen, b: OpenScreen) => {
@@ -231,7 +246,6 @@ export function SectionReclassifyDropdown({
 }
 
 export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkNotificationsSeen, accountCreatedAt, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator }: DashboardProps) {
-  const [searchQuery, setSearchQuery] = useState('');
   // تذكيرات الجرس الموسمية — موعد دراسي قادم خلال 7 أيام، ونهاية الشهر (آخر 5 أيام).
   // كل منهما إشعار مستقل بمفتاح يُحفظ في state.seenNotifications.
   const reminders = useMemo(() => {
@@ -348,6 +362,14 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   };
 
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
+  const isDesktop = useIsDesktop();
+  // نافذة المنتقي على سطح المكتب تُغلق بـ Esc
+  useEffect(() => {
+    if (!sectionPickerOpen || !isDesktop) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSectionPickerOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sectionPickerOpen, isDesktop]);
   const [fabExpanded, setFabExpanded] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<{ open: boolean; sectionId: number; sub: string }>({
     open: false, sectionId: 0, sub: '',
@@ -633,14 +655,12 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
   // إحصاءات الأدلة من جدول evidence مباشرة. bySections يُحسب على pickableSections (يستبعد بندي 5/10
   // مثل بقية النظام)، والمؤشر المغطّى = مؤشر من section_indicators له دليل
-  // واحد على الأقل بنفس indicator_id. byType/total شاملان لكل الأقسام.
+  // واحد على الأقل بنفس indicator_id. total شامل لكل الأقسام.
   const allEvidence = supabaseEv?.evidence;
   const evStats = useMemo(() => {
     const list = allEvidence ?? [];
-    const byType = { pdf: 0, img: 0, doc: 0, vid: 0 };
     const coveredIndicators = new Set<string>();
     for (const e of list) {
-      byType[supabaseEvidenceTypeToLocal(e.evidence_type)]++;
       if (e.indicator_id) coveredIndicators.add(e.indicator_id);
     }
     // المؤشرات الرسمية فقط — المخصص لا يدخل في نسبة الاكتمال
@@ -655,12 +675,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         completionPct: totalSubs > 0 ? Math.round((filledSubs / totalSubs) * 100) : 0,
       };
     });
-    const sectionIdsWithEvidence = new Set(list.map(e => e.section_id));
     return {
       total: list.length,
-      byType,
       bySections,
-      filledSectionCount: pickableSections.filter(s => sectionIdsWithEvidence.has(s.id)).length,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allEvidence, sections]);
@@ -763,13 +780,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? incompleteSections.reduce((min, s) => getMonthlyPct(s.id) < getMonthlyPct(min.id) ? s : min)
     : null;
 
-  // رسالة تشجيعية حسب نسبة الجاهزية — تعذّر جلب completion ⇐ رسالة خطأ بدلها
-  const readinessMsg = completionError ? 'تعذّر تحميل الجاهزية' :
-    overallPct === 100 ? 'أحسنت! ملفك مكتمل' :
-    overallPct >= 71   ? 'اقتربت من الهدف، لا تتوقف الآن' :
-    overallPct >= 31   ? 'أنت في المنتصف، واصل الإنجاز' :
-                          'ابدأ رحلتك، كل شاهد يقربك من الاكتمال';
-
   // شاشة القسم العادي (SectionView) — الحالة هنا لا في App: كل ما تحتاجه
   // الشاشة (sections/supabaseEv/ملخصات بند 6) موجود في Dashboard، وإزالته
   // عند الانتقال لصفحة أخرى تصفّرها تلقائياً. الفتح يضيف مدخلاً في history
@@ -830,15 +840,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     pendingScrollToList.current = false;
     requestAnimationFrame(() => document.getElementById('sections-list')?.scrollIntoView({ behavior: 'smooth' }));
   };
-  // الشريط الجانبي: كل قسم يفتح شاشته (العادي والاستراتيجيات و10 و5)، والتمرير
-  // احتياط لمعرّف غير متوقّع. من الأرشيف تُفتح الشاشة فوقه كأي شاشة أخرى.
-  const handleSidebarSection = (id: number) => {
-    if (nonStratSections.some(s => s.id === id)) openSection(id);
-    else if (stratSection && id === stratSection.id) pushScreen({ kind: 'strat' });
-    else if (analysisSection && id === analysisSection.id) pushScreen({ kind: 'analysis' });
-    else if (improvementSection && id === improvementSection.id) pushScreen({ kind: 'improvement' });
-    else goHomeAndScroll();
-  };
   const closeSection = () => { closeToHome(); };
 
   // زر «البنود» في شريط الجوال السفلي (Nav في App)
@@ -859,38 +860,114 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     : openScreen?.kind === 'indiv' && stratSection && indivDiffIndicator ? 'indiv'
     : null;
 
-  // Filter sections by search query (قسم الاستراتيجيات مستبعد — له بطاقته المثبّتة دائماً)
-  const filteredSections = searchQuery.trim()
-    ? nonStratSections.filter(sec => {
-        const q = searchQuery.toLowerCase();
-        if (sec.ttl.includes(q)) return true;
-        return sec.subs.some(s => s.includes(q));
-      })
-    : nonStratSections;
-
-  // الأقسام مرتبة: الأقل اكتمالاً أولاً (بدون إعادة ترتيب عند البحث)
+  // صفوف الرئيسية مرتبة: الأقل اكتمالاً أولاً (قسم الاستراتيجيات مستبعد — له بطاقته في الشبكة).
   // عند تساوي نسبة الشهر الحالي (شائع بسبب سقف 100% عند 3+ أدلة)، يُرجَّح
   // القسم الأقل عدد أدلة هذا الشهر — فهو الأحوج فعلياً للعمل رغم تساوي النسبة
-  const sortedFilteredSections = searchQuery.trim()
-    ? filteredSections
-    : [...filteredSections].sort((a, b) => {
-        const pctDiff = getMonthlyPct(a.id) - getMonthlyPct(b.id);
-        if (pctDiff !== 0) return pctDiff;
-        const countA = monthlyProgress?.getSectionMonthCount(a.id) ?? 0;
-        const countB = monthlyProgress?.getSectionMonthCount(b.id) ?? 0;
-        return countA - countB;
-      });
+  const sortedSections = [...nonStratSections].sort((a, b) => {
+    const pctDiff = getMonthlyPct(a.id) - getMonthlyPct(b.id);
+    if (pctDiff !== 0) return pctDiff;
+    const countA = monthlyProgress?.getSectionMonthCount(a.id) ?? 0;
+    const countB = monthlyProgress?.getSectionMonthCount(b.id) ?? 0;
+    return countA - countB;
+  });
 
   // stats (calculateEvaluation) حُذفت 14 سبتمبر 2026 — راجع utils.ts للتفاصيل.
   // إجمالي الأدلة من Supabase مباشرة — يتزامن بعد كل حذف أو إضافة
   const totalEvs = supabaseEv
     ? sections.reduce((sum, s) => sum + supabaseEv.getBySection(s.id).length, 0)
     : evStats.total;
-  // أقسام موثّقة: عدد البنود التي فيها evidence_count > 0 في monthly_progress للشهر الحالي
-  // (يُحسب فقط عبر المجالات الأساسية العشرة — الاستراتيجيات خارج نظام النسب هذا)
-  const filledSecs = monthlyProgress
-    ? nonStratSections.filter(s => monthlyProgress.getSectionMonthCount(s.id) > 0).length
-    : evStats.filledSectionCount;
+  // بطاقتا الملخص — تُرسمان في عمود الملخص (سطح المكتب) وأعلى المحتوى (تحت 1024px)
+  // بالقيم نفسها: currentMonthTotal، وnextSectionData، وoverallPct، وcompletedSections،
+  // وtotalSections، وtotalEvs، وpointsLevel
+  const monthCard = monthlyProgress ? (
+    <MonthCard
+      total={monthlyProgress.currentMonthTotal}
+      monthName={monthlyProgress.currentMonthName}
+      year={monthlyProgress.currentYear}
+      nextSection={nextSectionData}
+      onOpenNext={() => { if (nextSectionData) openSection(nextSectionData.id); }}
+    />
+  ) : null;
+  const cumulativeCard = (
+    <CumulativeCard
+      overallPct={overallPct}
+      error={!!completionError}
+      completedSections={completedSections}
+      totalSections={totalSections}
+      totalEvs={totalEvs}
+      levelLabel={pointsLevel?.levelLabel ?? null}
+    />
+  );
+
+  // تنقل عمود الملخص: الأقسام الثمانية بترتيبها الثابت، ونقطة كل قسم بمستواه
+  // التراكمي — نفس covered/total/n في رأس SectionView
+  const sidebarCoreItems: SidebarCoreItem[] = nonStratSections.map(s => {
+    const stat = getSectionStat(s.id);
+    const total = stat?.totalSubs ?? s.indicators.filter(ind => !ind.isCustom).length;
+    const n = supabaseEv?.getBySection(s.id).length ?? 0;
+    return { id: s.id, ttl: s.ttl, icon: s.icon, level: sectionLevel(stat?.filledSubs ?? 0, total, n) };
+  });
+  // الأقسام الخاصة بترتيب الشبكة وشروطها نفسها
+  const sidebarSpecialItems: SidebarSpecialItem[] = [];
+  if (stratSection) sidebarSpecialItems.push({ key: 'strat', title: stratSection.ttl, icon: stratSection.icon, onOpen: () => pushScreen({ kind: 'strat' }) });
+  if (stratSection && indivDiffIndicator) sidebarSpecialItems.push({ key: 'indiv', title: indivDiffIndicator.name_ar, icon: 'ti-users', onOpen: () => pushScreen({ kind: 'indiv' }) });
+  if (analysisSection) sidebarSpecialItems.push({ key: 'analysis', title: analysisSection.ttl, icon: analysisSection.icon, onOpen: () => pushScreen({ kind: 'analysis' }) });
+  if (improvementSection) sidebarSpecialItems.push({ key: 'improvement', title: improvementSection.ttl, icon: improvementSection.icon, onOpen: () => pushScreen({ kind: 'improvement' }) });
+  // العنصر النشط من openScreen؛ الأرشيف والرئيسية بلا عنصر نشط
+  const sidebarActiveKey = !openScreen || openScreen.kind === 'archive' ? null
+    : openScreen.kind === 'core' ? `core-${openScreen.id}`
+    : openScreen.kind;
+
+  // منتقي البند — محتوى واحد: ورقة سفلية تحت 1024px، ونافذة وسط الشاشة فوقها.
+  // على سطح المكتب يفتح نموذج App (EvidenceModal) بلا مؤشر مختار مسبقاً
+  const pickSection = (sec: SectionData) => {
+    if (isDesktop) {
+      setSectionPickerOpen(false);
+      onAddEvClick(sec.id, sec.subs[0] ?? 'عام');
+    } else {
+      handlePickSection(sec);
+    }
+  };
+  const closeSectionPicker = () => setSectionPickerOpen(false);
+  const sectionPickerBody = (
+    <>
+      <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
+            <i className="ti ti-list-check" />
+          </div>
+          <div className="text-[16px] font-black text-white">اختر البند</div>
+        </div>
+        <button
+          onClick={closeSectionPicker}
+          aria-label="إغلاق"
+          className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
+        >
+          <i className="ti ti-x" />
+        </button>
+      </div>
+      <div className="overflow-y-auto flex-1 p-5">
+        <div className="grid grid-cols-2 gap-3">
+          {/* nonStratSections لا pickableSections — قسم 4 (isStrat) يستلزم
+              strategy_id إجبارياً الآن، فلا يظهر ضمن منتقي "إضافة شاهد عادي"
+              العام؛ له تدفّقه الخاص عبر onAddStrategyClick */}
+          {nonStratSections.map(sec => (
+            <button
+              key={sec.id}
+              type="button"
+              onClick={() => pickSection(sec)}
+              className="flex flex-col items-center gap-2.5 py-5 px-3 rounded-2xl border-[1.5px] border-[var(--line)] bg-white/5 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/30 transition-all duration-200 text-center cursor-pointer active:scale-95"
+            >
+              <div className="w-[44px] h-[44px] rounded-xl shrink-0 flex items-center justify-center text-[20px] bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
+                <i className={`ti ${sec.icon}`} />
+              </div>
+              <span className="text-[12.5px] font-bold text-[var(--text2)] leading-snug">{sec.ttl}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
 
   // ── عرض أرشيف الشهر المختار — صفحة فرعية مستقلة، لا تستبدل لوحة الشهر
   // الحالي بشكل دائم، بل تُستبدل مؤقتاً عند التصفح وتُستعاد بزر "العودة" ──
@@ -988,15 +1065,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
   return (
     <div className="flex min-h-[calc(100vh-72px)]">
-      <Sidebar
-        state={state}
-        sections={sections}
-        totalCount={totalSections}
-        filledCount={completedSections}
-        overallPct={overallPct}
-        monthlyProgress={monthlyProgress}
-        onSectionClick={handleSidebarSection}
-      />
       <main className="flex-1 p-3 sm:p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
         {archiveMonth ? archiveView : openSectionData ? (
           <SectionView
@@ -1076,66 +1144,16 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             />
           </ImprovementView>
         ) : <>
-        {/* بطاقة الملف الشخصي المضغوطة — جوال فقط */}
-        <div className="lg:hidden flex items-center gap-3 mb-3 px-1" style={{ animation: 'fadeUp .4s var(--sp) both' }}>
-          <div
-            className="w-[42px] h-[42px] rounded-full shrink-0 bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white flex items-center justify-center text-[14px] font-black shadow-[0_0_0_2px_rgba(82,196,120,.25)] bg-cover bg-center overflow-hidden"
-            style={state.profile.avatar ? { backgroundImage: `url(${state.profile.avatar})` } : {}}
-          >
-            {!state.profile.avatar && state.profile.name.substring(0, 2)}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[14px] font-extrabold text-white truncate leading-tight">
-              {state.profile.name}
-            </div>
-            <div className="text-[11px] text-[var(--text4)] truncate mt-0.5">
-              {state.profile.role}
-            </div>
-          </div>
-          <div className="shrink-0 flex flex-col items-center gap-1">
-            <div className="text-[18px] font-black text-white leading-none font-[var(--font)]">
-              {overallPct}<span className="text-[11px] text-[var(--text4)] font-bold">%</span>
-            </div>
-            <div className="text-[9px] text-[var(--text4)] font-bold tracking-wide">جاهزية</div>
-          </div>
+        {/* سطر التحية — بدل الـ hero */}
+        <div className="mb-4 px-1">
+          <div className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] leading-tight">مرحباً، {state.profile.name}</div>
+          <div className="mt-1 text-[length:var(--fs-xs)] text-[var(--t3)]">{formatHijri(new Date())}</div>
         </div>
 
-        {/* HERO BANNER */}
-        <div className="hidden lg:block relative overflow-hidden rounded-[20px] sm:rounded-[28px] py-5 sm:py-10 px-4 sm:px-12 mb-4 sm:mb-8 bg-gradient-to-br from-[var(--em1)] via-[var(--em3)] to-[rgba(30,90,50,.8)] border border-[var(--em7)]/15 shadow-[inset_0_2px_0_rgba(82,196,120,.1),0_24px_64px_rgba(0,0,0,.5)]" style={{ animation: 'fadeUp .6s var(--sp) both' }}>
-          <div className="absolute inset-0 z-0 bg-[radial-gradient(ellipse_50%_80%_at_80%_50%,rgba(201,162,39,.08),transparent_60%)]"></div>
-          <div className="absolute top-0 right-0 left-0 h-[2px] bg-gradient-to-r from-transparent via-[var(--em7)] via-30% via-[var(--gold)] via-50% via-[var(--em7)] via-70% to-transparent opacity-70 z-0"></div>
-          
-          <div className="absolute border border-[var(--em7)]/5 rounded-full w-[500px] h-[500px] -top-[200px] -left-[150px] z-0 pointer-events-none"></div>
-          <div className="absolute border border-[var(--em7)]/5 rounded-full w-[300px] h-[300px] -bottom-[150px] right-[10%] z-0 pointer-events-none"></div>
-
-          <div className="relative z-10 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 sm:gap-8">
-            <div>
-              <div className="text-[28px] sm:text-[32px] font-black text-white tracking-tight leading-tight mb-2">{state.profile.name}</div>
-              <div className="text-[14.5px] text-[var(--text3)] mb-5.5 leading-relaxed">
-                {state.profile.role}<span> — {state.profile.school} · وزارة التعليم</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <div className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-full text-[12.5px] font-bold bg-white/5 border border-white/10 text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/30 hover:-translate-y-0.5">
-                  <i className="ti ti-calendar text-[14px]"></i> السنة الدراسية {currentHijriYear()}هـ
-                </div>
-              </div>
-            </div>
-            <div className="shrink-0 flex flex-col items-center gap-3.5 self-start xl:self-auto">
-              <div className="w-[72px] h-[72px] sm:w-[100px] sm:h-[100px] rounded-2xl sm:rounded-3xl bg-white/5 border-[1.5px] border-white/10 flex items-center justify-center text-[34px] sm:text-[50px] text-[var(--em8)] backdrop-blur-md shadow-[0_0_0_1px_rgba(82,196,120,.1),0_8px_32px_rgba(0,0,0,.4),inset_0_1px_0_rgba(255,255,255,.08)]" style={{ animation: 'float 4s ease-in-out infinite' }}>
-                <i className="ti ti-school"></i>
-              </div>
-              <div className="flex gap-2.5">
-                <div className="bg-white/5 border border-white/10 rounded-xl py-2 px-4 text-center text-white backdrop-blur-md transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/20 hover:-translate-y-0.5">
-                  <div className="text-[22px] font-black">{totalEvs}</div>
-                  <div className="text-[11px] text-[var(--text3)] mt-0.5">أدلة</div>
-                </div>
-                <div className="bg-white/5 border border-white/10 rounded-xl py-2 px-4 text-center text-white backdrop-blur-md transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/20 hover:-translate-y-0.5">
-                  <div className="text-[22px] font-black">{filledSecs}</div>
-                  <div className="text-[11px] text-[var(--text3)] mt-0.5">أقسام</div>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* بطاقتا الملخص — تحت 1024px؛ على سطح المكتب في عمود الملخص (Sidebar) */}
+        <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          {monthCard}
+          {cumulativeCard}
         </div>
 
         {/* بانر: استيراد جماعي جاهز للمراجعة (bulk_import_queue بحالة classified أو failed) */}
@@ -1166,256 +1184,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           </div>
         )}
 
-        {/* NEXT STEP CARD */}
-        {nextSectionData && (
-          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-amber-500/25 bg-gradient-to-br from-amber-950/40 via-amber-900/20 to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .55s var(--sp) both 0.05s' }}>
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_100%_at_0%_50%,rgba(251,191,36,.06),transparent_70%)]" />
-            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
-            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                <div className="w-12 h-12 rounded-xl shrink-0 bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-[22px] text-amber-400">
-                  <i className={`ti ${nextSectionData.icon}`} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] font-bold text-amber-400/80 tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
-                    <i className="ti ti-arrow-right text-[12px]" /> الخطوة التالية
-                  </div>
-                  <div className="text-[15px] font-extrabold text-white truncate leading-snug">{nextSectionData.ttl}</div>
-                  <div className="flex items-center gap-2.5 mt-1.5">
-                    <div className="h-1.5 w-28 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-700"
-                        style={{ width: `${getMonthlyPct(nextSectionData.id)}%` }}
-                      />
-                    </div>
-                    <span className="text-[11.5px] font-bold text-amber-400">{getMonthlyPct(nextSectionData.id)}% مكتمل</span>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => onAddEvClick(nextSectionData.id, nextSectionData.subs[0] ?? 'عام')}
-                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-amber-500 to-amber-600 text-white border border-amber-400/20 hover:from-amber-400 hover:to-amber-500 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(251,191,36,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
-              >
-                <i className="ti ti-plus text-[15px]" /> أضف شاهداً الآن
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* MONTHLY PROGRESS CARDS */}
-        {monthlyProgress && (
-          <div className="grid grid-cols-1 gap-4 mb-5" style={{ animation: 'fadeUp .5s var(--sp) both 0.08s' }}>
-
-            {/* البطاقة 1 — عداد الشهر الحالي */}
-            {(() => {
-              const total = monthlyProgress.currentMonthTotal;
-              const goal  = 24; // 8 بند × 3 (بلا قسم الاستراتيجيات وبندي تحليل/تحسين نتائج المتعلمين)
-              const pct   = Math.min(100, Math.round((total / goal) * 100));
-              const msg   =
-                total === 0  ? 'لم تبدأ بعد هذا الشهر' :
-                total <= 9   ? 'بداية جيدة، واصل' :
-                total <= 20  ? 'أنت في المنتصف' :
-                total <= 29  ? 'اقتربت من الهدف' :
-                               '✓ أكملت هدف الشهر';
-              const barColor =
-                pct >= 80 ? 'linear-gradient(90deg,var(--em5),var(--em8))' :
-                pct >= 40 ? 'linear-gradient(90deg,#b45309,#fbbf24)' :
-                            'linear-gradient(90deg,#9f1239,#f87171)';
-              return (
-                <div className="rounded-[22px] p-5 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] relative overflow-hidden">
-                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_0%_0%,rgba(82,196,120,.04),transparent_70%)]" />
-                  <div className="relative z-10 flex items-start justify-between mb-3.5">
-                    <div>
-                      <div className="text-[10.5px] font-extrabold text-[var(--text4)] tracking-widest uppercase mb-0.5">عداد الشهر الحالي</div>
-                      <div className="text-[14px] font-extrabold text-white">{monthlyProgress.currentMonthName} {monthlyProgress.currentYear}</div>
-                    </div>
-                    <div className="text-left shrink-0">
-                      <div className="text-[30px] font-black text-[var(--em8)] leading-none font-[var(--font)]">{total}</div>
-                      <div className="text-[10.5px] text-[var(--text4)] mt-0.5 text-right">من {goal} شاهداً</div>
-                    </div>
-                  </div>
-                  <div className="relative z-10 h-3 sm:h-2 bg-white/8 rounded-full overflow-hidden mb-2.5">
-                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: barColor }} />
-                  </div>
-                  <div className="relative z-10 flex items-center justify-between">
-                    <span className="text-[12px] text-[var(--text3)]">{msg}</span>
-                    <span className="text-[12px] sm:text-[11px] font-extrabold text-white">{pct}%</span>
-                  </div>
-                </div>
-              );
-            })()}
-            {/* بطاقة المعدل الشهري انتقلت إلى أعلى عرض الأرشيف (4.2) */}
-          </div>
-        )}
-
-        {/* OVERALL READINESS BAR */}
-        <div className="mb-4 sm:mb-8 rounded-[18px] sm:rounded-[22px] p-4 sm:p-6 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] relative overflow-hidden" style={{ animation: 'fadeUp .6s var(--sp) both 0.1s' }}>
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_80%_at_100%_50%,rgba(82,196,120,.04),transparent_60%)]" />
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-baseline justify-between mb-3">
-                <span className="text-[13.5px] font-bold text-[var(--text3)]">جاهزية ملف الإنجاز</span>
-                <span className="text-[34px] font-black text-white font-[var(--font)] leading-none">
-                  {overallPct}<span className="text-[18px] text-[var(--text4)] font-bold">%</span>
-                </span>
-              </div>
-              <div className="h-3 bg-white/8 rounded-full overflow-hidden mb-3">
-                <div
-                  className="h-full rounded-full relative overflow-hidden"
-                  style={{
-                    width: `${overallPct}%`,
-                    transition: 'width 1200ms cubic-bezier(.16,1,.3,1)',
-                    background:
-                      overallPct >= 71 ? 'linear-gradient(90deg, var(--em5), var(--em7), var(--em8))' :
-                      overallPct >= 31 ? 'linear-gradient(90deg, #b45309, #d97706, #fbbf24)' :
-                                         'linear-gradient(90deg, #9f1239, #dc2626, #f87171)',
-                    boxShadow:
-                      overallPct >= 71 ? '0 0 12px rgba(82,196,120,.45)' :
-                      overallPct >= 31 ? '0 0 12px rgba(217,119,6,.35)' : 'none',
-                  }}
-                >
-                  <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)] bg-[length:200%_auto]" style={{ animation: 'goldShimmer 2.5s linear infinite' }} />
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <i className={`ti text-[15px] ${
-                  overallPct === 100 ? 'ti-star-filled text-[var(--gold)]' :
-                  overallPct >= 71   ? 'ti-flame text-[var(--em8)]' :
-                  overallPct >= 31   ? 'ti-trending-up text-amber-400' :
-                                       'ti-seeding text-[var(--em7)]'
-                }`} />
-                <span className="text-[12.5px] font-semibold text-[var(--text3)]">{readinessMsg}</span>
-              </div>
-            </div>
-            <div className="flex sm:flex-col gap-5 sm:gap-3 shrink-0 sm:border-r sm:border-[var(--line)] sm:pr-6">
-              <div className="sm:text-center">
-                <div className="text-[11px] font-bold text-[var(--text4)] mb-0.5">أقسام مكتملة</div>
-                <div className="text-[24px] font-black text-[var(--em8)] font-[var(--font)] leading-none">
-                  {completedSections}<span className="text-[14px] text-[var(--text4)] font-semibold"> / {totalSections}</span>
-                </div>
-              </div>
-              <div className="sm:text-center">
-                <div className="text-[11px] font-bold text-[var(--text4)] mb-0.5">إجمالي الأدلة</div>
-                <div className="text-[24px] font-black text-white font-[var(--font)] leading-none">{totalEvs}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* POINTS & LEVEL — نظام النقاط والمستوى العام لكامل الملف الشخصي (نافذة
-            متحركة لآخر 3 أشهر تقويمية، مجموع evidence_count الخام بصرف النظر عن
-            القسم) — مؤشر عام واحد، لا لكل قسم على حدة */}
-        {pointsLevel && (
-          <div className="mb-4 sm:mb-8 rounded-[18px] sm:rounded-[22px] p-4 sm:p-6 bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--gold)]/20 relative overflow-hidden" style={{ animation: 'fadeUp .6s var(--sp) both 0.12s' }}>
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_80%_at_0%_50%,rgba(201,162,39,.06),transparent_60%)]" />
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2.5">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <span className="text-[13.5px] font-bold text-[var(--text3)]">نقاط الإنجاز</span>
-                  <span
-                    className="inline-flex items-center gap-1.5 text-[11px] sm:text-[11.5px] font-black text-[var(--gold3)] bg-[var(--gold)]/12 border border-[var(--gold)]/35 py-1 px-2.5 rounded-full leading-none"
-                    style={{ animation: 'scaleIn .35s var(--sp) both' }}
-                  >
-                    <i className={`ti ${pointsLevel.levelIcon} text-[12px]`} /> {pointsLevel.levelLabel}
-                  </span>
-                </div>
-                <span className="text-[30px] sm:text-[34px] font-black text-white font-[var(--font)] leading-none">
-                  {pointsLevel.points}<span className="text-[13px] text-[var(--text4)] font-bold"> نقطة</span>
-                </span>
-              </div>
-              {pointsLevel.nextThreshold !== null ? (
-                <>
-                  <div className="h-2.5 bg-white/8 rounded-full overflow-hidden mb-2">
-                    <div
-                      className="h-full rounded-full relative overflow-hidden"
-                      style={{
-                        width: `${pointsLevel.progressToNext}%`,
-                        transition: 'width 1200ms cubic-bezier(.16,1,.3,1)',
-                        background: 'linear-gradient(90deg, var(--gold), var(--gold2), var(--gold3))',
-                        boxShadow: '0 0 12px rgba(201,162,39,.4)',
-                      }}
-                    >
-                      <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)] bg-[length:200%_auto]" style={{ animation: 'goldShimmer 2.5s linear infinite' }} />
-                    </div>
-                  </div>
-                  <span className="text-[12px] text-[var(--text4)]">
-                    {pointsLevel.pointsToNext} نقطة للوصول إلى المستوى التالي
-                  </span>
-                </>
-              ) : (
-                <span className="text-[12px] text-[var(--gold3)] font-bold flex items-center gap-1.5">
-                  <i className="ti ti-trophy text-[13px]" /> بلغت أعلى مستوى
-                </span>
-              )}
-              <p className="mt-3 text-[10.5px] text-[var(--text4)]">
-                محسوبة من مجموع الشواهد الموثقة خلال آخر 3 أشهر تقويمية
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* STATS GRID */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4 mb-5 sm:mb-8">
-          {[
-            { id: 1, val: totalEvs, lbl: 'إجمالي الأدلة', ico: 'ti-files', bIco: 'ti-trending-up', bLbl: 'حي', theme: { bg: 'bg-gradient-to-br from-[var(--em2)]/30 to-[var(--em7)]/15', color: 'text-[var(--em7)]', badgeBg: 'bg-[var(--em7)]/10', badgeColor: 'text-[var(--em8)]' }, dly: '0.05s', sub: `${evStats.byType.pdf} PDF · ${evStats.byType.img} صور` },
-            { id: 2, val: nonStratSections.length, lbl: 'مجالات أساسية', ico: 'ti-layout-grid', bIco: 'ti-check', bLbl: `${filledSecs} موثّق`, theme: { bg: 'bg-gradient-to-br from-[#1d4ed8]/30 to-[#93c5fd]/15', color: 'text-[#93c5fd]', badgeBg: 'bg-[#93c5fd]/10', badgeColor: 'text-[#93c5fd]' }, dly: '0.1s', sub: `${evStats.byType.doc} مستندات · ${evStats.byType.vid} فيديو` },
-            { id: 3, val: stratGroups.length, lbl: 'استراتيجيات مفعّلة', ico: 'ti-bulb', bIco: 'ti-star', bLbl: 'نشطة', theme: { bg: 'bg-gradient-to-br from-[#b45309]/30 to-[#fcd34d]/15', color: 'text-[#fcd34d]', badgeBg: 'bg-[#fcd34d]/10', badgeColor: 'text-[#fcd34d]' }, dly: '0.15s', sub: null },
-            { id: 4, val: filledSecs, lbl: 'أقسام موثّقة', ico: 'ti-trophy', bIco: 'ti-chart-bar', bLbl: `من ${nonStratSections.length}`, theme: { bg: 'bg-gradient-to-br from-[#c0399a]/30 to-[#f472b6]/15', color: 'text-[#f472b6]', badgeBg: 'bg-[#f472b6]/10', badgeColor: 'text-[#f472b6]' }, dly: '0.2s', sub: `${Math.round((filledSecs / nonStratSections.length) * 100)}% اكتمال` },
-          ].map(st => (
-            <div key={st.id} className="group bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] p-3 sm:p-6 border border-[var(--line)] relative overflow-hidden transition-all duration-300 hover:-translate-y-1.5 hover:border-[var(--line2)] hover:shadow-[0_20px_50px_rgba(0,0,0,.5)] cursor-default" style={{ animation: `fadeUp .5s var(--sp) both ${st.dly}` }}>
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(255,255,255,.03),transparent_60%)]"></div>
-              <div className="flex justify-between items-start mb-2 sm:mb-4.5 relative z-10">
-                <div className={`w-[38px] h-[38px] sm:w-[54px] sm:h-[54px] rounded-xl sm:rounded-2xl flex items-center justify-center text-[18px] sm:text-[26px] transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-8deg] relative ${st.theme.bg}`}>
-                  <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent rounded-xl sm:rounded-2xl"></div>
-                   <i className={`ti ${st.ico} relative z-10 ${st.theme.color}`}></i>
-                </div>
-                <div className={`text-[9px] sm:text-[11px] font-bold py-0.5 sm:py-1 px-1.5 sm:px-2.5 rounded-md sm:rounded-lg flex items-center gap-1 ${st.theme.badgeBg} ${st.theme.badgeColor}`}>
-                  <i className={`ti ${st.bIco}`}></i><span className="hidden sm:inline"> {st.bLbl}</span>
-                </div>
-              </div>
-              <div className="text-[26px] sm:text-[36px] font-black leading-none text-white transition-all duration-300 font-[var(--font)] group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-[linear-gradient(135deg,var(--em7),var(--gold))] relative z-10">{st.val}</div>
-              <div className="text-[11px] sm:text-[13px] text-[var(--text3)] mt-1 sm:mt-1.5 font-medium relative z-10">{st.lbl}</div>
-              {st.sub && <div className="hidden sm:block text-[11px] text-[var(--text4)] mt-1 font-medium relative z-10">{st.sub}</div>}
-            </div>
-          ))}
-        </div>
-
-        {/* SEARCH BAR */}
-        <div className="relative mb-5" style={{ animation: 'fadeUp .4s var(--sp) both 0.25s' }}>
-          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-            <i className="ti ti-search text-[18px] text-[var(--text4)]"></i>
-          </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="ابحث عن قسم أو قسم فرعي..."
-            className="w-full py-3.5 pr-12 pl-5 bg-white/5 border border-[var(--line2)] rounded-2xl text-[14px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.1)]"
-          />
-          {searchQuery && (
-            <button
-              className="absolute inset-y-0 left-4 flex items-center text-[var(--text4)] hover:text-white transition-colors"
-              onClick={() => setSearchQuery('')}
-            >
-              <i className="ti ti-x text-[16px]"></i>
-            </button>
-          )}
-        </div>
-
-        {/* No results */}
-        {filteredSections.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-[28px] text-[var(--text4)] mb-3">
-              <i className="ti ti-search-off"></i>
-            </div>
-            <p className="text-[var(--text3)] text-[15px] font-bold">لا توجد نتائج لـ "{searchQuery}"</p>
-            <p className="text-[var(--text4)] text-[13px] mt-1">جرب كلمة بحث مختلفة</p>
-          </div>
-        )}
-
         {/* SECTIONS */}
         <div id="sections-list" className="flex flex-col gap-2 sm:gap-3.5 pb-[100px] lg:pb-0 scroll-mt-24">
-          {sortedFilteredSections.map((sec, i) => {
+          {sortedSections.map((sec, i) => {
             // كل أدلة القسم (section_id) بما فيها ما ليس له مؤشر
             const secTotalEvs = supabaseEv?.getBySection(sec.id).length ?? 0;
             // completionPct: نشاط الشهر الحالي (يتحكم بالترتيب وتلوين الحدود — لا تغيير)
@@ -1626,6 +1397,17 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </footer>
       </main>
 
+      {/* عمود الملخص — سطح المكتب فقط، يسار المحتوى (RTL) كما في النموذج، ظاهر في كل الشاشات */}
+      <Sidebar
+        monthCard={monthCard}
+        cumulativeCard={cumulativeCard}
+        onAddEvidence={() => setSectionPickerOpen(true)}
+        coreItems={sidebarCoreItems}
+        onOpenCore={openSection}
+        specialItems={sidebarSpecialItems}
+        activeKey={sidebarActiveKey}
+      />
+
       {/* FAB Speed Dial — Mobile only */}
       {fabExpanded && (
         <div
@@ -1728,43 +1510,24 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </button>
       </div>
 
-      {/* Bottom Sheet — اختيار البند (الخطوة الأولى) — جوال فقط */}
-      <BottomSheet isOpen={sectionPickerOpen} onClose={() => setSectionPickerOpen(false)}>
-        <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
-              <i className="ti ti-list-check" />
-            </div>
-            <div className="text-[16px] font-black text-white">اختر البند</div>
-          </div>
-          <button
-            onClick={() => setSectionPickerOpen(false)}
-            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
+      {/* منتقي البند (الخطوة الأولى) — المحتوى نفسه: ورقة سفلية تحت 1024px، ونافذة وسط الشاشة فوقها */}
+      {isDesktop ? (
+        sectionPickerOpen && (
+          <div
+            className="fixed inset-0 bg-black/55 z-[500] flex items-center justify-center p-4"
+            style={{ animation: 'fadeIn .25s both' }}
+            onClick={e => { if (e.target === e.currentTarget) closeSectionPicker(); }}
           >
-            <i className="ti ti-x" />
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1 p-5">
-          <div className="grid grid-cols-2 gap-3">
-            {/* nonStratSections لا pickableSections — قسم 4 (isStrat) يستلزم
-                strategy_id إجبارياً الآن، فلا يظهر ضمن منتقي "إضافة شاهد عادي"
-                العام؛ له تدفّقه الخاص عبر onAddStrategyClick */}
-            {nonStratSections.map(sec => (
-              <button
-                key={sec.id}
-                type="button"
-                onClick={() => handlePickSection(sec)}
-                className="flex flex-col items-center gap-2.5 py-5 px-3 rounded-2xl border-[1.5px] border-[var(--line)] bg-white/5 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/30 transition-all duration-200 text-center cursor-pointer active:scale-95"
-              >
-                <div className="w-[44px] h-[44px] rounded-xl shrink-0 flex items-center justify-center text-[20px] bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
-                  <i className={`ti ${sec.icon}`} />
-                </div>
-                <span className="text-[12.5px] font-bold text-[var(--text2)] leading-snug">{sec.ttl}</span>
-              </button>
-            ))}
+            <div role="dialog" aria-label="اختر البند" className="relative overflow-hidden flex flex-col w-[520px] max-h-[86vh] pt-5 bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-lg)]">
+              {sectionPickerBody}
+            </div>
           </div>
-        </div>
-      </BottomSheet>
+        )
+      ) : (
+        <BottomSheet isOpen={sectionPickerOpen} onClose={closeSectionPicker}>
+          {sectionPickerBody}
+        </BottomSheet>
+      )}
 
       {/* Bottom Sheet — التقاط سريع: اختيار البند ثم المؤشر الفرعي — جوال فقط */}
       <BottomSheet isOpen={quickCapture.pickerSheetOpen} onClose={quickCapture.cancelPending}>

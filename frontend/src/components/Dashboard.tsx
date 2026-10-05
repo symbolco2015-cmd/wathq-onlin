@@ -24,6 +24,7 @@ import { ImprovementActionsBody, countImprovementActions } from './ResultsAnalys
 import { SpecCard, SpecGrid } from './SpecGrid';
 import { useResultsAnalysis } from './ResultsAnalysis/useResultsAnalysis';
 import ToolsSheet, { type ArchiveMonth } from './ToolsSheet';
+import NotificationsSheet, { type NotificationItem } from './NotificationsSheet';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -34,6 +35,14 @@ const ARCHIVE_MONTHS_AR = [
 export const SHOW_SECTIONS_EVENT = 'wathq:show-sections';
 /** حدث يرسله زر «أدوات» في الشريط العلوي (Nav): يفتح قائمة الأدوات */
 export const OPEN_TOOLS_EVENT = 'wathq:open-tools';
+/** حدث يرسله زر الجرس في الشريط العلوي (Nav): يفتح لوحة الإشعارات */
+export const OPEN_NOTIFICATIONS_EVENT = 'wathq:open-notifications';
+/** حدث يرسله Dashboard بعدد الإشعارات غير المقروءة (detail: number) */
+export const NOTIF_COUNT_EVENT = 'wathq:notif-count';
+/** حدث ترسله Nav عند تركيبها لتطلب العدد الحالي، فلا يضيع إرسال سبق تسجيل مستمعها */
+export const REQUEST_NOTIF_COUNT_EVENT = 'wathq:request-notif-count';
+/** أقصى عدد تعاميم في الجرس */
+const NOTIF_ANNOUNCEMENTS_LIMIT = 20;
 
 /** الشاشة المفتوحة فوق الرئيسية — قسم عادي برقمه، أو أحد الأقسام الخاصة، أو أرشيف شهر سابق */
 type OpenScreen =
@@ -104,7 +113,10 @@ type DashboardProps = {
    *  اسم معروض ببطاقة القسم 4 — من useTeachingStrategies في App.tsx. */
   strategyNames: Record<string, string>;
   announcements?: Announcement[];
-  onMarkAsRead?: (id: string) => void;
+  /** يعلّم تعاميم مقروءة ومفاتيح إشعارات أخرى مرئية في كتابة واحدة — markNotificationsSeen في useAppStore */
+  onMarkNotificationsSeen?: (announcementIds: string[], keys: string[]) => void;
+  /** تاريخ إنشاء الحساب (auth user.created_at) — التعميم الأقدم منه يُعامَل مقروءاً */
+  accountCreatedAt?: string;
   academicDates?: AcademicDate[];
   monthlyProgress?: MonthlyProgressData;
   /** نسبة الجاهزية العامة التراكمية — من usePortfolioCompletion في App.tsx */
@@ -218,33 +230,35 @@ export function SectionReclassifyDropdown({
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkAsRead, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkNotificationsSeen, accountCreatedAt, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator }: DashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
-  const [reminderDismissed, setReminderDismissed] = useState(false);
-
-  // تذكير موسمي — موعد دراسي قادم له الأولوية على التذكير الشهري العام
-  const reminderBanner = useMemo(() => {
+  // تذكيرات الجرس الموسمية — موعد دراسي قادم خلال 7 أيام، ونهاية الشهر (آخر 5 أيام).
+  // كل منهما إشعار مستقل بمفتاح يُحفظ في state.seenNotifications.
+  const reminders = useMemo(() => {
+    const list: { key: string; icon: string; title: string; subtitle: string }[] = [];
     const upcoming = upcomingAcademicDate(academicDates || [], 7);
     if (upcoming) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const daysLeft = Math.round((new Date(upcoming.date).getTime() - today.getTime()) / 86400000);
       const dateStr = formatDate(upcoming.date, 'long');
-      return {
+      list.push({
+        key: `date:${upcoming.id}`,
         icon: 'ti-calendar-event',
         title: upcoming.title,
         subtitle: `${daysLeft <= 0 ? 'اليوم' : `بعد ${daysLeft} ${daysLeft === 1 ? 'يوم' : 'أيام'}`} — ${dateStr}${upcoming.hijri_label ? ` (${upcoming.hijri_label})` : ''}`,
-      };
+      });
     }
     if (isLastDaysOfMonth()) {
-      return {
+      const now = new Date();
+      list.push({
+        key: `month-end:${now.getFullYear()}-${now.getMonth() + 1}`,
         icon: 'ti-hourglass-low',
         title: 'الشهر على وشك الانتهاء',
         subtitle: 'لا تنسَ تسجيل شواهدك قبل بداية الشهر القادم لضمان توثيق إنجازك.',
-      };
+      });
     }
-    return null;
+    return list;
   }, [academicDates]);
   // الشاشة المفتوحة فوق الرئيسية (انظر pushScreen بالأسفل) — معرّفة هنا لأن
   // الأرشيف أحد أنواعها، واشتقاقاته التالية تحتاجه
@@ -450,17 +464,25 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // قائمة «أدوات» — تُفتح بحدث من زر الشريط العلوي (OPEN_TOOLS_EVENT)
   const [toolsOpen, setToolsOpen] = useState(false);
   const closeTools = useCallback(() => setToolsOpen(false), []);
+  // لوحة الإشعارات (الجرس) — تُفتح بحدث OPEN_NOTIFICATIONS_EVENT. اللوحتان لا تُفتحان معاً.
+  const [notifOpen, setNotifOpen] = useState(false);
+  const closeNotif = useCallback(() => setNotifOpen(false), []);
   useEffect(() => {
-    const onOpenTools = () => setToolsOpen(true);
+    const onOpenTools = () => { setNotifOpen(false); setToolsOpen(true); };
+    const onOpenNotif = () => { setToolsOpen(false); setNotifOpen(true); };
     window.addEventListener(OPEN_TOOLS_EVENT, onOpenTools);
-    return () => window.removeEventListener(OPEN_TOOLS_EVENT, onOpenTools);
+    window.addEventListener(OPEN_NOTIFICATIONS_EVENT, onOpenNotif);
+    return () => {
+      window.removeEventListener(OPEN_TOOLS_EVENT, onOpenTools);
+      window.removeEventListener(OPEN_NOTIFICATIONS_EVENT, onOpenNotif);
+    };
   }, []);
   // كل فتح يعيد قراءة share_enabled وحالة الملخص، فيتحدث النص بعد تغيير المشاركة من الإعدادات
   useEffect(() => {
     if (toolsOpen) refetchSummaryStatus();
   }, [toolsOpen, refetchSummaryStatus]);
-  // أي تغيّر في الشاشة (بما فيه رجوع المتصفح) يغلق القائمة
-  useEffect(() => { setToolsOpen(false); }, [openScreen]);
+  // أي تغيّر في الشاشة (بما فيه رجوع المتصفح) يغلق القائمتين
+  useEffect(() => { setToolsOpen(false); setNotifOpen(false); }, [openScreen]);
 
   const SUMMARY_COOLDOWN_DAYS = 7;
   const summaryDaysSince = summaryStatus?.generatedAt
@@ -483,6 +505,56 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     summaryButtonDisabled = true;
     summaryHelperText = `آخر تحديث: منذ ${summaryDaysSince} ${summaryDaysSince === 1 ? 'يوم' : 'أيام'} — يمكنك التحديث بعد ${summaryDaysRemaining} ${summaryDaysRemaining === 1 ? 'يوم' : 'أيام'}`;
   }
+
+  // ── عناصر الجرس ─────────────────────────────────────────────────────
+  // إشعار الملخص بنفس الشروط التي تجعل زر «تحديث الملخص الآن» مفعّلاً
+  const summaryNotifKey = summaryStatus && !summaryButtonDisabled
+    ? `summary:${summaryStatus.generatedAt ?? 'none'}`
+    : null;
+  const accountCreatedMs = accountCreatedAt ? new Date(accountCreatedAt).getTime() : null;
+  const notifItems = useMemo<NotificationItem[]>(() => {
+    const read = state.readAnnouncements ?? [];
+    const seen = state.seenNotifications ?? [];
+    const items: NotificationItem[] = [];
+    if (summaryNotifKey) items.push({ key: summaryNotifKey, kind: 'summary', unread: !seen.includes(summaryNotifKey) });
+    for (const r of reminders) items.push({ ...r, kind: 'reminder', unread: !seen.includes(r.key) });
+    for (const ann of (announcements ?? []).slice(0, NOTIF_ANNOUNCEMENTS_LIMIT)) {
+      // التعميم المنشور قبل إنشاء الحساب يُعامَل مقروءاً (حساب في الواجهة فقط)
+      const beforeAccount = accountCreatedMs !== null && new Date(ann.created_at).getTime() < accountCreatedMs;
+      items.push({ key: ann.id, kind: 'announcement', announcement: ann, unread: !beforeAccount && !read.includes(ann.id) });
+    }
+    return items;
+  }, [summaryNotifKey, reminders, announcements, accountCreatedMs, state.readAnnouncements, state.seenNotifications]);
+  const unreadCount = notifItems.filter(i => i.unread).length;
+
+  // العدد إلى زر الجرس في Nav: يُرسل عند كل تغيّر، ويُعاد عند طلب Nav (تركيبها بعد Dashboard)
+  const unreadCountRef = useRef(unreadCount);
+  unreadCountRef.current = unreadCount;
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent<number>(NOTIF_COUNT_EVENT, { detail: unreadCount }));
+  }, [unreadCount]);
+  useEffect(() => {
+    const onRequest = () => window.dispatchEvent(new CustomEvent<number>(NOTIF_COUNT_EVENT, { detail: unreadCountRef.current }));
+    window.addEventListener(REQUEST_NOTIF_COUNT_EVENT, onRequest);
+    return () => window.removeEventListener(REQUEST_NOTIF_COUNT_EVENT, onRequest);
+  }, []);
+
+  // فتح اللوحة يعلّم كل ما فيها مقروءاً في كتابة واحدة، ويحفظ ما كان جديداً
+  // لحظتها فتبقى نقاطه ظاهرة حتى الإغلاق
+  const [unreadAtOpen, setUnreadAtOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const notifItemsRef = useRef(notifItems);
+  notifItemsRef.current = notifItems;
+  useEffect(() => {
+    if (!notifOpen) { setUnreadAtOpen(new Set()); return; }
+    const unread = notifItemsRef.current.filter(i => i.unread);
+    setUnreadAtOpen(new Set(unread.map(i => i.key)));
+    if (unread.length === 0) return;
+    onMarkNotificationsSeen?.(
+      unread.filter(i => i.kind === 'announcement').map(i => i.key),
+      unread.filter(i => i.kind !== 'announcement').map(i => i.key),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifOpen]);
 
   const handleRefreshSummary = async () => {
     if (!supabase || summaryRefreshBusy) return;
@@ -697,17 +769,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     overallPct >= 71   ? 'اقتربت من الهدف، لا تتوقف الآن' :
     overallPct >= 31   ? 'أنت في المنتصف، واصل الإنجاز' :
                           'ابدأ رحلتك، كل شاهد يقربك من الاكتمال';
-
-  const handleOpenAnnouncementModal = (ann: Announcement) => {
-    setActiveAnn(ann);
-    if (onMarkAsRead) {
-      onMarkAsRead(ann.id);
-    }
-  };
-
-  const handleCloseAnnModal = () => {
-    setActiveAnn(null);
-  };
 
   // شاشة القسم العادي (SectionView) — الحالة هنا لا في App: كل ما تحتاجه
   // الشاشة (sections/supabaseEv/ملخصات بند 6) موجود في Dashboard، وإزالته
@@ -1077,35 +1138,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           </div>
         </div>
 
-        {/* SEASONAL REMINDER BANNER */}
-        {reminderBanner && !reminderDismissed && (
-          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold)]/10 via-[var(--gold)]/5 to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .55s var(--sp) both 0.02s' }}>
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_100%_at_0%_50%,rgba(201,162,39,.08),transparent_70%)]" />
-            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
-            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[22px] text-[var(--gold)]">
-                  <i className={`ti ${reminderBanner.icon}`} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] font-bold text-[var(--gold)]/80 tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
-                    <i className="ti ti-bell text-[12px]" /> تذكير
-                  </div>
-                  <div className="text-[15px] font-extrabold text-white truncate leading-snug">{reminderBanner.title}</div>
-                  <div className="text-[12.5px] text-[var(--text3)] mt-1">{reminderBanner.subtitle}</div>
-                </div>
-              </div>
-              <button
-                onClick={() => setReminderDismissed(true)}
-                className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text4)] hover:text-white hover:bg-white/10 transition-colors duration-200 cursor-pointer"
-                title="إغلاق"
-              >
-                <i className="ti ti-x text-[16px]" />
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* بانر: استيراد جماعي جاهز للمراجعة (bulk_import_queue بحالة classified أو failed) */}
         {bulkImportReadyCount > 0 && (
           <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold-dim)] via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
@@ -1318,75 +1350,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               <p className="mt-3 text-[10.5px] text-[var(--text4)]">
                 محسوبة من مجموع الشواهد الموثقة خلال آخر 3 أشهر تقويمية
               </p>
-            </div>
-          </div>
-        )}
-
-        {/* ANNOUNCEMENTS SECTION */}
-        {announcements && announcements.length > 0 && (
-          <div className="mb-8" style={{ animation: 'fadeUp .55s var(--sp) both 0.1s' }}>
-            <div className="flex items-center gap-2 mb-3.5 px-1">
-              <div className="w-2.5 h-2.5 rounded-full bg-[var(--em7)] shadow-[0_0_8px_rgba(82,196,120,.5)]"></div>
-              <h2 className="text-[16px] font-black text-white font-[var(--font)]">آخر التحديثات والتعاميم</h2>
-              <span className="text-[11px] bg-[var(--em7)]/15 text-[var(--em8)] px-2 py-0.5 rounded-md font-extrabold">
-                {announcements.filter(a => !state.readAnnouncements?.includes(a.id)).length} جديد
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {announcements.slice(0, 3).map((ann) => {
-                const isRead = state.readAnnouncements?.includes(ann.id);
-                const dateStr = formatDate(ann.created_at, 'dayMonth');
-                
-                // Category styling
-                let catLabel = 'تحديث';
-                let catClass = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-                let catIcon = 'ti-settings';
-                if (ann.category === 'admin') {
-                  catLabel = 'تعميم إداري';
-                  catClass = 'bg-[var(--gold)]/10 text-[var(--gold)] border-[var(--gold)]/20';
-                  catIcon = 'ti-file-text';
-                } else if (ann.category === 'urgent') {
-                  catLabel = 'تنبيه عاجل';
-                  catClass = 'bg-red-500/10 text-red-400 border-red-500/20';
-                  catIcon = 'ti-alert-triangle';
-                }
-
-                return (
-                  <div 
-                    key={ann.id} 
-                    onClick={() => handleOpenAnnouncementModal(ann)}
-                    className="group relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] border border-[var(--line)] rounded-[20px] p-5 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:border-[var(--line2)] hover:shadow-[0_12px_32px_rgba(0,0,0,.4)] overflow-hidden"
-                  >
-                    {/* Pulsing indicator for unread */}
-                    {!isRead && (
-                      <span className="absolute top-4 left-4 flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                      </span>
-                    )}
-                    
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className={`inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-[11px] font-bold border ${catClass}`}>
-                        <i className={`ti ${catIcon}`}></i> {catLabel}
-                      </span>
-                      <span className="text-[11px] text-[var(--text4)]">{dateStr}</span>
-                    </div>
-                    
-                    <h3 className="text-[14px] font-extrabold text-white mb-2 line-clamp-1 group-hover:text-[var(--em8)] transition-colors duration-200">
-                      {ann.title}
-                    </h3>
-                    
-                    <p className="text-[12.5px] text-[var(--text3)] line-clamp-2 leading-relaxed mb-1">
-                      {ann.content}
-                    </p>
-                    
-                    <div className="text-[11.5px] text-[var(--em8)] font-bold mt-3.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <span>اقرأ المزيد</span>
-                      <i className="ti ti-arrow-left text-[13px] translate-x-1 group-hover:translate-x-0 transition-transform"></i>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           </div>
         )}
@@ -1999,6 +1962,15 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         onPickArchiveMonth={m => { setToolsOpen(false); pushScreen({ kind: 'archive', month: m }); }}
       />
 
+      {/* لوحة الإشعارات — تُفتح من زر الجرس في الشريط العلوي (OPEN_NOTIFICATIONS_EVENT) */}
+      <NotificationsSheet
+        isOpen={notifOpen}
+        onClose={closeNotif}
+        items={notifItems}
+        unreadAtOpen={unreadAtOpen}
+        onOpenSummary={() => { setNotifOpen(false); setToolsOpen(true); }}
+      />
+
       {/* Bottom Sheet — إضافة شاهد (الخطوة الثانية) — جوال فقط */}
       {supabaseEv && (
         <BottomSheet isOpen={mobileSheet.open} onClose={() => mobileFormRef.current?.requestClose()}>
@@ -2033,57 +2005,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           aiConsentGiven={aiConsentGiven}
           onGiveAiConsent={onGiveAiConsent}
         />
-      )}
-
-      {/* Announcement Detail Modal */}
-      {activeAnn && (
-        <div className="modal-overlay" style={{ zIndex: 400 }} onClick={e => { if (e.target === e.currentTarget) handleCloseAnnModal(); }}>
-          <div className="user-modal max-w-lg" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
-            <div className="umodal-header border-b border-white/5 pb-4 mb-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[20px] ${
-                  activeAnn.category === 'admin' ? 'bg-[var(--gold)]/10 text-[var(--gold)]' :
-                  activeAnn.category === 'urgent' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'
-                }`}>
-                  <i className={`ti ${activeAnn.category === 'admin' ? 'ti-file-text' : activeAnn.category === 'urgent' ? 'ti-alert-triangle' : 'ti-settings'}`}></i>
-                </div>
-                <div>
-                  <div className="text-[11.5px] text-[var(--text4)]">
-                    {activeAnn.category === 'admin' ? 'تعميم إداري' : activeAnn.category === 'urgent' ? 'تنبيه عاجل' : 'تحديث برمجي'}
-                  </div>
-                  <div className="text-[12px] text-[var(--text3)] mt-0.5">
-                    {formatDate(activeAnn.created_at, 'long')}
-                  </div>
-                </div>
-              </div>
-              <button className="umodal-close" onClick={handleCloseAnnModal}><i className="ti ti-x" /></button>
-            </div>
-
-            <div className="px-6 py-2">
-              <h3 className="text-[17px] font-black text-white mb-3.5 leading-snug">{activeAnn.title}</h3>
-              <p className="text-[14px] text-[var(--text2)] leading-relaxed whitespace-pre-wrap mb-5">{activeAnn.content}</p>
-
-              {activeAnn.attachment_url && (
-                <div className="mb-4">
-                  <a 
-                    href={activeAnn.attachment_url} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    className="inline-flex items-center gap-2 py-2 px-4 rounded-xl text-[12.5px] font-bold bg-[var(--em7)]/15 border border-[var(--em7)]/25 text-[var(--em8)] hover:bg-[var(--em7)]/25 transition-all no-underline"
-                  >
-                    <i className="ti ti-paperclip"></i> تحميل الملف المرفق
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <div className="umodal-actions border-t border-white/5 pt-4 mt-2 flex justify-end gap-2">
-              <button className="umodal-btn primary-btn py-2.5 px-6 rounded-xl" onClick={handleCloseAnnModal}>
-                إغلاق
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

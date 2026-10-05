@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import BottomSheet from './BottomSheet';
-import { BTN_SM, BTN_GH_SM } from './SectionView';
+import NavPanel from './NavPanel';
+import { BTN_SM } from './SectionView';
 
 /** شهر سابق في الأرشيف — label اسم الشهر بالعربية */
 export type ArchiveMonth = { year: number; month: number; label: string };
@@ -21,19 +21,6 @@ type ToolsSheetProps = {
   archiveMonths: ArchiveMonth[];
   onPickArchiveMonth: (m: ArchiveMonth) => void;
 };
-
-const MOBILE_QUERY = '(max-width: 767px)';
-
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(MOBILE_QUERY);
-    const onChange = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return isMobile;
-}
 
 const ROW = 'w-full min-h-11 flex items-center gap-3 p-2 rounded-[var(--r-sm)] text-right';
 const ROW_BTN = `${ROW} cursor-pointer hover:bg-[var(--s2)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent`;
@@ -59,15 +46,11 @@ export default function ToolsSheet({
   onOpenHarvest, onOpenAnalysis, onOpenBulkImport,
   archiveMonths, onPickArchiveMonth,
 }: ToolsSheetProps) {
-  const isMobile = useIsMobile();
   const [archiveExpanded, setArchiveExpanded] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) { setArchiveExpanded(false); return; }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
+    if (!isOpen) setArchiveExpanded(false);
+  }, [isOpen]);
 
   const hasArchive = archiveMonths.length > 0;
 
@@ -149,33 +132,9 @@ export default function ToolsSheet({
     </div>
   );
 
-  if (isMobile) {
-    return (
-      <BottomSheet isOpen={isOpen} onClose={onClose}>
-        <div className="flex items-center justify-between px-4 pb-3 border-b border-[var(--bd)] shrink-0">
-          <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">أدوات</div>
-          <button type="button" onClick={onClose} aria-label="إغلاق" className={`${BTN_GH_SM} w-11 h-11 px-0`}>
-            <i className="ti ti-x text-[20px]" />
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1 p-3 pb-6">{list}</div>
-      </BottomSheet>
-    );
-  }
-
-  if (!isOpen) return null;
   return (
-    <>
-      {/* فوق الشريط العلوي (z-[300]) حتى يغلق الضغطُ على أي مكان القائمةَ، بما فيه زر «أدوات» */}
-      <div className="fixed inset-0 z-[310]" onClick={onClose} />
-      <div
-        role="dialog"
-        aria-label="أدوات"
-        className="fixed z-[320] top-[80px] left-4 sm:left-9 w-[320px] max-h-[calc(100vh-96px)] overflow-y-auto p-2 rounded-[var(--r-md)] border border-[var(--bd)] bg-[var(--s1)]"
-        style={{ animation: 'scaleIn .25s var(--sp) both', transformOrigin: 'top left' }}
-      >
-        {list}
-      </div>
-    </>
+    <NavPanel isOpen={isOpen} onClose={onClose} title="أدوات">
+      {list}
+    </NavPanel>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import type { PageType, UserProfile } from '../types';
-import { SHOW_SECTIONS_EVENT, OPEN_TOOLS_EVENT } from './Dashboard';
+import { SHOW_SECTIONS_EVENT, OPEN_TOOLS_EVENT, OPEN_NOTIFICATIONS_EVENT, NOTIF_COUNT_EVENT, REQUEST_NOTIF_COUNT_EVENT } from './Dashboard';
 import { BTN_GH_SM } from './SectionView';
 
 interface NavProps {
@@ -18,6 +18,18 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
   const lastScrollY = useRef(0);
   const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
+  // عدد الإشعارات غير المقروءة — يحسبه Dashboard ويرسله بحدث NOTIF_COUNT_EVENT.
+  // بعد تسجيل المستمع تطلب Nav العدد، فلا يضيع إرسال سبق تركيبها.
+  const [notifCount, setNotifCount] = useState(0);
+  useEffect(() => {
+    const onCount = (e: Event) => {
+      const n = (e as CustomEvent<number>).detail;
+      setNotifCount(typeof n === 'number' ? n : 0);
+    };
+    window.addEventListener(NOTIF_COUNT_EVENT, onCount);
+    window.dispatchEvent(new Event(REQUEST_NOTIF_COUNT_EVENT));
+    return () => window.removeEventListener(NOTIF_COUNT_EVENT, onCount);
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -89,7 +101,22 @@ export default function Nav({ currentPage, setPage, onToast, profile, onOpenProf
         </div>
 
         <div className="flex items-center gap-2">
-        {/* قائمة «أدوات» — في اللوحة فقط؛ Dashboard تملك حالة فتحها */}
+        {/* الجرس وقائمة «أدوات» — في اللوحة فقط؛ Dashboard تملك حالة فتحهما */}
+        {isLoggedIn && currentPage === 'dashboard' && (
+          <button
+            type="button"
+            aria-label="الإشعارات"
+            onClick={() => window.dispatchEvent(new Event(OPEN_NOTIFICATIONS_EVENT))}
+            className={`${BTN_GH_SM} relative hover:text-[var(--t1)]`}
+          >
+            <i className="ti ti-bell text-[20px]" />
+            {notifCount > 0 && (
+              <span className="absolute top-0 left-0 min-w-4 h-4 px-1 rounded-full bg-[var(--accent)] text-[var(--bg)] text-[length:var(--fs-xs)] font-bold leading-none flex items-center justify-center">
+                {notifCount > 9 ? '9+' : notifCount}
+              </span>
+            )}
+          </button>
+        )}
         {isLoggedIn && currentPage === 'dashboard' && (
           <button
             type="button"

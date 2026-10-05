@@ -18,8 +18,12 @@ const defaultProfile: UserProfile = {
 const defaultState: AppState = {
   profile: defaultProfile,
   readAnnouncements: [],
+  seenNotifications: [],
   yearStartMonth: 9,
 };
+
+/** سقف seenNotifications — يُحفظ آخر 100 مفتاح فقط */
+const SEEN_NOTIFICATIONS_CAP = 100;
 
 // حقول AppState المعروفة فقط. حقول النظام القديم للشواهد قد تبقى في
 // portfolios.state أو في localStorage لحسابات قديمة — تُتجاهل عند التحميل
@@ -29,6 +33,7 @@ export const pickAppStateFields = (raw: Record<string, any>): Partial<AppState> 
   const picked: Partial<AppState> = {};
   if (raw.profile !== undefined) picked.profile = raw.profile;
   if (raw.readAnnouncements !== undefined) picked.readAnnouncements = raw.readAnnouncements;
+  if (raw.seenNotifications !== undefined) picked.seenNotifications = raw.seenNotifications;
   if (raw.yearStartMonth !== undefined) picked.yearStartMonth = raw.yearStartMonth;
   if (raw.aiSuggestConsentAt !== undefined) picked.aiSuggestConsentAt = raw.aiSuggestConsentAt;
   return picked;
@@ -60,6 +65,11 @@ export function useAppStore() {
   // المحلي مطابقاً لهذا العدّاد، تُتجاهل تماماً بدل استدعاء setState — يمنع
   // race condition تمحو حفظاً حديثاً بنتيجة تحميل قديمة رجعت متأخرة.
   const loadRequestIdRef = useRef(0);
+  // آخر حالة معروفة — تُحدَّث مع كل render وتزامنياً داخل saveState، فالدوال
+  // التي تبني الحالة الجديدة منها (markNotificationsSeen) لا تقرأ قيمة قديمة
+  // محفوظة في الإغلاق حتى لو استُدعيت عدة مرات قبل أي render.
+  const latestStateRef = useRef<AppState>(state);
+  latestStateRef.current = state;
 
   // 0. ترحيل/إبطال localStorage — يجب أن يعمل قبل أي قراءة لمفتاح 'w4' (يقع
   // في الـeffect رقم 2 أدناه، ضمن fallback عدم وجود مستخدم/Supabase). React
@@ -313,6 +323,7 @@ export function useAppStore() {
   // تقدر الواجهة (مثل مودال إعدادات الحساب) تعرف إن فشل الحفظ الصامت ولا
   // تتصرف كأنه نجح (إغلاق المودال، toast نجاح، ...).
   const saveState = async (newState: AppState): Promise<boolean> => {
+    latestStateRef.current = newState;
     setState(newState);
 
     // Always save to localStorage for offline access
@@ -387,16 +398,23 @@ export function useAppStore() {
     return saveState({ ...state, yearStartMonth: month });
   };
 
-  const markAnnouncementAsRead = (id: string) => {
-    const read = state.readAnnouncements || [];
-    if (!read.includes(id)) {
-      const nextRead = [...read, id];
-      return saveState({
-        ...state,
-        readAnnouncements: nextRead
-      });
-    }
+  // يعلّم مجموعة تعاميم مقروءة ومفاتيح إشعارات أخرى مرئية في كتابة واحدة.
+  // يبني من latestStateRef لا من state الإغلاق، فالاستدعاءات المتتالية تتراكم.
+  const markNotificationsSeen = (announcementIds: string[], keys: string[]) => {
+    const prev = latestStateRef.current;
+    const read = prev.readAnnouncements || [];
+    const seen = prev.seenNotifications || [];
+    const newIds = announcementIds.filter((id, i) => !read.includes(id) && announcementIds.indexOf(id) === i);
+    const newKeys = keys.filter((k, i) => !seen.includes(k) && keys.indexOf(k) === i);
+    if (newIds.length === 0 && newKeys.length === 0) return;
+    return saveState({
+      ...prev,
+      readAnnouncements: [...read, ...newIds],
+      seenNotifications: [...seen, ...newKeys].slice(-SEEN_NOTIFICATIONS_CAP),
+    });
   };
+
+  const markAnnouncementAsRead = (id: string) => markNotificationsSeen([id], []);
 
   // يُسجَّل مرة واحدة فقط لكل حساب — يمنع تكرار عرض تحذير خصوصية ميزة
   // "اقتراح تلقائي من الصورة" بعد أول موافقة.
@@ -417,6 +435,7 @@ export function useAppStore() {
     signOut,
     announcements,
     markAnnouncementAsRead,
+    markNotificationsSeen,
     fetchAnnouncements,
     academicDates,
     updateYearStartMonth,

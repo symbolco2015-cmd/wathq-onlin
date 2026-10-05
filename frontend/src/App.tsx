@@ -70,7 +70,7 @@ export default function App() {
     saveState,
     signOut,
     announcements,
-    markAnnouncementAsRead,
+    markNotificationsSeen,
     academicDates,
     updateYearStartMonth,
     shareEnabled,
@@ -1137,7 +1137,8 @@ export default function App() {
             onAddStrategyClick={openAddStrategyModal}
             strategyNames={strategyNames}
             announcements={announcements}
-            onMarkAsRead={markAnnouncementAsRead}
+            onMarkNotificationsSeen={markNotificationsSeen}
+            accountCreatedAt={user?.created_at}
             academicDates={academicDates}
             supabaseEv={viewSupabaseEv}
             monthlyProgress={monthlyProgress}

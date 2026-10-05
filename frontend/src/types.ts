@@ -94,6 +94,9 @@ export interface AppState {
   /** تاريخ موافقة الحساب (ISO) على تحذير خصوصية ميزة "اقتراح تلقائي من
    * الصورة" (Beta) — وجوده يمنع تكرار عرض التحذير لهذا الحساب. */
   aiSuggestConsentAt?: string;
+  /** مفاتيح إشعارات الجرس غير التعاميم التي رآها المعلم (date:{id} وmonth-end:{y}-{m}
+   * وsummary:{generated_at|none}) — آخر 100 فقط. لا تُرجعها get_shared_portfolio. */
+  seenNotifications?: string[];
 }
 
 /** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */

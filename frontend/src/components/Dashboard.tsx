@@ -8,7 +8,7 @@ import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import SectionView, { type SectionSummary, type IndicatorHandlers } from './SectionView';
+import SectionView, { nEv, type SectionSummary, type IndicatorHandlers } from './SectionView';
 import { IndivDiffView, StrategiesView, AnalysisView, ImprovementView } from './SpecialSectionViews';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, supabaseEvidenceTypeToLocal, formatDate, currentHijriYear } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
@@ -19,8 +19,9 @@ import { supabase } from '../supabaseClient';
 import BulkImportPicker from './BulkImportPicker';
 import BulkImportReview from './BulkImportReview';
 import HarvestReportSheet from './HarvestReportSheet';
-import AnalysisSectionCard, { AnalysisSectionBody } from './ResultsAnalysis/AnalysisSectionCard';
-import ImprovementActionsCard, { ImprovementActionsBody, countImprovementActions } from './ResultsAnalysis/ImprovementActionsCard';
+import { AnalysisSectionBody } from './ResultsAnalysis/AnalysisSectionCard';
+import { ImprovementActionsBody, countImprovementActions } from './ResultsAnalysis/ImprovementActionsCard';
+import { SpecCard, SpecGrid } from './SpecGrid';
 import { useResultsAnalysis } from './ResultsAnalysis/useResultsAnalysis';
 
 const ARCHIVE_MONTHS_AR = [
@@ -69,6 +70,8 @@ export interface MonthlyProgressData {
   monthsElapsed: number;
   getSectionMonthCount: (sectionId: number) => number;
   getSectionYearTotal: (sectionId: number) => number;
+  /** تعريف السنة الدراسية نفسه الذي يستعمله getSectionYearTotal */
+  isInAcademicYear: (r: { year: number; month: number }) => boolean;
 }
 
 type DashboardProps = {
@@ -611,6 +614,12 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       .map(e => e.strategy_id as string)
   ).size;
   const stratEvCount = stratEvidence.length;
+  // «شواهد هذا العام» في بطاقة الرئيسية وشاشة الاستراتيجيات: داخل السنة الدراسية
+  // الحالية فقط، بتعريف useMonthlyProgress نفسه (شهر created_at المحلي، كما يسجّله recordEvidence)
+  const stratEvYearCount = stratEvidence.filter(e => {
+    const d = new Date(e.created_at);
+    return monthlyProgress?.isInAcademicYear({ year: d.getFullYear(), month: d.getMonth() + 1 }) ?? false;
+  }).length;
 
   // "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي في القسم الهجين،
   // منفصل كلياً عن الاستراتيجيات أعلاه. بطاقة الاستراتيجيات تعرض فقط أدلة
@@ -621,7 +630,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // section_indicators غير مضمون. غير موجود ⇐ console.error وإخفاء البطاقة
   // (الشرط أدناه) لا كسر الصفحة. الحذف بمعرّف الدليل (onDeleteEv(ev.id)).
   const indivDiffIndicator = useMemo(() => findIndicatorByName(stratSection, 'الفروق الفردية'), [stratSection]);
-  const indivDiffSub = indivDiffIndicator?.name_ar;
   const indivDiffEvs = indivDiffIndicator
     // شواهد الاستراتيجيات (strategy_id) تُعرض في شاشة الاستراتيجيات وحدها
     ? (supabaseEv?.evidence ?? []).filter(e => e.indicator_id === indivDiffIndicator.id && !e.strategy_id)
@@ -902,6 +910,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             icon={stratSection.icon}
             title={stratSection.ttl}
             evCount={stratEvCount}
+            yearEvCount={stratEvYearCount}
             monthName={monthlyProgress?.currentMonthName}
             usedThisMonth={stratsUsedThisMonth}
             groups={stratGroups}
@@ -1671,103 +1680,57 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             );
           })}
 
-          {/* رأسا الاستراتيجيات ومراعاة الفروق الفردية — متجاوران جنباً إلى
-              جنب على الشاشات الواسعة (sm+)، تكديس عمودي على الجوال. كل رأس يفتح
-              شاشة قسمه (3.5ج: SpecialSectionViews)، فلا جسم يُطوى هنا.
-              items-start يمنع تمدّد أحدهما لارتفاع الآخر. */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-          {/* بطاقة الاستراتيجيات — مثبّتة دائماً في آخر القائمة، خارج نظام
-              النسب/الترتيب/التلوين بالكامل (لا borderColor دلالي، لا شريط تقدم،
-              لا نسبة مئوية) — فقط عدادا نشاط (شهري + تراكمي) من stratsUsedThisMonth/
-              stratEvCount أعلاه (مبنيان من أدلة evidence الحقيقية ذات strategy_id،
-              لا monthly_progress — انظر التعليق عند تعريفهما لسبب ذلك). */}
-          {stratSection && (
-            <div key={stratSection.id} id={`sc-${stratSection.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', borderRight: '4px solid var(--gold)' }}>
-              <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => pushScreen({ kind: 'strat' })}>
-                 <div className="absolute bottom-0 right-6 left-6 h-px bg-gradient-to-r from-transparent via-[var(--gold)]/15 to-transparent opacity-0 transition-opacity duration-250 group-hover:opacity-100"></div>
-
-                 <div className="w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border shadow-[0_4px_14px_rgba(201,162,39,.25)] transition-all duration-350 bg-[var(--gold)]/10 text-[var(--gold)] border-[var(--gold)]/20 group-hover:bg-gradient-to-br group-hover:from-[var(--gold)] group-hover:to-[var(--gold3)] group-hover:text-white group-hover:scale-110 group-hover:rotate-[-5deg]">
-                   <i className={`ti ${stratSection.icon}`}></i>
-                 </div>
-
-                 <div className="flex-1 min-w-0">
-                   <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{stratSection.ttl}</div>
-                   {/* عداد مستقل لقسم الاستراتيجيات — بلا شريط تقدم ولا نسبة (لا
-                       "هدف" هنا)، فقط رقمان: نشاط الشهر والإجمالي، بنفس بنية
-                       عداد الأقسام العادية أعلاه لكن بلون ذهبي بدل الأخضر. */}
-                   {monthlyProgress && (
-                     <div className="flex items-center gap-1.5 sm:gap-3 mt-1 sm:mt-1.5 flex-wrap">
-                       <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
-                         <i className="ti ti-calendar text-[9px] sm:text-[10px]" />
-                         {monthlyProgress.currentMonthName}:{' '}
-                         <span className={stratsUsedThisMonth > 0 ? 'text-[var(--gold)] font-bold' : ''}>
-                           {stratsUsedThisMonth}
-                         </span>
-                       </span>
-                       <span className="text-[var(--text4)] opacity-40 text-[9px]">·</span>
-                       <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
-                         <i className="ti ti-trending-up text-[9px] sm:text-[10px]" />
-                         {stratEvCount} هذا العام
-                       </span>
-                     </div>
-                   )}
-                 </div>
-
-                 <i className="ti ti-chevron-left text-[22px] shrink-0 text-[var(--text4)]"></i>
-              </div>
-            </div>
-          )}
-
-          {/* رأس "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي ضمن
-              القسم الهجين (استراتيجيات)، لا يظهر في شاشة الاستراتيجيات (تلك تعرض
-              فقط أدلة strategy_id غير الفارغ)، فله شاشته المستقلة. */}
-          {stratSection && indivDiffSub && (
-            <div className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ borderRight: '4px solid var(--gold)' }}>
-              <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => pushScreen({ kind: 'indiv' })}>
-                <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border transition-all duration-350 ${indivDiffEvs.length > 0 ? 'bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20' : 'bg-white/5 text-[var(--text4)] border-[var(--line2)]'}`}>
-                  <i className="ti ti-users"></i>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{indivDiffSub}</div>
-                  <div className={`flex items-center gap-1.5 mt-1 sm:mt-1.5 text-[10.5px] sm:text-[11.5px] font-bold ${indivDiffEvs.length > 0 ? 'text-[var(--em8)]' : 'text-[var(--text4)]'}`}>
-                    <i className={`ti ${indivDiffEvs.length > 0 ? 'ti-circle-check' : 'ti-circle-dashed'} text-[11px]`}></i>
-                    {indivDiffEvs.length > 0 ? `موثّق ✓ (${indivDiffEvs.length})` : 'غير موثّق بعد'}
-                  </div>
-                </div>
-
-                <i className="ti ti-chevron-left text-[22px] shrink-0 text-[var(--text4)]"></i>
-              </div>
-            </div>
-          )}
-          </div>
-
-          {/* بطاقتا بند 10 (تحليل نتائج المتعلمين) وبند 5 (تحسين نتائج المتعلمين) —
-              مثبّتتان دائماً هنا خارج شبكة الأقسام، نفس معاملة قسم الاستراتيجيات
-              أعلاه (isResultsSection مُستبعد من nonStratSections/sortedFilteredSections)،
-              وبنفس نمط التجاور جنباً إلى جنب (grid sm:grid-cols-2 items-start).
-              البطاقتان رأسان فقط، كل منهما يفتح شاشة قسمه (3.5د و3.5هـ). ترتيب العرض:
-              التحليل أولاً (مصدر البيانات) ثم قائمة الإجراءات المُولَّدة منه —
-              بلا ترابط في الحسابات، فقط تسلسل منطقي للقراءة. */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-          {analysisSection && (
-            <AnalysisSectionCard
-              section={analysisSection}
-              analysisCount={resultsAnalysis.analyses.length}
-              loading={resultsAnalysis.loading}
-              onOpen={() => pushScreen({ kind: 'analysis' })}
-            />
-          )}
-
-          {improvementSection && (
-            <ImprovementActionsCard
-              section={improvementSection}
-              actionCount={improvementActionCount}
-              loading={resultsAnalysis.loading}
-              onOpen={() => pushScreen({ kind: 'improvement' })}
-            />
-          )}
-          </div>
+          {/* شبكة الأقسام الخاصة (4.1) — كل بطاقة تفتح شاشة قسمها. معرّفات sc-*
+              يستهلكها التمرير عند الرجوع (popstate وgoHomeAndScroll). بطاقتا 10 و5
+              تظهران أثناء تحميل resultsAnalysis بسطر «جارٍ التحميل…» فلا تقفز الشبكة. */}
+          <SpecGrid>
+            {stratSection && (
+              <SpecCard
+                id={`sc-${stratSection.id}`}
+                icon={stratSection.icon}
+                title={stratSection.ttl}
+                desc="الاستراتيجيات المفعّلة وأدلتها"
+                status={monthlyProgress
+                  ? `استراتيجيات ${monthlyProgress.currentMonthName}: ${stratsUsedThisMonth} · شواهد هذا العام: ${stratEvYearCount}`
+                  : undefined}
+                onOpen={() => pushScreen({ kind: 'strat' })}
+              />
+            )}
+            {stratSection && indivDiffIndicator && (
+              <SpecCard
+                id="sc-indiv"
+                icon="ti-users"
+                title={indivDiffIndicator.name_ar}
+                desc="شواهد مراعاة الفروق الفردية"
+                status={indivDiffEvs.length > 0 ? nEv(indivDiffEvs.length) : 'لم يُوثَّق بعد'}
+                // نفس شرط دائرة IndivDiffView
+                dot={indivDiffEvs.length >= 2 ? 'over' : indivDiffEvs.length === 1 ? 'basic' : 'idle'}
+                onOpen={() => pushScreen({ kind: 'indiv' })}
+              />
+            )}
+            {analysisSection && (
+              <SpecCard
+                id={`sc-${analysisSection.id}`}
+                icon={analysisSection.icon}
+                title={analysisSection.ttl}
+                desc="رفع كشوف الدرجات ومقارنتها"
+                status={resultsAnalysis.loading ? 'جارٍ التحميل…'
+                  : resultsAnalysis.analyses.length > 0 ? `تحليلات محفوظة: ${resultsAnalysis.analyses.length}` : 'لا تحليلات بعد'}
+                onOpen={() => pushScreen({ kind: 'analysis' })}
+              />
+            )}
+            {improvementSection && (
+              <SpecCard
+                id={`sc-${improvementSection.id}`}
+                icon={improvementSection.icon}
+                title={improvementSection.ttl}
+                desc="خطط علاجية وتكريم المتفوقين"
+                status={resultsAnalysis.loading ? 'جارٍ التحميل…'
+                  : improvementActionCount > 0 ? `إجراءات تحتاج متابعة: ${improvementActionCount}` : 'لا إجراءات حالياً'}
+                onOpen={() => pushScreen({ kind: 'improvement' })}
+              />
+            )}
+          </SpecGrid>
         </div>
         </>}
 

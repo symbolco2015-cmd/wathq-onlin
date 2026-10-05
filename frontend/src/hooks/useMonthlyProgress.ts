@@ -151,8 +151,8 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
     }
   }, [userId]);
 
-  /** هل الصف ضمن السنة الدراسية الحالية؟ */
-  function isInAcademicYear(r: MonthlyProgressRow): boolean {
+  /** هل الشهر ضمن السنة الدراسية الحالية؟ (صف monthly_progress أو شهر أي تاريخ) */
+  function isInAcademicYear(r: { year: number; month: number }): boolean {
     const rFlat     = r.year * 12 + r.month;
     const startFlat = academicStartYear * 12 + yearStartMonth;
     const endFlat   = currentYear * 12 + currentMonth;
@@ -199,6 +199,7 @@ export function useMonthlyProgress({ userId, yearStartMonth }: UseMonthlyProgres
     removeEvidence,
     getSectionMonthCount,
     getSectionYearTotal,
+    isInAcademicYear,
     currentMonthTotal,
     currentMonthName,
     currentYear,

@@ -121,10 +121,13 @@ export interface StrategyGroup {
 }
 
 /** شاشة «التنويع في استراتيجيات التدريس» — بطاقة لكل استراتيجية لها شاهد */
-export function StrategiesView({ icon, title, evCount, monthName, usedThisMonth, groups, onBack, onAddForGroup, onAddStrategy, onDeleteEv }: {
+export function StrategiesView({ icon, title, evCount, yearEvCount, monthName, usedThisMonth, groups, onBack, onAddForGroup, onAddStrategy, onDeleteEv }: {
   icon: string;
   title: string;
+  /** كل شواهد الاستراتيجيات — شارة الرأس، تطابق القائمة أدناه */
   evCount: number;
+  /** شواهد السنة الدراسية الحالية — نفس رقم بطاقة الرئيسية */
+  yearEvCount: number;
   /** اسم الشهر الحالي — بدونه لا يُعرض سطر العدّادين */
   monthName?: string;
   usedThisMonth: number;
@@ -141,7 +144,7 @@ export function StrategiesView({ icon, title, evCount, monthName, usedThisMonth,
 
       {monthName && (
         <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
-          {monthName}: {usedThisMonth} · {evCount} هذا العام
+          استراتيجيات {monthName}: {usedThisMonth} · شواهد هذا العام: {yearEvCount}
         </p>
       )}
 
@@ -186,7 +189,7 @@ export function AnalysisView({ icon, title, analysisCount, loading, onBack, chil
       <SectionHeader onBack={onBack} icon={icon} title={title} />
 
       <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
-        {loading ? 'جارٍ التحميل…' : analysisCount > 0 ? `${analysisCount} تحليل محفوظ` : 'لا تحليلات بعد'}
+        {loading ? 'جارٍ التحميل…' : analysisCount > 0 ? `تحليلات محفوظة: ${analysisCount}` : 'لا تحليلات بعد'}
       </p>
 
       {!loading && (
@@ -213,7 +216,7 @@ export function ImprovementView({ icon, title, actionCount, loading, onBack, chi
       <SectionHeader onBack={onBack} icon={icon} title={title} />
 
       <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
-        {loading ? 'جارٍ التحميل…' : actionCount > 0 ? `${actionCount} إجراء يحتاج متابعة` : 'لا إجراءات حالياً'}
+        {loading ? 'جارٍ التحميل…' : actionCount > 0 ? `إجراءات تحتاج متابعة: ${actionCount}` : 'لا إجراءات حالياً'}
       </p>
 
       {!loading && children}

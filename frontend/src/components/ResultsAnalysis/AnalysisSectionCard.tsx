@@ -13,40 +13,6 @@ import { formatDate } from '../../utils';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
-interface AnalysisSectionCardProps {
-  section: SectionData;
-  analysisCount: number;
-  loading: boolean;
-  onOpen: () => void;
-}
-
-/**
- * رأس بند 10 "تحليل نتائج المتعلمين" في الرئيسية — مثبّت خارج شبكة الأقسام
- * (نفس معاملة قسم الاستراتيجيات). الضغط يفتح شاشة القسم (3.5د)، والأداة نفسها
- * في AnalysisSectionBody أدناه.
- */
-export default function AnalysisSectionCard({ section, analysisCount, loading, onOpen }: AnalysisSectionCardProps) {
-  if (loading) return null;
-
-  return (
-    <div id={`sc-${section.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', borderRight: '4px solid var(--violet)' }}>
-      <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={onOpen}>
-        <div className={`w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border transition-all duration-350 ${analysisCount > 0 ? 'bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20' : 'bg-white/5 text-[var(--text4)] border-[var(--line2)]'}`}>
-          <i className={`ti ${section.icon}`} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{section.ttl}</div>
-          <div className={`flex items-center gap-1.5 mt-1 sm:mt-1.5 text-[10.5px] sm:text-[11.5px] font-bold ${analysisCount > 0 ? 'text-[var(--em8)]' : 'text-[var(--text4)]'}`}>
-            <i className={`ti ${analysisCount > 0 ? 'ti-circle-check' : 'ti-circle-dashed'} text-[11px]`} />
-            {analysisCount > 0 ? `${analysisCount} تحليل محفوظ` : 'لا تحليلات بعد'}
-          </div>
-        </div>
-        <i className="ti ti-chevron-left text-[22px] shrink-0 text-[var(--text4)]" />
-      </div>
-    </div>
-  );
-}
-
 interface AnalysisSectionBodyProps {
   sections: SectionData[];
   userId: string | undefined;

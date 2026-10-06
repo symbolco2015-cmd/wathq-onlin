@@ -19,6 +19,7 @@ const defaultState: AppState = {
   profile: defaultProfile,
   readAnnouncements: [],
   seenNotifications: [],
+  seenHints: [],
   yearStartMonth: 9,
 };
 
@@ -36,6 +37,9 @@ export const pickAppStateFields = (raw: Record<string, any>): Partial<AppState> 
   if (raw.seenNotifications !== undefined) picked.seenNotifications = raw.seenNotifications;
   if (raw.yearStartMonth !== undefined) picked.yearStartMonth = raw.yearStartMonth;
   if (raw.aiSuggestConsentAt !== undefined) picked.aiSuggestConsentAt = raw.aiSuggestConsentAt;
+  if (raw.welcome !== undefined) picked.welcome = raw.welcome;
+  if (raw.welcomeNoAvatar !== undefined) picked.welcomeNoAvatar = raw.welcomeNoAvatar;
+  if (raw.seenHints !== undefined) picked.seenHints = raw.seenHints;
   return picked;
 };
 
@@ -416,6 +420,25 @@ export function useAppStore() {
 
   const markAnnouncementAsRead = (id: string) => markNotificationsSeen([id], []);
 
+  // حالة بطاقة الترحيب (welcome) و«متابعة بدون صورة» (welcomeNoAvatar) — كتابة
+  // واحدة من latestStateRef، ولا كتابة إن لم يتغير شيء.
+  const updateWelcome = (patch: { welcome?: 'active' | 'dismissed'; welcomeNoAvatar?: true }) => {
+    const prev = latestStateRef.current;
+    const changed =
+      (patch.welcome !== undefined && patch.welcome !== prev.welcome) ||
+      (patch.welcomeNoAvatar !== undefined && patch.welcomeNoAvatar !== prev.welcomeNoAvatar);
+    if (!changed) return;
+    return saveState({ ...prev, ...patch });
+  };
+
+  // يعلّم تلميحاً مرئياً — يبني من latestStateRef، ولا يكتب إن كان المفتاح موجوداً.
+  const markHintSeen = (key: string) => {
+    const prev = latestStateRef.current;
+    const seen = prev.seenHints || [];
+    if (seen.includes(key)) return;
+    return saveState({ ...prev, seenHints: [...seen, key] });
+  };
+
   // يُسجَّل مرة واحدة فقط لكل حساب — يمنع تكرار عرض تحذير خصوصية ميزة
   // "اقتراح تلقائي من الصورة" بعد أول موافقة.
   const setAiSuggestConsent = () => {
@@ -436,6 +459,8 @@ export function useAppStore() {
     announcements,
     markAnnouncementAsRead,
     markNotificationsSeen,
+    updateWelcome,
+    markHintSeen,
     fetchAnnouncements,
     academicDates,
     updateYearStartMonth,

@@ -71,6 +71,8 @@ export default function App() {
     signOut,
     announcements,
     markNotificationsSeen,
+    updateWelcome,
+    markHintSeen,
     academicDates,
     shareEnabled,
     updateShareEnabled,
@@ -1136,6 +1138,10 @@ export default function App() {
             strategyNames={strategyNames}
             announcements={announcements}
             onMarkNotificationsSeen={markNotificationsSeen}
+            onOpenProfileSettings={openProfileSettings}
+            shareEnabled={shareEnabled}
+            onUpdateWelcome={updateWelcome}
+            onMarkHintSeen={markHintSeen}
             accountCreatedAt={user?.created_at}
             academicDates={academicDates}
             supabaseEv={viewSupabaseEv}

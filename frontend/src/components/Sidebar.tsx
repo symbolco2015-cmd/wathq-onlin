@@ -44,7 +44,7 @@ export default function Sidebar({ monthCard, cumulativeCard, onAddEvidence, core
   return (
     <aside className="hidden lg:flex flex-col gap-3 w-[332px] shrink-0 self-start sticky top-[72px] max-h-[calc(100vh-72px)] overflow-y-auto hide-scrollbar py-9 pl-8">
       {monthCard}
-      <button type="button" onClick={onAddEvidence} className={`${BTN_PRI} flex-none w-full`}>
+      <button type="button" id="sidebar-add-ev" onClick={onAddEvidence} className={`${BTN_PRI} flex-none w-full`}>
         <i className="ti ti-plus text-[20px]" /> أضف شاهداً
       </button>
       {cumulativeCard}

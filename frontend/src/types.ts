@@ -97,6 +97,14 @@ export interface AppState {
   /** مفاتيح إشعارات الجرس غير التعاميم التي رآها المعلم (date:{id} وmonth-end:{y}-{m}
    * وsummary:{generated_at|none}) — آخر 100 فقط. لا تُرجعها get_shared_portfolio. */
   seenNotifications?: string[];
+  /** بطاقة الترحيب في اللوحة: 'active' تظهر، 'dismissed' لا تظهر. غائب = لم تُحدَّد
+   * بعد (تُكتب مرة واحدة بعد فحص الشواهد). لا تُرجعها get_shared_portfolio. */
+  welcome?: 'active' | 'dismissed';
+  /** اختار المعلم «متابعة بدون صورة» في خطوة الترحيب الأولى. لا تُرجعها get_shared_portfolio. */
+  welcomeNoAvatar?: true;
+  /** مفاتيح التلميحات التي رآها المعلم (hint:add وhint:bell) — منفصلة عن
+   * seenNotifications حتى لا يحذفها سقفه. لا تُرجعها get_shared_portfolio. */
+  seenHints?: string[];
 }
 
 /** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */

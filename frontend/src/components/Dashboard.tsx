@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { AppState, SectionData, Announcement, AcademicDate } from '../types';
+import type { AppState, SectionData, SectionIndicator, Announcement, AcademicDate } from '../types';
 import { findIndicatorByName } from '../indicators';
 import Sidebar, { type SidebarCoreItem, type SidebarSpecialItem } from './Sidebar';
 import { MonthCard, CumulativeCard } from './SummaryCards';
@@ -9,7 +9,7 @@ import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import SectionView, { nEv, sectionLevel, LevelBadge, DOT_COLOR, BTN_PRI_SM, BTN_GH_SM, BTN_SM, BTN_DNG, type Level, type SectionSummary, type IndicatorHandlers } from './SectionView';
+import SectionView, { nEv, sectionLevel, LevelBadge, BTN_PRI_SM, BTN_GH_SM, BTN_SM, BTN_DNG, type Level, type SectionSummary, type IndicatorHandlers } from './SectionView';
 import { IndivDiffView, StrategiesView, AnalysisView, ImprovementView } from './SpecialSectionViews';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, formatDate, formatHijri } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
@@ -26,6 +26,9 @@ import { SpecCard, SpecGrid } from './SpecGrid';
 import { useResultsAnalysis } from './ResultsAnalysis/useResultsAnalysis';
 import ToolsSheet, { type ArchiveMonth } from './ToolsSheet';
 import NotificationsSheet, { type NotificationItem } from './NotificationsSheet';
+import WelcomeCard from './WelcomeCard';
+import Hint from './Hint';
+import { SectionPickList, IndicatorPickStep } from './SectionIndicatorPicker';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -130,6 +133,14 @@ type DashboardProps = {
   announcements?: Announcement[];
   /** يعلّم تعاميم مقروءة ومفاتيح إشعارات أخرى مرئية في كتابة واحدة — markNotificationsSeen في useAppStore */
   onMarkNotificationsSeen?: (announcementIds: string[], keys: string[]) => void;
+  /** يفتح نافذة إعدادات الملف الشخصي (فيها الصورة والتواصل ومفتاح المشاركة) — openProfileSettings في App */
+  onOpenProfileSettings?: () => void;
+  /** share_enabled من useAppStore — شرط خطوة «شارك صفحتك» في بطاقة الترحيب */
+  shareEnabled?: boolean;
+  /** يكتب state.welcome / state.welcomeNoAvatar — updateWelcome في useAppStore */
+  onUpdateWelcome?: (patch: { welcome?: 'active' | 'dismissed'; welcomeNoAvatar?: true }) => void;
+  /** يضيف مفتاح تلميح إلى state.seenHints — markHintSeen في useAppStore */
+  onMarkHintSeen?: (key: string) => void;
   /** تاريخ إنشاء الحساب (auth user.created_at) — التعميم الأقدم منه يُعامَل مقروءاً */
   accountCreatedAt?: string;
   academicDates?: AcademicDate[];
@@ -246,8 +257,6 @@ export function SectionReclassifyDropdown({
 }
 
 /** صف قائمة في المنتقي وأوراق الالتقاط — نمط .navs بارتفاع 44px */
-const PICK_ROW = 'w-full h-11 px-3 flex items-center gap-3 rounded-[var(--r-sm)] text-right text-[length:var(--fs-sm)] text-[var(--t1)] hover:bg-[var(--s2)] transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-wait';
-
 /** عنصر قائمة الزر العائم */
 const FAB_ITEM = 'h-11 px-3 flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bd)] bg-[var(--s1)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] active:scale-95 transition-transform duration-150 cursor-pointer';
 
@@ -268,7 +277,7 @@ function SheetHeader({ title, onClose, badge }: { title: string; onClose: () => 
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkNotificationsSeen, accountCreatedAt, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkNotificationsSeen, onOpenProfileSettings, shareEnabled = false, onUpdateWelcome, onMarkHintSeen, accountCreatedAt, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator }: DashboardProps) {
   // تذكيرات الجرس الموسمية — موعد دراسي قادم خلال 7 أيام، ونهاية الشهر (آخر 5 أيام).
   // كل منهما إشعار مستقل بمفتاح يُحفظ في state.seenNotifications.
   const reminders = useMemo(() => {
@@ -385,6 +394,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   };
 
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
+  // الخطوة الثانية في المنتقي: القسم المختار (null = الخطوة الأولى)
+  const [pickerSection, setPickerSection] = useState<SectionData | null>(null);
+  // كل فتح يبدأ من الخطوة الأولى، أياً كانت طريقة الإغلاق السابق
+  const openSectionPicker = () => { setPickerSection(null); setSectionPickerOpen(true); };
   const isDesktop = useIsDesktop();
   // نافذة المنتقي على سطح المكتب تُغلق بـ Esc
   useEffect(() => {
@@ -394,15 +407,15 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     return () => window.removeEventListener('keydown', onKey);
   }, [sectionPickerOpen, isDesktop]);
   const [fabExpanded, setFabExpanded] = useState(false);
-  const [mobileSheet, setMobileSheet] = useState<{ open: boolean; sectionId: number; sub: string }>({
+  const [mobileSheet, setMobileSheet] = useState<{ open: boolean; sectionId: number; sub: string; indicatorId?: string }>({
     open: false, sectionId: 0, sub: '',
   });
   const closeMobileSheet = () => setMobileSheet(prev => ({ ...prev, open: false }));
   // الخلفية والسحب يمرّان عبر requestClose حتى يسأل النموذج قبل تجاهل ما كُتب
   const mobileFormRef = useRef<EvidenceFormHandle>(null);
-  const handlePickSection = (sec: SectionData) => {
+  const handlePickIndicator = (sec: SectionData, ind: SectionIndicator) => {
     setSectionPickerOpen(false);
-    setMobileSheet({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' });
+    setMobileSheet({ open: true, sectionId: sec.id, sub: ind.name_ar, indicatorId: ind.id });
   };
 
   // الاستيراد الجماعي — مصدر البيانات bulk_import_queue وليس evidence
@@ -506,15 +519,54 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     refetchSummaryStatus();
   }, [refetchSummaryStatus]);
 
+  // ── بطاقة الترحيب ───────────────────────────────────────────────────
+  // إشارة اكتمال التحميل: استعلام عدّ مستقل على evidence، لا supabaseEv.loading
+  // (قيمته الأولى false مع قائمة فارغة، وخطؤه يُبتلع إلى []). لا كتابة إلا عند
+  // نجاحه. welcome غائب ⇐ كتابة واحدة: 'dismissed' لمعلم له شواهد، وإلا 'active'.
+  // allDoneAtLoad يُحفظ لحظة الفحص: البطاقة لا تظهر لمن أكمل الخطوات قبل هذا
+  // التحميل، وتبقى ظاهرة لمن أكملها في الجلسة نفسها.
+  const welcomeRef = useRef({ welcome: state.welcome, profileDone: false, shareEnabled });
+  const avatarDone = !!state.profile.avatar?.trim() || state.welcomeNoAvatar === true;
+  welcomeRef.current = { welcome: state.welcome, profileDone: avatarDone, shareEnabled };
+  const onUpdateWelcomeRef = useRef(onUpdateWelcome);
+  onUpdateWelcomeRef.current = onUpdateWelcome;
+  const [welcomeCheck, setWelcomeCheck] = useState<{ hasEvidenceAtLoad: boolean; allDoneAtLoad: boolean } | null>(null);
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    if (welcomeRef.current.welcome === 'dismissed') return;
+    let cancelled = false;
+    supabase
+      .from('evidence')
+      .select('id', { count: 'exact', head: true })
+      .eq('portfolio_id', userId)
+      .then(({ count, error }) => {
+        if (cancelled) return;
+        if (error) { console.warn('[Dashboard] تعذّر فحص الشواهد لبطاقة الترحيب:', error.message); return; }
+        const hasEvidence = (count ?? 0) > 0;
+        const cur = welcomeRef.current;
+        if (cur.welcome === undefined) onUpdateWelcomeRef.current?.({ welcome: hasEvidence ? 'dismissed' : 'active' });
+        setWelcomeCheck({ hasEvidenceAtLoad: hasEvidence, allDoneAtLoad: cur.profileDone && hasEvidence && cur.shareEnabled });
+      });
+    return () => { cancelled = true; };
+  }, [userId]);
+  const showWelcome = state.welcome === 'active' && !!welcomeCheck && !welcomeCheck.allDoneAtLoad;
+  const welcomeEvidenceDone = (supabaseEv?.evidence.length ?? 0) > 0 || !!welcomeCheck?.hasEvidenceAtLoad;
+  const prof = state.profile;
+  const showContactNudge = [prof.email, prof.phone, prof.twitter, prof.linkedin, prof.youtube].every(v => !v?.trim());
+
   // قائمة «أدوات» — تُفتح بحدث من زر الشريط العلوي (OPEN_TOOLS_EVENT)
   const [toolsOpen, setToolsOpen] = useState(false);
   const closeTools = useCallback(() => setToolsOpen(false), []);
   // لوحة الإشعارات (الجرس) — تُفتح بحدث OPEN_NOTIFICATIONS_EVENT. اللوحتان لا تُفتحان معاً.
   const [notifOpen, setNotifOpen] = useState(false);
   const closeNotif = useCallback(() => setNotifOpen(false), []);
+  // المستمع مسجّل مرة واحدة، فيقرأ آخر دالة تعليم التلميح من ref
+  const onMarkHintSeenRef = useRef(onMarkHintSeen);
+  onMarkHintSeenRef.current = onMarkHintSeen;
   useEffect(() => {
     const onOpenTools = () => { setNotifOpen(false); setToolsOpen(true); };
-    const onOpenNotif = () => { setToolsOpen(false); setNotifOpen(true); };
+    // فتح الجرس يعلّم تلميحه مرئياً
+    const onOpenNotif = () => { setToolsOpen(false); setNotifOpen(true); onMarkHintSeenRef.current?.('hint:bell'); };
     window.addEventListener(OPEN_TOOLS_EVENT, onOpenTools);
     window.addEventListener(OPEN_NOTIFICATIONS_EVENT, onOpenNotif);
     return () => {
@@ -933,33 +985,47 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     : openScreen.kind === 'core' ? `core-${openScreen.id}`
     : openScreen.kind;
 
-  // منتقي البند — محتوى واحد: ورقة سفلية تحت 1024px، ونافذة وسط الشاشة فوقها.
-  // على سطح المكتب يفتح نموذج App (EvidenceModal) بلا مؤشر مختار مسبقاً
-  const pickSection = (sec: SectionData) => {
+  // منتقي البند بخطوتين (القسم ثم المؤشر) — محتوى واحد: ورقة سفلية تحت
+  // 1024px، ونافذة وسط الشاشة فوقها. المؤشر يُختار قبل فتح النموذج، فيُفتح
+  // عليه مختاراً (نموذج App على سطح المكتب، والورقة على الجوال)
+  const pickIndicator = (ind: SectionIndicator) => {
+    const sec = pickerSection;
+    if (!sec) return;
     if (isDesktop) {
       setSectionPickerOpen(false);
-      onAddEvClick(sec.id, sec.subs[0] ?? 'عام');
+      onAddEvClick(sec.id, ind.name_ar, undefined, ind.id);
     } else {
-      handlePickSection(sec);
+      handlePickIndicator(sec, ind);
     }
   };
   const closeSectionPicker = () => setSectionPickerOpen(false);
+  // الرسمية أولاً ثم المخصصة، مع عدد شواهد كل مؤشر من الشواهد المحمّلة
+  const pickerItems = pickerSection
+    ? [...pickerSection.indicators.filter(ind => !ind.isCustom), ...pickerSection.indicators.filter(ind => ind.isCustom)].map(ind => {
+        const count = supabaseEv?.evidence.filter(e => e.indicator_id === ind.id).length ?? 0;
+        return { ...ind, sub: count === 0 ? 'لا شواهد بعد' : nEv(count) };
+      })
+    : [];
+  const sectionPickerTitle = pickerSection ? 'اختر المؤشر' : 'اختر البند';
   const sectionPickerBody = (
     <>
-      <SheetHeader title="اختر البند" onClose={closeSectionPicker} />
+      <SheetHeader title={sectionPickerTitle} onClose={closeSectionPicker} />
       <div className="overflow-y-auto flex-1 p-3 pb-6">
-        <div className="flex flex-col gap-1">
-          {/* nonStratSections لا pickableSections — قسم 4 (isStrat) يستلزم
-              strategy_id إجبارياً الآن، فلا يظهر ضمن منتقي "إضافة شاهد عادي"
-              العام؛ له تدفّقه الخاص عبر onAddStrategyClick */}
-          {nonStratSections.map(sec => (
-            <button key={sec.id} type="button" onClick={() => pickSection(sec)} className={PICK_ROW}>
-              <i className={`ti ${sec.icon} text-[20px] text-[var(--t2)] shrink-0`} />
-              <span className="flex-1 min-w-0 truncate">{sec.ttl}</span>
-              <span className="w-2 h-2 rounded-[var(--r-full)] shrink-0" style={{ backgroundColor: DOT_COLOR[coreLevelById.get(sec.id) ?? 'n'] }} />
-            </button>
-          ))}
-        </div>
+        {/* nonStratSections لا pickableSections — قسم 4 (isStrat) يستلزم
+            strategy_id إجبارياً الآن، فلا يظهر ضمن منتقي "إضافة شاهد عادي"
+            العام؛ له تدفّقه الخاص عبر onAddStrategyClick. وكلها أقسام core،
+            فمؤشراتها المخصصة مسموحة */}
+        {!pickerSection ? (
+          <SectionPickList sections={nonStratSections} levelById={coreLevelById} onPick={setPickerSection} />
+        ) : (
+          <IndicatorPickStep
+            sectionTitle={pickerSection.ttl}
+            backLabel="رجوع"
+            onBack={() => setPickerSection(null)}
+            items={pickerItems}
+            onPick={pickIndicator}
+          />
+        )}
       </div>
     </>
   );
@@ -1062,8 +1128,37 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     </div>
   );
 
+  // ── التلميحات ───────────────────────────────────────────────────────
+  // تلميح واحد في كل مرة (hint:add ثم hint:bell)، في الرئيسية فقط، ولا شيء
+  // مفتوح من أوراق Dashboard. نوافذ App (z-500) تغطيه بخلفيتها.
+  const seenHints = state.seenHints ?? [];
+  const anyOverlayOpen = sectionPickerOpen || fabExpanded || toolsOpen || notifOpen || mobileSheet.open
+    || isBulkImportOpen || isBulkImportReviewOpen || isHarvestReportOpen || archiveAddTarget.open
+    || quickCapture.pickerSheetOpen || quickCapture.voiceSheetOpen || quickCapture.voiceConsentPromptOpen;
+  const activeHint = openScreen || anyOverlayOpen ? null
+    : !seenHints.includes('hint:add') ? 'hint:add'
+    : !seenHints.includes('hint:bell') ? 'hint:bell'
+    : null;
+
   return (
     <div className="flex min-h-[calc(100vh-72px)]">
+      {activeHint === 'hint:add' && (
+        <Hint
+          key={isDesktop ? 'add-desk' : 'add-mob'}
+          targetId={isDesktop ? 'sidebar-add-ev' : 'fab-add'}
+          placement={isDesktop ? 'below' : 'above'}
+          text="من هنا تضيف شواهدك في أي بند"
+          onDismiss={() => onMarkHintSeen?.('hint:add')}
+        />
+      )}
+      {activeHint === 'hint:bell' && (
+        <Hint
+          targetId="nav-bell"
+          placement="below"
+          text="هنا تصلك التعاميم والتذكيرات، وتنبيه ملفات الاستيراد"
+          onDismiss={() => onMarkHintSeen?.('hint:bell')}
+        />
+      )}
       <main className="flex-1 p-3 sm:p-5 md:py-9 md:px-8 min-w-0 overflow-x-hidden">
         {archiveMonth ? archiveView : openSectionData ? (
           <SectionView
@@ -1148,6 +1243,19 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           <div className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] leading-tight">مرحباً، {state.profile.name}</div>
           <div className="mt-1 text-[length:var(--fs-xs)] text-[var(--t3)]">{formatHijri(new Date())}</div>
         </div>
+
+        {showWelcome && (
+          <WelcomeCard
+            profileDone={avatarDone}
+            evidenceDone={welcomeEvidenceDone}
+            shareDone={shareEnabled}
+            showContactNudge={showContactNudge}
+            onOpenSettings={() => onOpenProfileSettings?.()}
+            onAddEvidence={openSectionPicker}
+            onSkipAvatar={() => onUpdateWelcome?.({ welcomeNoAvatar: true })}
+            onDismiss={() => onUpdateWelcome?.({ welcome: 'dismissed' })}
+          />
+        )}
 
         {/* بطاقتا الملخص — تحت 1024px؛ على سطح المكتب في عمود الملخص (Sidebar) */}
         <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
@@ -1262,7 +1370,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       <Sidebar
         monthCard={monthCard}
         cumulativeCard={cumulativeCard}
-        onAddEvidence={() => setSectionPickerOpen(true)}
+        onAddEvidence={() => { onMarkHintSeen?.('hint:add'); openSectionPicker(); }}
         coreItems={sidebarCoreItems}
         onOpenCore={openSection}
         specialItems={sidebarSpecialItems}
@@ -1292,7 +1400,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               type="button"
               className={FAB_ITEM}
               style={{ animation: 'fadeUp .25s var(--sp) both' }}
-              onClick={() => { setFabExpanded(false); setSectionPickerOpen(true); }}
+              onClick={() => { setFabExpanded(false); openSectionPicker(); }}
               title="إضافة شاهد"
             >
               إضافة شاهد
@@ -1335,8 +1443,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
         <button
           type="button"
+          id="fab-add"
           className="w-14 h-14 flex items-center justify-center rounded-[var(--r-full)] bg-[var(--accent)] text-[var(--bg)] active:scale-95 transition-transform duration-150 cursor-pointer"
-          onClick={() => setFabExpanded(prev => !prev)}
+          onClick={() => { onMarkHintSeen?.('hint:add'); setFabExpanded(prev => !prev); }}
           title="إضافة شاهد"
         >
           <i
@@ -1354,7 +1463,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             style={{ animation: 'fadeIn .25s both' }}
             onClick={e => { if (e.target === e.currentTarget) closeSectionPicker(); }}
           >
-            <div role="dialog" aria-label="اختر البند" className="relative overflow-hidden flex flex-col w-[520px] max-h-[86vh] pt-4 bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-lg)]">
+            <div role="dialog" aria-label={sectionPickerTitle} className="relative overflow-hidden flex flex-col w-[520px] max-h-[86vh] pt-4 bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-lg)]">
               {sectionPickerBody}
             </div>
           </div>
@@ -1377,48 +1486,19 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             />
           )}
           {!quickCapture.pendingSection ? (
-            <div className="flex flex-col gap-1">
-              {/* nonStratSections — نفس استبعاد قسم 4 أعلاه، لنفس السبب */}
-              {nonStratSections.map(sec => (
-                <button key={sec.id} type="button" onClick={() => quickCapture.selectSection(sec)} className={PICK_ROW}>
-                  <i className={`ti ${sec.icon} text-[20px] text-[var(--t2)] shrink-0`} />
-                  <span className="flex-1 min-w-0 truncate">{sec.ttl}</span>
-                </button>
-              ))}
-            </div>
+            /* nonStratSections — نفس استبعاد قسم 4 أعلاه، لنفس السبب */
+            <SectionPickList sections={nonStratSections} onPick={quickCapture.selectSection} />
           ) : (
-            <div className="flex flex-col gap-1">
-              <button
-                type="button"
-                onClick={quickCapture.backToSectionPicker}
-                disabled={quickCapture.saving}
-                className={`${BTN_GH_SM} self-start disabled:cursor-wait`}
-              >
-                <i className="ti ti-arrow-right text-[16px]" /> رجوع لاختيار البند
-              </button>
-              <div className="px-3 pt-1 text-[length:var(--fs-xs)] text-[var(--t3)]">{quickCapture.pendingSection.ttl}</div>
-              {quickCapture.indicatorsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <i className="ti ti-loader animate-spin text-[24px] text-[var(--t2)]" />
-                </div>
-              ) : quickCapture.sectionIndicators.length === 0 ? (
-                <p className="text-[length:var(--fs-sm)] text-[var(--t3)] text-center py-6">لا توجد مؤشرات متاحة لهذا البند حالياً</p>
-              ) : (
-                quickCapture.sectionIndicators.map(ind => (
-                  <button
-                    key={ind.id}
-                    type="button"
-                    disabled={quickCapture.saving}
-                    onClick={() => quickCapture.saveToIndicator(ind)}
-                    className={PICK_ROW}
-                  >
-                    <i className="ti ti-list-check text-[20px] text-[var(--t2)] shrink-0" />
-                    <span className="flex-1 min-w-0 truncate">{ind.name_ar}</span>
-                    {quickCapture.saving && <i className="ti ti-loader animate-spin text-[16px] text-[var(--t2)]" />}
-                  </button>
-                ))
-              )}
-            </div>
+            <IndicatorPickStep
+              sectionTitle={quickCapture.pendingSection.ttl}
+              backLabel="رجوع لاختيار البند"
+              onBack={quickCapture.backToSectionPicker}
+              loading={quickCapture.indicatorsLoading}
+              disabled={quickCapture.saving}
+              busy={quickCapture.saving}
+              items={quickCapture.sectionIndicators}
+              onPick={quickCapture.saveToIndicator}
+            />
           )}
         </div>
       </BottomSheet>
@@ -1542,6 +1622,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             onClose={closeMobileSheet}
             sectionId={mobileSheet.sectionId}
             sub={mobileSheet.sub}
+            indicatorId={mobileSheet.indicatorId}
             userId={userId}
             supabaseEv={supabaseEv}
             onEvidenceSaved={onEvidenceSaved ?? (() => {})}

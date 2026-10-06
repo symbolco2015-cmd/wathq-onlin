@@ -100,6 +100,7 @@ export default function Nav({ currentPage, setPage, profile, onOpenProfileSettin
         {isLoggedIn && currentPage === 'dashboard' && (
           <button
             type="button"
+            id="nav-bell"
             aria-label="الإشعارات"
             onClick={() => window.dispatchEvent(new Event(OPEN_NOTIFICATIONS_EVENT))}
             className={`${BTN_GH_SM} relative hover:text-[var(--t1)]`}

@@ -15,6 +15,20 @@ export type Level = 'n' | 'p' | 'g' | 'x';
 
 export const LEVEL_LABEL: Record<Level, string> = { n: 'لم يبدأ', p: 'جارٍ', g: 'أساسي', x: 'متجاوز' };
 export const LEVEL_COLOR: Record<Level, string> = { n: 'var(--t3)', p: 'var(--prog)', g: 'var(--accent)', x: 'var(--st-gold)' };
+// نقطة الحالة — .navs .dt في النموذج: «لم يبدأ» بـ --idle، لا بلون نص الشارة --t3
+export const DOT_COLOR: Record<Level, string> = { ...LEVEL_COLOR, n: 'var(--idle)' };
+
+/** شارة المستوى — رأس شاشة القسم وصف القسم في الرئيسية */
+export function LevelBadge({ level }: { level: Level }) {
+  return (
+    <span
+      className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap"
+      style={{ color: LEVEL_COLOR[level] }}
+    >
+      {LEVEL_LABEL[level]}
+    </span>
+  );
+}
 
 /** مستوى القسم — lvl() في النموذج، بـ total من بيانات القسم لا رقم ثابت.
  *  total > 0 شرط لـ«أساسي»/«متجاوز» كي لا يُعدّ قسم بلا مؤشرات مكتملاً. */
@@ -306,14 +320,7 @@ export function SectionHeader({ onBack, icon, title, level, evCount, progress }:
           <div className="flex-1 min-w-0">
             <h1 className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] leading-[1.4]">{title}</h1>
             <div className="flex gap-1.5 mt-1">
-              {level && (
-                <span
-                  className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap"
-                  style={{ color: LEVEL_COLOR[level] }}
-                >
-                  {LEVEL_LABEL[level]}
-                </span>
-              )}
+              {level && <LevelBadge level={level} />}
               {evCount !== undefined && (
                 <span className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--t3)]">
                   {nEv(evCount)}

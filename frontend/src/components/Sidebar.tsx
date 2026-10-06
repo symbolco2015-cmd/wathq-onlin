@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { BTN_PRI, LEVEL_COLOR, type Level } from './SectionView';
+import { BTN_PRI, DOT_COLOR, type Level } from './SectionView';
 
 // عمود الملخص على سطح المكتب — aside() في docs/design/wathq-prototype.html:
 // بطاقة الشهر، ثم «أضف شاهداً»، ثم البطاقة التراكمية، ثم التنقل بين الأقسام.
@@ -33,9 +33,6 @@ interface SidebarProps {
   /** الشاشة المفتوحة: `core-{id}` أو نوع القسم الخاص؛ null = الرئيسية أو الأرشيف */
   activeKey: string | null;
 }
-
-// نقطة الحالة — .navs .dt في النموذج: «لم يبدأ» بـ --idle، لا بلون نص الشارة --t3
-const DOT_COLOR: Record<Level, string> = { ...LEVEL_COLOR, n: 'var(--idle)' };
 
 const NAV_BTN = 'w-full h-9 px-2 flex items-center gap-2 rounded-[var(--r-sm)] text-right text-[length:var(--fs-sm)] transition-colors duration-150 cursor-pointer';
 

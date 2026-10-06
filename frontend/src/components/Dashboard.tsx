@@ -9,7 +9,7 @@ import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import SectionView, { nEv, sectionLevel, type SectionSummary, type IndicatorHandlers } from './SectionView';
+import SectionView, { nEv, sectionLevel, LevelBadge, DOT_COLOR, BTN_PRI_SM, BTN_GH_SM, BTN_SM, BTN_DNG, type Level, type SectionSummary, type IndicatorHandlers } from './SectionView';
 import { IndivDiffView, StrategiesView, AnalysisView, ImprovementView } from './SpecialSectionViews';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, formatDate, formatHijri } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
@@ -241,6 +241,29 @@ export function SectionReclassifyDropdown({
         </>,
         document.body
       )}
+    </div>
+  );
+}
+
+/** صف قائمة في المنتقي وأوراق الالتقاط — نمط .navs بارتفاع 44px */
+const PICK_ROW = 'w-full h-11 px-3 flex items-center gap-3 rounded-[var(--r-sm)] text-right text-[length:var(--fs-sm)] text-[var(--t1)] hover:bg-[var(--s2)] transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-wait';
+
+/** عنصر قائمة الزر العائم */
+const FAB_ITEM = 'h-11 px-3 flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bd)] bg-[var(--s1)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] active:scale-95 transition-transform duration-150 cursor-pointer';
+
+/** رأس الورقة أو النافذة — نمط رأس NavPanel */
+function SheetHeader({ title, onClose, badge }: { title: string; onClose: () => void; badge?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-4 pb-3 border-b border-[var(--bd)] shrink-0">
+      <div className="flex items-center gap-2 min-w-0 text-[length:var(--fs-md)] font-bold text-[var(--t1)]">
+        {title}
+        {badge && (
+          <span className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t3)] whitespace-nowrap">{badge}</span>
+        )}
+      </div>
+      <button type="button" onClick={onClose} aria-label="إغلاق" className={`${BTN_GH_SM} w-11 h-11 px-0`}>
+        <i className="ti ti-x text-[20px]" />
+      </button>
     </div>
   );
 }
@@ -585,7 +608,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       if (!accessToken) {
-        onToast?.('يجب تسجيل الدخول أولاً ⚠️', '⚠️');
+        onToast?.('يجب تسجيل الدخول أولاً', '⚠️');
         return;
       }
       const { data, error } = await supabase.functions.invoke('generate-portfolio-summaries', {
@@ -593,11 +616,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (error) {
-        onToast?.('تعذّر تحديث الملخص، حاول مجدداً ❌', '❌');
+        onToast?.('تعذّر تحديث الملخص، حاول مجدداً', '❌');
         return;
       }
       if (data?.updated && data?.summarized) {
-        onToast?.('تم تحديث الملخص بنجاح ✅', '✅');
+        onToast?.('تم تحديث الملخص بنجاح', '✅');
       } else if (data?.reason === 'sharing_disabled') {
         onToast?.('فعّل المشاركة العامة أولاً من إعدادات الملف الشخصي', 'ℹ️');
       } else if (data?.reason === 'no_evidence') {
@@ -608,7 +631,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       refetchSummaryStatus();
     } catch (err) {
       console.error('[Dashboard] فشل تحديث الملخص:', err);
-      onToast?.('تعذّر تحديث الملخص، حاول مجدداً ❌', '❌');
+      onToast?.('تعذّر تحديث الملخص، حاول مجدداً', '❌');
     } finally {
       setSummaryRefreshBusy(false);
     }
@@ -895,6 +918,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     const n = supabaseEv?.getBySection(s.id).length ?? 0;
     return { id: s.id, ttl: s.ttl, icon: s.icon, level: sectionLevel(stat?.filledSubs ?? 0, total, n) };
   });
+  const coreLevelById = new Map<number, Level>(sidebarCoreItems.map(it => [it.id, it.level]));
   // الأقسام الخاصة بترتيب الشبكة وشروطها نفسها
   const sidebarSpecialItems: SidebarSpecialItem[] = [];
   if (stratSection) sidebarSpecialItems.push({ key: 'strat', title: stratSection.ttl, icon: stratSection.icon, onOpen: () => pushScreen({ kind: 'strat' }) });
@@ -919,37 +943,17 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const closeSectionPicker = () => setSectionPickerOpen(false);
   const sectionPickerBody = (
     <>
-      <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
-            <i className="ti ti-list-check" />
-          </div>
-          <div className="text-[16px] font-black text-white">اختر البند</div>
-        </div>
-        <button
-          onClick={closeSectionPicker}
-          aria-label="إغلاق"
-          className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
-        >
-          <i className="ti ti-x" />
-        </button>
-      </div>
-      <div className="overflow-y-auto flex-1 p-5">
-        <div className="grid grid-cols-2 gap-3">
+      <SheetHeader title="اختر البند" onClose={closeSectionPicker} />
+      <div className="overflow-y-auto flex-1 p-3 pb-6">
+        <div className="flex flex-col gap-1">
           {/* nonStratSections لا pickableSections — قسم 4 (isStrat) يستلزم
               strategy_id إجبارياً الآن، فلا يظهر ضمن منتقي "إضافة شاهد عادي"
               العام؛ له تدفّقه الخاص عبر onAddStrategyClick */}
           {nonStratSections.map(sec => (
-            <button
-              key={sec.id}
-              type="button"
-              onClick={() => pickSection(sec)}
-              className="flex flex-col items-center gap-2.5 py-5 px-3 rounded-2xl border-[1.5px] border-[var(--line)] bg-white/5 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/30 transition-all duration-200 text-center cursor-pointer active:scale-95"
-            >
-              <div className="w-[44px] h-[44px] rounded-xl shrink-0 flex items-center justify-center text-[20px] bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
-                <i className={`ti ${sec.icon}`} />
-              </div>
-              <span className="text-[12.5px] font-bold text-[var(--text2)] leading-snug">{sec.ttl}</span>
+            <button key={sec.id} type="button" onClick={() => pickSection(sec)} className={PICK_ROW}>
+              <i className={`ti ${sec.icon} text-[20px] text-[var(--t2)] shrink-0`} />
+              <span className="flex-1 min-w-0 truncate">{sec.ttl}</span>
+              <span className="w-2 h-2 rounded-[var(--r-full)] shrink-0" style={{ backgroundColor: DOT_COLOR[coreLevelById.get(sec.id) ?? 'n'] }} />
             </button>
           ))}
         </div>
@@ -960,18 +964,19 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // ── عرض أرشيف الشهر المختار — صفحة فرعية مستقلة، لا تستبدل لوحة الشهر
   // الحالي بشكل دائم، بل تُستبدل مؤقتاً عند التصفح وتُستعاد بزر "العودة" ──
   const archiveView = archiveMonth && supabaseEv && (
-    <div style={{ animation: 'fadeUp .4s var(--sp) both' }}>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div className="flex flex-col">
+      <div className="flex flex-col gap-3 mb-4">
         <button
+          type="button"
           onClick={closeSection}
-          className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl border border-[var(--line2)] bg-white/5 text-[13px] font-bold text-[var(--text3)] hover:text-white hover:bg-white/10 transition-all duration-200 cursor-pointer font-[var(--font)]"
+          className="self-start h-9 px-1 inline-flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--t2)] cursor-pointer"
         >
-          <i className="ti ti-arrow-right" /> العودة للوحة الرئيسية
+          <i className="ti ti-arrow-right text-[16px]" /> العودة للوحة الرئيسية
         </button>
-        <div className="flex items-center gap-2 text-[15px] sm:text-[17px] font-black text-white">
-          <i className="ti ti-archive text-[18px] text-[var(--em7)]" />
+        <h1 className="flex items-center gap-2 text-[length:var(--fs-lg)] font-bold text-[var(--t1)] leading-[1.4]">
+          <i className="ti ti-archive text-[20px] text-[var(--t2)] shrink-0" />
           أرشيف {archiveMonth.label} {archiveMonth.year}
-        </div>
+        </h1>
       </div>
 
       {/* المعدل الشهري — منقول من الرئيسية (4.2)، بنفس مصدر monthlyProgress */}
@@ -991,42 +996,45 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       )}
 
       {isArchiveEditable ? (
-        <div className="mb-5 rounded-[18px] p-4 sm:p-5 border border-[var(--gold)]/25 bg-[var(--gold)]/8 flex items-center gap-3">
-          <i className="ti ti-clock-hour-4 text-[22px] text-[var(--gold)] shrink-0" />
-          <span className="text-[13px] font-bold text-[var(--gold)]">
+        <div className="mb-4 p-4 rounded-[var(--r-md)] border border-[var(--bd)] bg-[var(--s1)] flex items-center gap-3">
+          <i className="ti ti-clock-hour-4 text-[20px] text-[var(--warn)] shrink-0" />
+          <span className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">
             هذا الشهر سيُقفَل للتعديل {archiveLockLabel} — يمكنك الآن إضافة/تعديل/حذف الشواهد المسجَّلة فيه.
           </span>
         </div>
       ) : (
-        <div className="mb-5 rounded-[18px] p-4 sm:p-5 border border-[var(--line2)] bg-white/5 flex items-center gap-3">
-          <i className="ti ti-lock text-[22px] text-[var(--text4)] shrink-0" />
-          <span className="text-[13px] font-bold text-[var(--text3)]">عرض فقط — انتهت نافذة التعديل المسموحة لهذا الشهر.</span>
+        <div className="mb-4 p-4 rounded-[var(--r-md)] border border-[var(--bd)] bg-[var(--s1)] flex items-center gap-3">
+          <i className="ti ti-lock text-[20px] text-[var(--t3)] shrink-0" />
+          <span className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">عرض فقط — انتهت نافذة التعديل المسموحة لهذا الشهر.</span>
         </div>
       )}
 
-      <div className="flex flex-col gap-3.5 pb-[100px] lg:pb-0">
+      <div className="flex flex-col gap-3 pb-[100px] lg:pb-0">
         {archiveSectionsToShow.map(sec => {
           const secEv = archiveEvidenceBySection[sec.id] || [];
           return (
-            <div key={sec.id} className="bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden">
-              <div className="flex items-center gap-3 py-3 sm:py-4 px-4 sm:px-5 border-b border-[var(--line)]">
-                <div className="w-[36px] h-[36px] sm:w-[38px] sm:h-[38px] rounded-xl shrink-0 flex items-center justify-center text-[16px] sm:text-[18px] bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border border-[var(--em7)]/20">
+            <div key={sec.id} className="bg-[var(--s1)] rounded-[var(--r-md)] border border-[var(--bd)] overflow-hidden">
+              <div className="flex items-center gap-3 py-3 px-3.5">
+                <span className="w-10 h-10 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[20px] text-[var(--t2)] shrink-0">
                   <i className={`ti ${sec.icon}`} />
-                </div>
+                </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13.5px] sm:text-[14.5px] font-extrabold text-white">{sec.ttl}</div>
-                  <div className="text-[11px] text-[var(--text4)] mt-0.5">{secEv.length} دليل هذا الشهر</div>
+                  <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)] leading-normal">{sec.ttl}</div>
+                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)]">{secEv.length} دليل هذا الشهر</div>
                 </div>
                 {isArchiveEditable && (
-                  <button
-                    onClick={() => setArchiveAddTarget({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' })}
-                    className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[12px] font-bold bg-[var(--em7)]/10 border border-[var(--em7)]/20 text-[var(--em8)] hover:bg-[var(--em7)]/20 transition-all cursor-pointer font-[var(--font)]"
-                  >
-                    <i className="ti ti-plus" /> إضافة شاهد
-                  </button>
+                  <div className="shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setArchiveAddTarget({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' })}
+                      className={BTN_SM}
+                    >
+                      <i className="ti ti-plus text-[16px]" /> إضافة شاهد
+                    </button>
+                  </div>
                 )}
               </div>
-              <div className="p-4 sm:p-5">
+              <div className="border-t border-[var(--bd)]">
                 <EvidenceList
                   sectionId={sec.id}
                   evidence={secEv}
@@ -1041,10 +1049,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         })}
         {archiveSectionsToShow.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-[28px] text-[var(--text4)] mb-3">
-              <i className="ti ti-archive-off"></i>
+            <div className="w-12 h-12 rounded-[var(--r-md)] bg-[var(--s2)] flex items-center justify-center text-[32px] text-[var(--t3)] mb-3">
+              <i className="ti ti-archive-off" />
             </div>
-            <p className="text-[var(--text3)] text-[15px] font-bold">لا توجد شواهد مسجّلة لهذا الشهر</p>
+            <p className="text-[length:var(--fs-sm)] font-bold text-[var(--t2)]">لا توجد شواهد مسجّلة لهذا الشهر</p>
           </div>
         )}
       </div>
@@ -1146,182 +1154,61 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
         {/* بانر: استيراد جماعي جاهز للمراجعة (bulk_import_queue بحالة classified أو failed) */}
         {bulkImportReadyCount > 0 && (
-          <div className="mb-5 rounded-[22px] p-5 sm:p-6 border border-[var(--gold)]/25 bg-gradient-to-br from-[var(--gold-dim)] via-[var(--surf3)] to-[var(--surf3)] relative overflow-hidden" style={{ animation: 'fadeUp .5s var(--sp) both' }}>
-            <div className="absolute top-0 right-0 left-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--gold)]/40 to-transparent" />
-            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                <div className="w-12 h-12 rounded-xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[22px] text-[var(--gold3)]">
-                  <i className="ti ti-photo-check" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] font-bold text-[var(--gold3)] tracking-wider uppercase mb-0.5 flex items-center gap-1.5">
-                    <i className="ti ti-sparkles text-[12px]" /> استيراد جماعي
-                  </div>
-                  <div className="text-[15px] font-extrabold text-white leading-snug">
-                    لديك {bulkImportReadyCount} ملف من الاستيراد الجماعي جاهز للمراجعة
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsBulkImportReviewOpen(true)}
-                className="shrink-0 inline-flex items-center gap-2 py-3 px-6 rounded-xl text-[13px] font-bold bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer font-[var(--font)] active:scale-95"
-              >
-                <i className="ti ti-photo-check text-[15px]" /> مراجعة الآن
-              </button>
+          <div className="mb-4 flex flex-wrap items-center gap-3 px-3.5 py-3 rounded-[var(--r-md)] border border-[var(--bd)] bg-[var(--s1)]">
+            <span className="w-9 h-9 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[20px] text-[var(--warn)] shrink-0">
+              <i className="ti ti-photo-check" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <b className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] leading-normal">
+                لديك {bulkImportReadyCount} ملف من الاستيراد الجماعي جاهز للمراجعة
+              </b>
+              <small className="block text-[length:var(--fs-xs)] text-[var(--t3)]">استيراد جماعي</small>
             </div>
+            <button type="button" onClick={() => setIsBulkImportReviewOpen(true)} className={`${BTN_PRI_SM} shrink-0`}>
+              مراجعة الآن
+            </button>
           </div>
         )}
 
         {/* SECTIONS */}
-        <div id="sections-list" className="flex flex-col gap-2 sm:gap-3.5 pb-[100px] lg:pb-0 scroll-mt-24">
-          {/* بترتيب sections الثابت، كتنقل عمود الملخص */}
-          {nonStratSections.map((sec, i) => {
-            // كل أدلة القسم (section_id) بما فيها ما ليس له مؤشر
-            const secTotalEvs = supabaseEv?.getBySection(sec.id).length ?? 0;
-            // completionPct: نشاط الشهر الحالي (يتحكم بتلوين الحدود)
+        <div id="sections-list" className="flex flex-col gap-2 pb-[100px] lg:pb-0 scroll-mt-24">
+          {/* بترتيب sections الثابت، كتنقل عمود الملخص — .secr في النموذج */}
+          {nonStratSections.map(sec => {
             const secStat = getSectionStat(sec.id);
-            const completionPct = getMonthlyPct(sec.id);
             const filledSubs = secStat?.filledSubs ?? 0;
             const totalSubs = secStat?.totalSubs ?? sec.indicators.filter(ind => !ind.isCustom).length;
-            // cumulativePct: نسبة الاكتمال التراكمية الحقيقية عبر كل الأدلة منذ البداية (secStat) — تُعرض كمعلومة إضافية فقط
-            const cumulativePct = secStat?.completionPct ?? 0;
-            // العمق الشهري = أدلة هذا الشهر ÷ عدد المؤشرات الفرعية المغطاة تراكمياً (filledSubs).
-            // تقريب مقبول: لا توجد بيانات دقيقة عن توزيع أدلة الشهر على مستوى المؤشر الفرعي نفسه.
-            const monthlyDepth = monthlyProgress && filledSubs > 0
-              ? monthlyProgress.getSectionMonthCount(sec.id) / filledSubs
-              : 0;
-            // منطق "الشارة الذهبية": بلوغ 3 أدلة هذا الشهر (الحد الأدنى) = احتفال بصري، لا يؤثر على completionPct/borderColor
-            const monthCount = monthlyProgress?.getSectionMonthCount(sec.id) ?? 0;
-            const isGoldAchieved = monthCount >= 3;
-            const overflowCount = monthCount - 3;
-
-            const borderColor =
-              completionPct > 70  ? '#22c55e' :
-              completionPct >= 35 ? '#f59e0b' :
-                                    '#ef4444';
+            // المستوى نفسه في عمود الملخص ورأس شاشة القسم
+            const level = coreLevelById.get(sec.id) ?? 'n';
 
             return (
-              <div key={sec.id} id={`sc-${sec.id}`} className="relative bg-gradient-to-br from-[var(--surf2)] to-[var(--surf3)] rounded-[16px] sm:rounded-[20px] border border-[var(--line)] overflow-hidden transition-all duration-300 hover:border-[var(--line2)]" style={{ scrollMarginTop: '90px', animation: `fadeUp .45s var(--sp) both ${i * 0.04}s`, borderRight: `4px solid ${borderColor}` }}>
-                <div className="flex items-center gap-2 sm:gap-4 py-3 sm:py-5 px-3 sm:px-6 cursor-pointer relative select-none hover:bg-white/5 group" onClick={() => openSection(sec.id)}>
-                   <div className="absolute bottom-0 right-6 left-6 h-px bg-gradient-to-r from-transparent via-[var(--em7)]/15 to-transparent opacity-0 transition-opacity duration-250 group-hover:opacity-100"></div>
-
-                   <div className="w-[32px] h-[32px] sm:w-[42px] sm:h-[42px] rounded-lg sm:rounded-xl shrink-0 flex items-center justify-center text-[15px] sm:text-[20px] border shadow-[0_4px_14px_rgba(42,122,68,.3)] transition-all duration-350 bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border-[var(--em7)]/20 group-hover:bg-gradient-to-br group-hover:from-[var(--em4)] group-hover:to-[var(--em7)] group-hover:text-white group-hover:scale-110 group-hover:rotate-[-5deg] group-hover:shadow-[0_6px_20px_rgba(42,122,68,.5)]">
-                     <i className={`ti ${sec.icon}`}></i>
-                   </div>
-                   
-                   <div className="flex-1 min-w-0">
-                     <div className="flex items-center gap-1.5 flex-wrap">
-                       <div className="text-[13.5px] sm:text-[16px] font-extrabold text-white font-[var(--font)] leading-tight">{sec.ttl}</div>
-                       {/* شارة "أساسي مُحقَّق" — تظهر عند بلوغ 3 أدلة هذا الشهر (الحد الأدنى)، احتفال بصري بدل توقف صامت، لا تؤثر على التلوين */}
-                       {isGoldAchieved && (
-                         <span
-                           className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black text-[var(--gold3)] bg-[var(--gold)]/12 border border-[var(--gold)]/35 py-0.5 px-1.5 rounded-md leading-none"
-                           style={{ animation: 'scaleIn .35s var(--sp) both' }}
-                         >
-                           ✓ أساسي مُحقَّق
-                         </span>
-                       )}
-                     </div>
-                     <div className="text-[11px] sm:text-[12px] text-[var(--text4)] mt-0.5">{totalSubs} قسم فرعي{secTotalEvs ? ` · ${secTotalEvs} دليل` : ''}</div>
-                     {monthlyProgress && (
-                       <div className="flex items-center gap-1.5 sm:gap-3 mt-1 sm:mt-1.5 flex-wrap">
-                         <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
-                           <i className="ti ti-calendar text-[9px] sm:text-[10px]" />
-                           {monthlyProgress.currentMonthName}:{' '}
-                           <span className={monthlyProgress.getSectionMonthCount(sec.id) > 0 ? 'text-[var(--em8)] font-bold' : ''}>
-                             {monthlyProgress.getSectionMonthCount(sec.id)}
-                           </span>
-                         </span>
-                         <span className="text-[var(--text4)] opacity-40 text-[9px]">·</span>
-                         <span className="text-[9.5px] sm:text-[10.5px] text-[var(--text4)] flex items-center gap-0.5 sm:gap-1">
-                           <i className="ti ti-trending-up text-[9px] sm:text-[10px]" />
-                           {monthlyProgress.getSectionYearTotal(sec.id)} هذا العام
-                         </span>
-                       </div>
-                     )}
-                     {/* شريط التقدم — نشاط الشهر الحالي (التلوين يعتمد عليه) */}
-                     <div className="mt-2.5 flex items-center gap-2">
-                       <div className="flex-1 h-[5px] rounded-full bg-white/8 overflow-hidden">
-                         <div
-                           className="h-full rounded-full transition-all duration-700 ease-out"
-                           style={{
-                             width: `${completionPct}%`,
-                             background: isGoldAchieved
-                               ? 'linear-gradient(90deg, var(--gold), var(--gold2), var(--gold3))'
-                               : completionPct >= 70
-                               ? 'linear-gradient(90deg, var(--em6), var(--em7))'
-                               : completionPct >= 35
-                               ? 'linear-gradient(90deg, #b45309, #fcd34d)'
-                               : 'linear-gradient(90deg, #9f1239, #f43f5e)',
-                             boxShadow: isGoldAchieved
-                               ? '0 0 10px rgba(201,162,39,.5)'
-                               : completionPct >= 70 ? '0 0 8px rgba(82,196,120,.4)' : 'none'
-                           }}
-                         />
-                       </div>
-                     </div>
-                     {/* تسمية الشهر الحالي + شريط التراكم الحقيقي — معلومة إضافية فقط، لا تؤثر على التلوين أعلاه */}
-                     <div className="flex items-center justify-between mt-1 gap-2">
-                       <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold shrink-0">نشاط هذا الشهر</span>
-                       <div className="flex items-center gap-1.5 min-w-0">
-                         <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold flex items-center gap-1 whitespace-nowrap">
-                           <i className="ti ti-chart-pie-2 text-[9px] sm:text-[10px]" />
-                           مسارك التراكمي مستمر
-                         </span>
-                         <div className="w-10 sm:w-14 h-[4px] rounded-full bg-white/8 overflow-hidden shrink-0">
-                           <div
-                             className="h-full rounded-full transition-all duration-700 ease-out"
-                             style={{
-                               width: `${cumulativePct}%`,
-                               background: isGoldAchieved
-                                 ? 'linear-gradient(90deg, var(--gold), var(--gold2), var(--gold3))'
-                                 : completionPct >= 70
-                                 ? 'linear-gradient(90deg, var(--em6), var(--em7))'
-                                 : completionPct >= 35
-                                 ? 'linear-gradient(90deg, #b45309, #fcd34d)'
-                                 : 'linear-gradient(90deg, #9f1239, #f43f5e)'
-                             }}
-                           />
-                         </div>
-                       </div>
-                     </div>
-                     {monthlyDepth > 1 && (
-                       <div className="flex items-center justify-end mt-1">
-                         <span className="text-[9.5px] sm:text-[10px] text-[var(--text4)] font-semibold flex items-center gap-1">
-                           <i className="ti ti-stack-2 text-[9px] sm:text-[10px]" />
-                           العمق: <span className="font-black text-[var(--em8)]">{monthlyDepth.toFixed(1)}</span> دليل/مؤشر
-                         </span>
-                       </div>
-                     )}
-                   </div>
-                   
-                   {secTotalEvs > 0 && (
-                     <div className="hidden sm:flex flex-col items-center gap-0.5 shrink-0">
-                       <div className="flex items-center gap-1 text-[12px] font-bold py-1.5 px-3.5 rounded-full bg-[var(--em7)]/10 text-[var(--em8)] border border-[var(--em7)]/15">
-                         <i className="ti ti-files text-[13px]"></i> {secTotalEvs}
-                       </div>
-                       <div className="text-[10px] text-[var(--text4)] font-bold">{filledSubs} مكتمل</div>
-                     </div>
-                   )}
-                   
-                   <i className="ti ti-chevron-left text-[22px] shrink-0 text-[var(--text4)]"></i>
-                </div>
-
-                {/* منطقة الاستمرارية — تظهر فقط عند تجاوز فعلي للحد الأدنى (>3)، تُخفى تماماً غير ذلك */}
-                {overflowCount > 0 && (
-                  <div
-                    className="flex items-center justify-between gap-3 py-2.5 px-3 sm:px-6 border-t border-dashed border-[var(--line)]/60"
-                    style={{ animation: 'scaleIn .35s var(--sp) both' }}
-                  >
-                    <span className="text-[11px] sm:text-[12px] font-bold text-[var(--text3)] flex items-center gap-1.5">
-                      🔥 استمراريتك ملحوظة — واصل التوثيق
-                    </span>
-                    <span className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full border border-[var(--em7)]/40 bg-[var(--em7)]/10 flex items-center justify-center text-[11px] sm:text-[12px] font-black text-[var(--em8)]">
-                      +{overflowCount}
-                    </span>
-                  </div>
-                )}
-              </div>
+              <button
+                key={sec.id}
+                type="button"
+                id={`sc-${sec.id}`}
+                onClick={() => openSection(sec.id)}
+                className="w-full text-right flex items-center gap-3 px-3.5 py-3 rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--bd)] hover:border-[var(--bd2)] transition-colors duration-150 cursor-pointer scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--t2)]"
+              >
+                <span className="w-10 h-10 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[20px] text-[var(--t2)] shrink-0">
+                  <i className={`ti ${sec.icon}`} />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <b className="min-w-0 truncate text-[length:var(--fs-md)] font-bold text-[var(--t1)] leading-normal">{sec.ttl}</b>
+                    <LevelBadge level={level} />
+                  </span>
+                  <small className="block mt-0.5 text-[length:var(--fs-xs)] text-[var(--t3)]">
+                    {filledSubs} من {totalSubs} مؤشرات
+                    {monthlyProgress && ` · ${monthlyProgress.currentMonthName}: ${monthlyProgress.getSectionMonthCount(sec.id)}`}
+                  </small>
+                  <span className="block mt-2 h-1.5 rounded-[var(--r-full)] bg-[var(--s3)] overflow-hidden">
+                    <span
+                      className="block h-full rounded-[var(--r-full)] bg-[var(--accent)] transition-[width] duration-350"
+                      style={{ width: `${totalSubs > 0 ? (filledSubs / totalSubs) * 100 : 0}%` }}
+                    />
+                  </span>
+                </span>
+                <i className="ti ti-chevron-left text-[20px] shrink-0 text-[var(--t3)]" />
+              </button>
             );
           })}
 
@@ -1379,9 +1266,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
         </>}
 
-        <footer className="mt-12 pt-6 border-t border-[var(--line)] text-center">
-          <p className="text-[12px] font-normal text-[var(--text4)]">
-            جميع الحقوق محفوظة لدى <span className="text-[var(--gold3)]">وثق</span> © {new Date().getFullYear()}
+        <footer className="mt-12 pt-6 border-t border-[var(--bd)] text-center">
+          <p className="text-[length:var(--fs-xs)] text-[var(--t3)]">
+            جميع الحقوق محفوظة لدى <span className="inline-flex items-center gap-1 align-middle text-[var(--t2)]"><img src="/brand/mark.svg" alt="" aria-hidden="true" className="h-4 w-auto" />وثق</span> © {new Date().getFullYear()}
           </p>
         </footer>
       </main>
@@ -1400,7 +1287,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       {/* FAB Speed Dial — Mobile only */}
       {fabExpanded && (
         <div
-          className="lg:hidden fixed inset-0 z-[240] bg-black/40"
+          className="lg:hidden fixed inset-0 z-[240] bg-black/55"
           onClick={() => setFabExpanded(false)}
         />
       )}
@@ -1417,84 +1304,59 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         {fabExpanded && (
           <>
             <button
-              className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
-              style={{
-                background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)',
-                boxShadow: '0 4px 16px rgba(29,78,216,.5)',
-                animation: 'fadeUp .2s var(--sp) both',
-              }}
+              type="button"
+              className={FAB_ITEM}
+              style={{ animation: 'fadeUp .25s var(--sp) both' }}
               onClick={() => { setFabExpanded(false); setSectionPickerOpen(true); }}
               title="إضافة شاهد"
             >
               إضافة شاهد
-              <span className="w-[32px] h-[32px] rounded-full bg-white/15 flex items-center justify-center text-[16px]">
-                <i className="ti ti-list-check" />
-              </span>
+              <i className="ti ti-list-check text-[20px] text-[var(--t2)]" />
             </button>
             <button
-              className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
-              style={{
-                background: 'linear-gradient(135deg, var(--em4), var(--em7))',
-                boxShadow: '0 4px 16px rgba(42,122,68,.5)',
-                animation: 'fadeUp .2s var(--sp) both .04s',
-              }}
+              type="button"
+              className={FAB_ITEM}
+              style={{ animation: 'fadeUp .25s var(--sp) both .04s' }}
               onClick={() => { setFabExpanded(false); quickCapture.openPicker(); }}
               title="التقاط سريع"
             >
               التقاط سريع
-              <span className="w-[32px] h-[32px] rounded-full bg-white/15 flex items-center justify-center text-[16px]">
-                <i className="ti ti-camera" />
-              </span>
+              <i className="ti ti-camera text-[20px] text-[var(--t2)]" />
             </button>
             <button
-              className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
-              style={{
-                background: 'linear-gradient(135deg, var(--gold2), var(--gold))',
-                boxShadow: '0 4px 16px rgba(201,162,39,.5)',
-                animation: 'fadeUp .2s var(--sp) both .06s',
-              }}
+              type="button"
+              className={FAB_ITEM}
+              style={{ animation: 'fadeUp .25s var(--sp) both .06s' }}
               onClick={() => { setFabExpanded(false); setIsBulkImportOpen(true); }}
               title="استيراد جماعي"
             >
               استيراد جماعي
-              <span className="w-[32px] h-[32px] rounded-full bg-white/15 flex items-center justify-center text-[16px]">
-                <i className="ti ti-photo-up" />
-              </span>
+              <i className="ti ti-photo-up text-[20px] text-[var(--t2)]" />
             </button>
             {voiceFeatureEnabled && (
               <button
-                className="flex items-center gap-2.5 pr-1.5 pl-4 h-[46px] rounded-full active:scale-95 transition-transform duration-150 text-[13px] font-bold text-white"
-                style={{
-                  background: 'linear-gradient(135deg, #b45309, #f59e0b)',
-                  boxShadow: '0 4px 16px rgba(180,83,9,.5)',
-                  animation: 'fadeUp .2s var(--sp) both .08s',
-                }}
+                type="button"
+                className={FAB_ITEM}
+                style={{ animation: 'fadeUp .25s var(--sp) both .08s' }}
                 onClick={() => { setFabExpanded(false); quickCapture.startVoiceCapture(); }}
                 title="تسجيل صوتي سريع"
               >
                 تسجيل صوتي سريع
-                <span className="w-[32px] h-[32px] rounded-full bg-white/15 flex items-center justify-center text-[16px]">
-                  <i className="ti ti-microphone" />
-                </span>
+                <i className="ti ti-microphone text-[20px] text-[var(--t2)]" />
               </button>
             )}
           </>
         )}
 
         <button
-          className="flex items-center justify-center rounded-full active:scale-95 transition-transform duration-150"
-          style={{
-            width: '56px',
-            height: '56px',
-            background: 'linear-gradient(135deg, var(--em4), var(--em7))',
-            boxShadow: '0 4px 20px rgba(42,122,68,.6), 0 0 0 3px rgba(82,196,120,.15)',
-          }}
+          type="button"
+          className="w-14 h-14 flex items-center justify-center rounded-[var(--r-full)] bg-[var(--accent)] text-[var(--bg)] active:scale-95 transition-transform duration-150 cursor-pointer"
           onClick={() => setFabExpanded(prev => !prev)}
           title="إضافة شاهد"
         >
           <i
-            className="ti ti-plus text-white transition-transform duration-200"
-            style={{ fontSize: '28px', transform: fabExpanded ? 'rotate(45deg)' : 'none' }}
+            className="ti ti-plus text-[24px] transition-transform duration-250"
+            style={{ transform: fabExpanded ? 'rotate(45deg)' : 'none' }}
           />
         </button>
       </div>
@@ -1507,7 +1369,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             style={{ animation: 'fadeIn .25s both' }}
             onClick={e => { if (e.target === e.currentTarget) closeSectionPicker(); }}
           >
-            <div role="dialog" aria-label="اختر البند" className="relative overflow-hidden flex flex-col w-[520px] max-h-[86vh] pt-5 bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-lg)]">
+            <div role="dialog" aria-label="اختر البند" className="relative overflow-hidden flex flex-col w-[520px] max-h-[86vh] pt-4 bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-lg)]">
               {sectionPickerBody}
             </div>
           </div>
@@ -1520,60 +1382,42 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
       {/* Bottom Sheet — التقاط سريع: اختيار البند ثم المؤشر الفرعي — جوال فقط */}
       <BottomSheet isOpen={quickCapture.pickerSheetOpen} onClose={quickCapture.cancelPending}>
-        <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
-              <i className="ti ti-camera" />
-            </div>
-            <div className="text-[16px] font-black text-white">{quickCapture.pendingSection ? 'اختر المؤشر الفرعي' : 'اختر البند'}</div>
-          </div>
-          <button
-            onClick={quickCapture.cancelPending}
-            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
-          >
-            <i className="ti ti-x" />
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1 p-5">
+        <SheetHeader title={quickCapture.pendingSection ? 'اختر المؤشر الفرعي' : 'اختر البند'} onClose={quickCapture.cancelPending} />
+        <div className="overflow-y-auto flex-1 p-3 pb-6">
           {quickCapture.pendingPreviewUrl && (
             <img
               src={quickCapture.pendingPreviewUrl}
               alt="الصورة المختارة"
-              className="w-full max-h-[160px] object-cover rounded-2xl border border-[var(--line)] mb-4"
+              className="w-full max-h-[160px] object-cover rounded-[var(--r-md)] border border-[var(--bd)] mb-3"
             />
           )}
           {!quickCapture.pendingSection ? (
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               {/* nonStratSections — نفس استبعاد قسم 4 أعلاه، لنفس السبب */}
               {nonStratSections.map(sec => (
-                <button
-                  key={sec.id}
-                  type="button"
-                  onClick={() => quickCapture.selectSection(sec)}
-                  className="flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-[var(--em7)]/10 transition-all duration-200 text-right cursor-pointer"
-                >
-                  <i className={`ti ${sec.icon} text-[16px] text-[var(--em7)] shrink-0`} />
-                  <span className="flex-1 text-[13.5px] font-bold text-[var(--text2)]">{sec.ttl}</span>
+                <button key={sec.id} type="button" onClick={() => quickCapture.selectSection(sec)} className={PICK_ROW}>
+                  <i className={`ti ${sec.icon} text-[20px] text-[var(--t2)] shrink-0`} />
+                  <span className="flex-1 min-w-0 truncate">{sec.ttl}</span>
                 </button>
               ))}
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <button
                 type="button"
                 onClick={quickCapture.backToSectionPicker}
                 disabled={quickCapture.saving}
-                className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--text4)] hover:text-white mb-2 cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                className={`${BTN_GH_SM} self-start disabled:cursor-wait`}
               >
-                <i className="ti ti-arrow-right" /> رجوع لاختيار البند
+                <i className="ti ti-arrow-right text-[16px]" /> رجوع لاختيار البند
               </button>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-1">{quickCapture.pendingSection.ttl}</div>
+              <div className="px-3 pt-1 text-[length:var(--fs-xs)] text-[var(--t3)]">{quickCapture.pendingSection.ttl}</div>
               {quickCapture.indicatorsLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <i className="ti ti-loader animate-spin text-[22px] text-[var(--em8)]" />
+                  <i className="ti ti-loader animate-spin text-[24px] text-[var(--t2)]" />
                 </div>
               ) : quickCapture.sectionIndicators.length === 0 ? (
-                <p className="text-[12.5px] text-[var(--text4)] text-center py-6">لا توجد مؤشرات متاحة لهذا البند حالياً</p>
+                <p className="text-[length:var(--fs-sm)] text-[var(--t3)] text-center py-6">لا توجد مؤشرات متاحة لهذا البند حالياً</p>
               ) : (
                 quickCapture.sectionIndicators.map(ind => (
                   <button
@@ -1581,11 +1425,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                     type="button"
                     disabled={quickCapture.saving}
                     onClick={() => quickCapture.saveToIndicator(ind)}
-                    className="flex items-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-[var(--em7)]/10 transition-all duration-200 text-right cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                    className={PICK_ROW}
                   >
-                    <i className="ti ti-list-check text-[16px] text-[var(--em7)] shrink-0" />
-                    <span className="flex-1 text-[13.5px] font-bold text-[var(--text2)]">{ind.name_ar}</span>
-                    {quickCapture.saving && <i className="ti ti-loader animate-spin text-[14px] text-[var(--em8)]" />}
+                    <i className="ti ti-list-check text-[20px] text-[var(--t2)] shrink-0" />
+                    <span className="flex-1 min-w-0 truncate">{ind.name_ar}</span>
+                    {quickCapture.saving && <i className="ti ti-loader animate-spin text-[16px] text-[var(--t2)]" />}
                   </button>
                 ))
               )}
@@ -1596,75 +1440,55 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
 
       {/* Bottom Sheet — تسجيل صوتي سريع (Beta) — جوال فقط */}
       <BottomSheet isOpen={quickCapture.voiceSheetOpen || quickCapture.voiceConsentPromptOpen} onClose={quickCapture.cancelVoiceCapture}>
-        <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
-              <i className="ti ti-microphone" />
-            </div>
-            <div className="text-[16px] font-black text-white flex items-center gap-2">
-              تسجيل صوتي سريع
-              <span className="text-[9.5px] font-black text-[var(--gold)] bg-[var(--gold)]/10 border border-[var(--gold)]/30 rounded-full px-2 py-0.5">قيد التطوير</span>
-            </div>
-          </div>
-          <button
-            onClick={quickCapture.cancelVoiceCapture}
-            className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
-          >
-            <i className="ti ti-x" />
-          </button>
-        </div>
+        <SheetHeader title="تسجيل صوتي سريع" badge="قيد التطوير" onClose={quickCapture.cancelVoiceCapture} />
         <div className="overflow-y-auto flex-1 p-6 space-y-4">
           {!VOICE_CAPTURE_ENABLED ? (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-[var(--gold)]/10 border border-[var(--gold)]/25 flex items-center justify-center text-[26px] text-[var(--gold3)]">
+              <div className="w-12 h-12 rounded-[var(--r-md)] bg-[var(--s2)] flex items-center justify-center text-[32px] text-[var(--t2)]">
                 <i className="ti ti-tools" />
               </div>
-              <p className="text-[13.5px] text-[var(--text3)] font-bold leading-relaxed max-w-[260px]">{VOICE_CAPTURE_DISABLED_MESSAGE}</p>
-              <button
-                type="button"
-                onClick={quickCapture.cancelVoiceCapture}
-                className="py-2 px-5 rounded-lg border border-[var(--line2)] text-[var(--text3)] text-[12.5px] font-bold cursor-pointer"
-              >
+              <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed max-w-[260px]">{VOICE_CAPTURE_DISABLED_MESSAGE}</p>
+              <div><button type="button" onClick={quickCapture.cancelVoiceCapture} className={BTN_SM}>
                 إغلاق
-              </button>
+              </button></div>
             </div>
           ) : quickCapture.voiceConsentPromptOpen ? (
-            <div className="bg-black/20 border border-[var(--gold)]/25 rounded-xl p-3.5 space-y-3">
-              <p className="text-[12.5px] text-[var(--text3)] leading-relaxed">{AI_CONSENT_TEXT}</p>
+            <div className="bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4 space-y-3">
+              <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">{AI_CONSENT_TEXT}</p>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={quickCapture.acceptVoiceConsent} className="py-2 px-4 rounded-lg bg-[var(--em6)] text-white text-[12.5px] font-bold cursor-pointer">أوافق ومتابعة</button>
-                <button type="button" onClick={quickCapture.cancelVoiceCapture} className="py-2 px-4 rounded-lg border border-[var(--line2)] text-[var(--text4)] text-[12.5px] font-bold cursor-pointer">إلغاء</button>
+                <button type="button" onClick={quickCapture.acceptVoiceConsent} className={BTN_PRI_SM}>أوافق ومتابعة</button>
+                <button type="button" onClick={quickCapture.cancelVoiceCapture} className={BTN_GH_SM}>إلغاء</button>
               </div>
             </div>
           ) : quickCapture.voiceRecording.error ? (
             <div className="flex flex-col items-center gap-3 py-4 text-center">
-              <i className="ti ti-alert-circle text-[32px] text-red-400" />
-              <p className="text-[13px] text-red-400 font-semibold">{quickCapture.voiceRecording.error}</p>
-              <button type="button" onClick={quickCapture.cancelVoiceCapture} className="py-2 px-5 rounded-lg border border-[var(--line2)] text-[var(--text3)] text-[12.5px] font-bold cursor-pointer">إغلاق</button>
+              <i className="ti ti-alert-circle text-[32px] text-[var(--danger)]" />
+              <p className="text-[length:var(--fs-sm)] text-[var(--danger)]">{quickCapture.voiceRecording.error}</p>
+              <div><button type="button" onClick={quickCapture.cancelVoiceCapture} className={BTN_SM}>إغلاق</button></div>
             </div>
           ) : quickCapture.voiceSaving ? (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <i className="ti ti-loader animate-spin text-[36px] text-[var(--em8)]" />
-              <p className="text-[13.5px] text-white font-bold">جاري تفريغ التسجيل وحفظ الشاهد...</p>
+              <i className="ti ti-loader animate-spin text-[32px] text-[var(--t2)]" />
+              <p className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">جاري تفريغ التسجيل وحفظ الشاهد...</p>
             </div>
           ) : quickCapture.voiceRecording.isRecording ? (
             <div className="flex flex-col items-center gap-4 py-6 text-center">
-              <div className="w-20 h-20 rounded-full bg-red-500/15 border-2 border-red-500/40 flex items-center justify-center text-[32px] text-red-400" style={{ animation: 'pulse 1.5s ease-in-out infinite' }}>
+              <div className="w-20 h-20 rounded-[var(--r-full)] bg-[var(--s2)] border-2 border-[var(--danger)] flex items-center justify-center text-[32px] text-[var(--danger)] motion-safe:animate-pulse">
                 <i className="ti ti-microphone" />
               </div>
-              <p className="text-[15px] font-black text-white">جاري التسجيل... {quickCapture.voiceRecording.secondsElapsed}/30 ث</p>
+              <p className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">جاري التسجيل... {quickCapture.voiceRecording.secondsElapsed}/30 ث</p>
               <button
                 type="button"
                 onClick={quickCapture.voiceRecording.stopRecording}
-                className="flex items-center gap-2 py-2.5 px-6 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[13px] font-bold cursor-pointer"
+                className={`${BTN_DNG} flex-none`}
               >
-                <i className="ti ti-player-stop-filled" /> إيقاف التسجيل
+                <i className="ti ti-player-stop-filled text-[16px]" /> إيقاف التسجيل
               </button>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <i className="ti ti-loader animate-spin text-[32px] text-[var(--em8)]" />
-              <p className="text-[13px] text-[var(--text3)] font-semibold">جاري تجهيز التسجيل...</p>
+              <i className="ti ti-loader animate-spin text-[32px] text-[var(--t2)]" />
+              <p className="text-[length:var(--fs-sm)] text-[var(--t2)]">جاري تجهيز التسجيل...</p>
             </div>
           )}
         </div>

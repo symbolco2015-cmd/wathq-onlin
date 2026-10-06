@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import type { Announcement } from '../types';
 import { formatDate } from '../utils';
 import NavPanel from './NavPanel';
+import { BTN_PRI_SM } from './SectionView';
 
 /** عنصر واحد في قائمة الجرس — يبنيه Dashboard من التعاميم والتذكيرات وحالة الملخص */
 export type NotificationItem =
+  // معلّق: لا يُعلَّم مقروءاً أبداً، ويبقى في الشارة حتى يصير عدده صفراً
+  | { key: string; kind: 'pending'; count: number; unread: false }
   | { key: string; kind: 'announcement'; announcement: Announcement; unread: boolean }
   | { key: string; kind: 'reminder'; icon: string; title: string; subtitle: string; unread: boolean }
   | { key: string; kind: 'summary'; unread: boolean };
@@ -16,6 +19,7 @@ type NotificationsSheetProps = {
   /** مفاتيح ما كان غير مقروء لحظة فتح اللوحة — تبقى نقاطها ظاهرة حتى الإغلاق */
   unreadAtOpen: ReadonlySet<string>;
   onOpenSummary: () => void;
+  onOpenBulkReview: () => void;
 };
 
 const CATEGORY_META: Record<string, { icon: string; color: string; label: string }> = {
@@ -41,7 +45,7 @@ function UnreadDot({ show }: { show: boolean }) {
 }
 
 /** لوحة الإشعارات (الجرس): ورقة سفلية في الجوال، ولوحة منسدلة تحت الشريط فيما عداه */
-export default function NotificationsSheet({ isOpen, onClose, items, unreadAtOpen, onOpenSummary }: NotificationsSheetProps) {
+export default function NotificationsSheet({ isOpen, onClose, items, unreadAtOpen, onOpenSummary, onOpenBulkReview }: NotificationsSheetProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,6 +62,22 @@ export default function NotificationsSheet({ isOpen, onClose, items, unreadAtOpe
       {items.map(item => {
         const dot = item.unread || unreadAtOpen.has(item.key);
         const rowBg = dot ? 'bg-[var(--s2)]' : '';
+
+        // خلفية دائمة لأنه غير مكتمل، وبلا نقطة «جديد»
+        if (item.kind === 'pending') {
+          return (
+            <div key={item.key} className="w-full min-h-11 flex items-center gap-3 p-2 rounded-[var(--r-sm)] text-right bg-[var(--s2)]">
+              <IconBox icon="ti-photo-check" color="text-[var(--warn)]" unread />
+              <span className="flex-1 min-w-0">
+                <span className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{item.count} ملف من الاستيراد الجماعي جاهز للمراجعة</span>
+                <span className="block text-[length:var(--fs-xs)] text-[var(--t3)]">استيراد جماعي</span>
+              </span>
+              <button type="button" onClick={onOpenBulkReview} className={`${BTN_PRI_SM} shrink-0`}>
+                مراجعة الآن
+              </button>
+            </div>
+          );
+        }
 
         if (item.kind === 'announcement') {
           const ann = item.announcement;

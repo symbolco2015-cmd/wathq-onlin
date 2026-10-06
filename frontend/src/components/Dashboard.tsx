@@ -561,6 +561,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     const read = state.readAnnouncements ?? [];
     const seen = state.seenNotifications ?? [];
     const items: NotificationItem[] = [];
+    // المعلّق أولاً، ولا يدخل seenNotifications أبداً (unread: false دائماً)
+    if (bulkImportReadyCount > 0) items.push({ key: 'pending:bulk-import', kind: 'pending', count: bulkImportReadyCount, unread: false });
     if (summaryNotifKey) items.push({ key: summaryNotifKey, kind: 'summary', unread: !seen.includes(summaryNotifKey) });
     for (const r of reminders) items.push({ ...r, kind: 'reminder', unread: !seen.includes(r.key) });
     for (const ann of (announcements ?? []).slice(0, NOTIF_ANNOUNCEMENTS_LIMIT)) {
@@ -569,8 +571,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       items.push({ key: ann.id, kind: 'announcement', announcement: ann, unread: !beforeAccount && !read.includes(ann.id) });
     }
     return items;
-  }, [summaryNotifKey, reminders, announcements, accountCreatedMs, state.readAnnouncements, state.seenNotifications]);
-  const unreadCount = notifItems.filter(i => i.unread).length;
+  }, [bulkImportReadyCount, summaryNotifKey, reminders, announcements, accountCreatedMs, state.readAnnouncements, state.seenNotifications]);
+  // الشارة = غير المقروء + 1 للمعلّق (عدد إشعارات لا عدد ملفات)
+  const unreadCount = notifItems.filter(i => i.unread || i.kind === 'pending').length;
 
   // العدد إلى زر الجرس في Nav: يُرسل عند كل تغيّر، ويُعاد عند طلب Nav (تركيبها بعد Dashboard)
   const unreadCountRef = useRef(unreadCount);
@@ -1152,24 +1155,6 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           {cumulativeCard}
         </div>
 
-        {/* بانر: استيراد جماعي جاهز للمراجعة (bulk_import_queue بحالة classified أو failed) */}
-        {bulkImportReadyCount > 0 && (
-          <div className="mb-4 flex flex-wrap items-center gap-3 px-3.5 py-3 rounded-[var(--r-md)] border border-[var(--bd)] bg-[var(--s1)]">
-            <span className="w-9 h-9 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[20px] text-[var(--warn)] shrink-0">
-              <i className="ti ti-photo-check" />
-            </span>
-            <div className="flex-1 min-w-0">
-              <b className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] leading-normal">
-                لديك {bulkImportReadyCount} ملف من الاستيراد الجماعي جاهز للمراجعة
-              </b>
-              <small className="block text-[length:var(--fs-xs)] text-[var(--t3)]">استيراد جماعي</small>
-            </div>
-            <button type="button" onClick={() => setIsBulkImportReviewOpen(true)} className={`${BTN_PRI_SM} shrink-0`}>
-              مراجعة الآن
-            </button>
-          </div>
-        )}
-
         {/* SECTIONS */}
         <div id="sections-list" className="flex flex-col gap-2 pb-[100px] lg:pb-0 scroll-mt-24">
           {/* بترتيب sections الثابت، كتنقل عمود الملخص — .secr في النموذج */}
@@ -1545,6 +1530,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         items={notifItems}
         unreadAtOpen={unreadAtOpen}
         onOpenSummary={() => { setNotifOpen(false); setToolsOpen(true); }}
+        onOpenBulkReview={() => { setNotifOpen(false); setIsBulkImportReviewOpen(true); }}
       />
 
       {/* Bottom Sheet — إضافة شاهد (الخطوة الثانية) — جوال فقط */}

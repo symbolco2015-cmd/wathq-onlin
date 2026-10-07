@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import CheckEmailScreen from './CheckEmailScreen';
 
 // الدخول بحساب مايكروسوفت غير مفعّل بعد: ينتظر إعداد Entra ID وموافقة الوزارة.
 // الزر ودالته handleOAuth('azure') باقيان في الكود، ولتفعيله غيّر القيمة إلى true.
@@ -15,7 +16,7 @@ interface AuthProps {
   onRecoveryComplete?: () => void;
 }
 
-type AuthMode = 'login' | 'reg' | 'forgot' | 'update';
+type AuthMode = 'login' | 'reg' | 'forgot' | 'update' | 'check';
 
 // Maps raw Supabase / network error messages to friendly Arabic strings.
 // Never expose internal error details to the user.
@@ -49,6 +50,13 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+  // Which title the "check your email" screen shows: after sign-up, or after a login with an unconfirmed email
+  const [checkVariant, setCheckVariant] = useState<'signup' | 'unconfirmed'>('signup');
+  // Persistent message under the register form (e.g. email already registered)
+  const [regError, setRegError] = useState<string | null>(null);
+
+  // Same confirmation-link target for signUp and for resend
+  const emailRedirectTo = window.location.origin;
 
   // Switch to the "set new password" screen as soon as a recovery link is detected
   useEffect(() => {
@@ -84,6 +92,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
     }, 200);
 
     setLoading(true);
+    setRegError(null);
 
     try {
       if (mode === 'login') {
@@ -104,11 +113,24 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
           email,
           password,
           options: {
+            emailRedirectTo,
             data: {
               full_name: name,
             }
           }
         });
+
+        // With confirmations on, Supabase returns a user with no identities (and sends
+        // no email) instead of an error when the address is already registered.
+        // With confirmations off, it returns an error code instead.
+        const isDuplicate =
+          (Array.isArray(data.user?.identities) && data.user.identities.length === 0) ||
+          error?.code === 'user_already_exists' || error?.code === 'email_exists';
+
+        if (isDuplicate) {
+          setRegError('هذا البريد مسجّل من قبل. سجّل الدخول، أو استعمل «نسيت كلمة المرور».');
+          return;
+        }
 
         if (error) throw error;
 
@@ -118,11 +140,17 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
             onLoginSuccess();
           }, 700);
         } else {
-          onToast('تم إنشاء الحساب! يرجى تأكيد بريدك الإلكتروني ✉️', '✉️');
+          setCheckVariant('signup');
+          setMode('check');
         }
       }
     } catch (err: any) {
       console.error("Auth error:", err);
+      if (mode === 'login' && err?.code === 'email_not_confirmed') {
+        setCheckVariant('unconfirmed');
+        setMode('check');
+        return;
+      }
       onToast(mapAuthError(err, 'حدث خطأ أثناء عملية المصادقة، يرجى المحاولة مجدداً.'), '❌');
     } finally {
       setLoading(false);
@@ -287,7 +315,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
               <button
                 type="button"
                 className={`flex-1 py-2.5 rounded-[11px] cursor-pointer text-[14px] font-bold transition-all duration-700 font-[var(--font)] border-none ${mode === 'login' ? 'bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white shadow-[0_4px_16px_rgba(42,122,68,.5)]' : 'bg-transparent text-[var(--text3)] hover:text-white'}`}
-                onClick={() => setMode('login')}
+                onClick={() => { setMode('login'); setRegError(null); }}
                 disabled={loading}
               >
                 تسجيل الدخول
@@ -295,7 +323,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
               <button
                 type="button"
                 className={`flex-1 py-2.5 rounded-[11px] cursor-pointer text-[14px] font-bold transition-all duration-700 font-[var(--font)] border-none ${mode === 'reg' ? 'bg-gradient-to-br from-[var(--gold)] to-[var(--gold3)] text-[var(--surf0)] shadow-[0_4px_16px_rgba(201,162,39,.5)]' : 'bg-transparent text-[var(--text3)] hover:text-white'}`}
-                onClick={() => setMode('reg')}
+                onClick={() => { setMode('reg'); setRegError(null); }}
                 disabled={loading}
               >
                 حساب جديد
@@ -317,6 +345,17 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
           </div>
         )}
 
+        {mode === 'check' && (
+          <CheckEmailScreen
+            email={email}
+            variant={checkVariant}
+            emailRedirectTo={emailRedirectTo}
+            onChangeEmail={() => { setPassword(''); setMode('reg'); }}
+            onGoLogin={() => { setPassword(''); setMode('login'); }}
+          />
+        )}
+
+        {mode !== 'check' && (
         <form onSubmit={(e) => e.preventDefault()} className="relative z-10">
           {mode === 'reg' && (
             <div className="mb-5 relative group">
@@ -347,7 +386,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => { setEmail(e.target.value); setRegError(null); }}
                   className={`w-full py-3.5 px-5 bg-white/5 border-[1.5px] border-white/10 rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-700 placeholder-[var(--text4)] ${inputFocusClasses} peer`}
                   placeholder="example@edu.sa"
                   required
@@ -428,6 +467,12 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
             <span className={`relative z-10 transition-colors duration-700 ${isReg ? 'text-[var(--surf0)]' : 'text-white'}`}>{loading ? 'جاري التحميل...' : (mode === 'login' ? 'دخول إلى الحساب' : mode === 'reg' ? 'إنشاء الحساب' : mode === 'forgot' ? 'إرسال رابط الاستعادة' : 'حفظ كلمة المرور الجديدة')}</span>
           </button>
 
+          {mode === 'reg' && regError && (
+            <div role="alert" className="mt-3 text-center text-[length:var(--fs-sm)] text-[var(--danger)] leading-relaxed">
+              {regError}
+            </div>
+          )}
+
           {(mode === 'forgot' || mode === 'update') && (
             <button
               type="button"
@@ -473,6 +518,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
           </>
           )}
         </form>
+        )}
         </div>
       </div>
 

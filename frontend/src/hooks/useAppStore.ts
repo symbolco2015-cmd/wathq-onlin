@@ -3,16 +3,16 @@ import { supabase } from '../supabaseClient';
 import type { AppState, UserProfile, Announcement, AcademicDate } from '../types';
 
 const defaultProfile: UserProfile = {
-  name: 'الاسم الثلاثي',
-  role: 'معلم رياضيات',
-  school: 'متوسطة الفيصل، جدة',
+  name: '',
+  role: '',
+  school: '',
   phone: '',
-  email: 'ahmed@edu.sa',
+  email: '',
   twitter: '',
   linkedin: '',
   youtube: '',
   avatar: '',
-  yearsOfExperience: 12
+  yearsOfExperience: 0
 };
 
 const defaultState: AppState = {

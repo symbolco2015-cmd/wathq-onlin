@@ -297,6 +297,7 @@ export default function App() {
     onConfirm: () => void;
     confirmDisabled?: boolean;
     confirmHelperText?: string;
+    tone?: 'danger';
   }>({
     isOpen: false,
     title: '',
@@ -918,25 +919,19 @@ export default function App() {
   const handleDeleteEv = (evidenceId: string) => {
     setModalConfig({
       isOpen: true,
-      title: 'تأكيد الحذف',
-      subtitle: 'هل أنت متأكد من حذف هذا الدليل؟ لا يمكن التراجع عن هذا الإجراء.',
+      title: 'حذف الشاهد',
+      subtitle: 'سيُحذف الشاهد نهائياً من ملفك، ولا يمكن استرجاعه.',
       icon: 'ti-trash',
-      body: (
-        <div className="flex flex-col items-center gap-3 py-4">
-          <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[32px] text-red-400">
-            <i className="ti ti-trash"></i>
-          </div>
-          <p className="text-[14px] text-[var(--text3)] text-center">سيتم حذف الدليل نهائياً من ملفك ولا يمكن استرجاعه.</p>
-        </div>
-      ),
+      tone: 'danger',
+      body: null,
       onConfirm: async () => {
         // الحذف بمعرّف الدليل في جدول evidence فقط — رسالة النجاح بعد نجاحه فعلياً
         try {
           await supabaseEv.deleteEvidence(evidenceId);
-          showToast('تم حذف الدليل 🗑️', '🗑️');
+          showToast('حُذف الشاهد', '');
         } catch (err) {
           console.error('[handleDeleteEv] Supabase evidence delete failed:', err);
-          showToast('تعذّر حذف الدليل، حاول مجدداً', '⚠️');
+          showToast('تعذّر حذف الشاهد، حاول مجدداً', '');
         }
         closeModal();
       }

@@ -1203,6 +1203,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             analysisCount={resultsAnalysis.analyses.length}
             loading={resultsAnalysis.loading}
             onBack={closeSection}
+            sectionId={analysisSection.id}
+            indicators={analysisSection.indicators}
+            evidence={supabaseEv?.evidence ?? []}
+            onEditEv={ev => onEditEv(analysisSection.id, ev)}
+            onDeleteEv={onDeleteEv}
           >
             <AnalysisSectionBody
               sections={sections}
@@ -1224,6 +1229,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             actionCount={improvementActionCount}
             loading={resultsAnalysis.loading}
             onBack={closeSection}
+            sectionId={improvementSection.id}
+            indicators={improvementSection.indicators}
+            evidence={supabaseEv?.evidence ?? []}
+            onEditEv={ev => onEditEv(improvementSection.id, ev)}
+            onDeleteEv={onDeleteEv}
           >
             <ImprovementActionsBody
               section={improvementSection}

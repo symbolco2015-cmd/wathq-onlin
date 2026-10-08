@@ -1,5 +1,6 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
+import type { SectionIndicator } from '../types';
 import { SectionHeader, EvRow, nEv } from './SectionView';
 
 // شاشات الأقسام الخاصة «مراعاة الفروق الفردية» و«التنويع في استراتيجيات
@@ -22,13 +23,16 @@ function useEvMenu() {
 }
 
 /** بطاقة المؤشر في SectionView: الدائرة (اختيارية) والاسم والعدد وزر «+» ثم الشواهد */
-function ItemCard({ name, evidence, circle, addLabel, onAdd, onDeleteEv, menuEvId, setMenuEvId }: {
+function ItemCard({ name, evidence, circle, addLabel, onAdd, onEditEv, onDeleteEv, menuEvId, setMenuEvId }: {
   name: string;
   evidence: SupabaseEvidence[];
   /** حالة الدائرة؛ undefined = بلا دائرة */
   circle?: 'x' | 'g' | '';
-  addLabel: string;
-  onAdd: () => void;
+  /** زر «+» — لا يُرسم بلا onAdd */
+  addLabel?: string;
+  onAdd?: () => void;
+  /** وجوده يُظهر «تعديل» في قائمة الشاهد */
+  onEditEv?: (ev: SupabaseEvidence) => void;
   onDeleteEv: (evidenceId: string) => void;
   menuEvId: string | null;
   setMenuEvId: Dispatch<SetStateAction<string | null>>;
@@ -58,14 +62,16 @@ function ItemCard({ name, evidence, circle, addLabel, onAdd, onDeleteEv, menuEvI
           <b className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] leading-normal">{name}</b>
           <small className="text-[length:var(--fs-xs)] text-[var(--t3)]">{nEv(count)}</small>
         </span>
-        <button
-          type="button"
-          aria-label={addLabel}
-          onClick={onAdd}
-          className="w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[20px] text-[var(--accent)] shrink-0 cursor-pointer"
-        >
-          <i className="ti ti-plus" />
-        </button>
+        {onAdd && (
+          <button
+            type="button"
+            aria-label={addLabel}
+            onClick={onAdd}
+            className="w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[20px] text-[var(--accent)] shrink-0 cursor-pointer"
+          >
+            <i className="ti ti-plus" />
+          </button>
+        )}
       </div>
 
       {count > 0 && (
@@ -74,16 +80,64 @@ function ItemCard({ name, evidence, circle, addLabel, onAdd, onDeleteEv, menuEvI
             <EvRow
               key={ev.id}
               ev={ev}
-              canEdit={false}
+              canEdit={!!onEditEv}
               menuOpen={menuEvId === ev.id}
               onToggleMenu={() => setMenuEvId(prev => (prev === ev.id ? null : ev.id))}
               onCloseMenu={() => setMenuEvId(null)}
+              onEdit={onEditEv ? () => onEditEv(ev) : undefined}
               onDelete={() => onDeleteEv(ev.id)}
             />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+/** قسم «الشواهد» في شاشتي البندين 5 و10 — شواهد البند (section_id) مجمّعة حسب
+ *  المؤشر بترتيب مؤشرات القسم، المؤشرات التي فيها شواهد فقط. شاهد بلا مؤشر أو
+ *  بمؤشر من خارج القسم يُعرض في بطاقة أخيرة «بلا مؤشر» ولا يسقط من العرض. */
+function SectionEvidenceList({ sectionId, indicators, evidence, emptyText, onEditEv, onDeleteEv }: {
+  sectionId: number;
+  indicators: SectionIndicator[];
+  evidence: SupabaseEvidence[];
+  /** سطر الحالة الفارغة؛ بدونه لا يُعرض القسم حين لا شواهد */
+  emptyText?: string;
+  onEditEv: (ev: SupabaseEvidence) => void;
+  onDeleteEv: (evidenceId: string) => void;
+}) {
+  const [menuEvId, setMenuEvId] = useEvMenu();
+  const sectionEvidence = evidence.filter(e => e.section_id === sectionId);
+  const n = sectionEvidence.length;
+  if (n === 0 && !emptyText) return null;
+
+  const known = new Set(indicators.map(ind => ind.id));
+  const groups = indicators
+    .map(ind => ({ id: ind.id, name: ind.name_ar, evs: sectionEvidence.filter(e => e.indicator_id === ind.id) }))
+    .filter(g => g.evs.length > 0);
+  const orphans = sectionEvidence.filter(e => !e.indicator_id || !known.has(e.indicator_id));
+  if (orphans.length > 0) groups.push({ id: 'no-indicator', name: 'بلا مؤشر', evs: orphans });
+
+  return (
+    <>
+      <div className="flex items-center gap-2 px-1">
+        <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t2)]">الشواهد</span>
+        <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">{nEv(n)}</span>
+      </div>
+      {n === 0 ? (
+        <p className="px-1 text-[length:var(--fs-sm)] text-[var(--t3)]">{emptyText}</p>
+      ) : groups.map(g => (
+        <ItemCard
+          key={g.id}
+          name={g.name}
+          evidence={g.evs}
+          onEditEv={onEditEv}
+          onDeleteEv={onDeleteEv}
+          menuEvId={menuEvId}
+          setMenuEvId={setMenuEvId}
+        />
+      ))}
+    </>
   );
 }
 
@@ -176,14 +230,23 @@ export function StrategiesView({ icon, title, evCount, yearEvCount, monthName, u
 
 /** شاشة «تحليل نتائج المتعلمين» — الرأس وسطر الحالة، والأداة (AnalysisSectionBody)
  *  تصل من Dashboard كـ children ولا تُركَّب إلا بعد انتهاء التحميل */
-export function AnalysisView({ icon, title, analysisCount, loading, onBack, children }: {
+/** شواهد البند في شاشتي البندين 5 و10 — تُعرض بـ SectionEvidenceList */
+interface SectionEvidenceProps {
+  sectionId: number;
+  indicators: SectionIndicator[];
+  evidence: SupabaseEvidence[];
+  onEditEv: (ev: SupabaseEvidence) => void;
+  onDeleteEv: (evidenceId: string) => void;
+}
+
+export function AnalysisView({ icon, title, analysisCount, loading, onBack, children, ...ev }: {
   icon: string;
   title: string;
   analysisCount: number;
   loading: boolean;
   onBack: () => void;
   children: ReactNode;
-}) {
+} & SectionEvidenceProps) {
   return (
     <div className="flex flex-col gap-3 pb-24 lg:pb-0">
       <SectionHeader onBack={onBack} icon={icon} title={title} />
@@ -197,20 +260,23 @@ export function AnalysisView({ icon, title, analysisCount, loading, onBack, chil
           {children}
         </div>
       )}
+
+      {/* لا مسار يضيف شواهد للبند 10 — القسم يظهر فقط إن وُجد شاهد */}
+      {!loading && <SectionEvidenceList {...ev} />}
     </div>
   );
 }
 
 /** شاشة «تحسين نتائج المتعلمين» — الرأس وسطر الحالة، والتنبيهات
  *  (ImprovementActionsBody) تصل من Dashboard كـ children، كل تنبيه بطاقة مستقلة */
-export function ImprovementView({ icon, title, actionCount, loading, onBack, children }: {
+export function ImprovementView({ icon, title, actionCount, loading, onBack, children, ...ev }: {
   icon: string;
   title: string;
   actionCount: number;
   loading: boolean;
   onBack: () => void;
   children: ReactNode;
-}) {
+} & SectionEvidenceProps) {
   return (
     <div className="flex flex-col gap-3 pb-24 lg:pb-0">
       <SectionHeader onBack={onBack} icon={icon} title={title} />
@@ -220,6 +286,13 @@ export function ImprovementView({ icon, title, actionCount, loading, onBack, chi
       </p>
 
       {!loading && children}
+
+      {!loading && (
+        <SectionEvidenceList
+          {...ev}
+          emptyText="لا شواهد بعد. تُضاف من تنبيهات «علاجي» و«تكريم» أعلى هذه الشاشة."
+        />
+      )}
     </div>
   );
 }

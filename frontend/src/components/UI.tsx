@@ -47,10 +47,13 @@ interface ModalProps {
   confirmDisabled?: boolean;
   /** نص صغير يظهر بجانب زر "حفظ" أثناء تعطيله (يُتجاهل إن كان confirmDisabled غير مفعّل) */
   confirmHelperText?: string;
+  /** 'danger' = نافذة حذف: أيقونة الرأس بـ --danger وزر «حذف» بأيقونة سلة بدل «حفظ» */
+  tone?: 'danger';
 }
 
-export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConfirm, confirmDisabled, confirmHelperText }: ModalProps) {
+export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConfirm, confirmDisabled, confirmHelperText, tone }: ModalProps) {
   if (!isOpen) return null;
+  const danger = tone === 'danger';
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[500] flex items-center justify-center p-5" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ animation: 'fadeIn .2s both' }}>
@@ -58,7 +61,9 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConf
         <div className="absolute top-0 right-[15%] left-[15%] h-[1.5px] bg-gradient-to-r from-transparent via-[var(--em7)] via-[var(--gold)] via-[var(--em7)] to-transparent"></div>
         
         <div className="flex items-center gap-4 mb-7">
-          <div className="w-[54px] h-[54px] rounded-2xl shrink-0 bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[26px] border border-[var(--em7)]/20 shadow-[0_4px_16px_rgba(42,122,68,.3)]">
+          <div className={`w-[54px] h-[54px] rounded-2xl shrink-0 flex items-center justify-center text-[26px] ${danger
+            ? 'bg-[var(--s2)] text-[var(--danger)] border border-[var(--danger)]/35'
+            : 'bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] border border-[var(--em7)]/20 shadow-[0_4px_16px_rgba(42,122,68,.3)]'}`}>
             <i className={`ti ${icon}`}></i>
           </div>
           <div>
@@ -78,11 +83,13 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConf
           <div className="flex gap-2.5">
             <button className="py-3 px-6 rounded-xl border border-[var(--line2)] bg-transparent cursor-pointer font-[var(--font)] text-[14px] text-[var(--text3)] transition-all duration-200 hover:bg-[var(--glass2)] hover:text-white" onClick={onClose}>إلغاء</button>
             <button
-              className={`flex items-center gap-2 py-3 px-6 rounded-xl border-none text-white font-[var(--font)] text-[14px] font-extrabold transition-all duration-250 ${confirmDisabled ? 'bg-[var(--surf4)] opacity-50 cursor-not-allowed' : 'bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] cursor-pointer shadow-[0_6px_20px_rgba(42,122,68,.5)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(42,122,68,.6)]'}`}
+              className={danger
+                ? `flex items-center gap-2 py-3 px-6 rounded-xl border border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)] font-[var(--font)] text-[14px] font-extrabold transition-all duration-250 ${confirmDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`
+                : `flex items-center gap-2 py-3 px-6 rounded-xl border-none text-white font-[var(--font)] text-[14px] font-extrabold transition-all duration-250 ${confirmDisabled ? 'bg-[var(--surf4)] opacity-50 cursor-not-allowed' : 'bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] cursor-pointer shadow-[0_6px_20px_rgba(42,122,68,.5)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(42,122,68,.6)]'}`}
               onClick={onConfirm}
               disabled={confirmDisabled}
             >
-              <i className="ti ti-check"></i> حفظ
+              {danger ? <><i className="ti ti-trash"></i> حذف</> : <><i className="ti ti-check"></i> حفظ</>}
             </button>
           </div>
         </div>

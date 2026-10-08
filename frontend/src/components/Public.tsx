@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import type { ContinuityData, Evidence, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
-import { calculatePointsLevel, getCompletionColor, getCompletionLabel, supabaseEvidenceTypeToLocal, extensionFromUrl, formatDate } from '../utils';
+import type { ContinuityData, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
+import { getCompletionColor, getCompletionLabel, extensionFromUrl, formatDate } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { PublicCustomIndicator } from '../hooks/usePublicCustomIndicators';
-import { findIndicatorByName, toEvRow, type EvRow } from '../indicators';
+import { findIndicatorByName, toEvRow } from '../indicators';
 import PdfPreview, { PdfPreviewFallback } from './PdfPreview';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
@@ -25,8 +25,6 @@ function printGray(pct: number): string {
 interface PublicProps {
   state: PublicPortfolioState;
   sections: SectionData[];
-  /** When true, this view is accessed via a public share link (no auth required) */
-  isSharedView?: boolean;
   /** مؤشر الاستمرارية عبر الزمن — غائب فقط أثناء التحميل أو إن تعذّر الجلب،
    * وفي هذه الحالة القسم لا يُعرض إطلاقاً بدل عرض بيانات فارغة مضلّلة. */
   continuity?: ContinuityData | null;
@@ -49,10 +47,10 @@ interface PublicProps {
    * للمصدر). غائبة في مسار ?share= الحي ومعاينة المالك — هناك تُحسب محلياً
    * كما كانت دائماً (انظر resultsComparisons أدناه). */
   frozenResultsComparisons?: { subject: string; series: ComparisonPoint[] }[];
-  /** وضع "تقرير حصاد فصلي" الثابت (?report=) — يستبدل حساب شارة النقاط الحي
-   * (نافذة آخر 3 أشهر تقويمية، مرتبطة بـ"اليوم") بقيمة مجمَّدة وقت التوليد،
-   * ويضيف سطر عنوان الفترة/تاريخ التوليد في الهيرو وترويسة الطباعة. غائب في
-   * مسار ?share= العادي — لا فرق هناك إطلاقاً. */
+  /** وضع "تقرير حصاد فصلي" الثابت (?report=) — يضيف سطر عنوان الفترة/تاريخ
+   * التوليد في الهيرو وترويسة الطباعة، ومرجع شبكة الاستمرارية. pointsLevel
+   * يبقى في اللقطة ويُمرَّر من App.tsx لكنه لا يُعرض (شارة اللقب محذوفة في 5.1).
+   * غائب في مسار ?share= العادي. */
   reportMeta?: {
     periodLabel: string;
     periodFrom: string;
@@ -97,6 +95,48 @@ function getDomain(url: string): string {
   }
 }
 
+/** نوع العرض في الصفحة العامة، من evidence_type الأصلي وحقلي الملف والرابط —
+ *  أدق من Evidence['type'] (supabaseEvidenceTypeToLocal) الذي يجعل الرابط
+ *  والصوت والملاحظة كلها 'doc'. */
+type PublicKind = 'pdf' | 'img' | 'vid' | 'audio' | 'link' | 'note';
+
+function publicKind(e: SupabaseEvidence): PublicKind {
+  if (!e.file_url) return e.link_url ? 'link' : 'note';
+  if (e.evidence_type === 'image') return 'img';
+  if (e.evidence_type === 'video') return 'vid';
+  if (e.evidence_type === 'audio') return 'audio';
+  return 'pdf';
+}
+
+/** صف عرض شاهد: صف المؤشرات المعتاد + نوع العرض العام والوصف (لمعاينة الملاحظة). */
+function toPublicRow(e: SupabaseEvidence) {
+  return { ...toEvRow(e), kind: publicKind(e), description: e.description };
+}
+type PublicRow = ReturnType<typeof toPublicRow>;
+
+/** شواهد قسم مجمّعة حسب مؤشراته (بترتيب indicators، أي weight ثم المخصص)،
+ *  المؤشر بلا شواهد لا يظهر. orphans: شاهد بلا indicator_id أو بمؤشر ليس من
+ *  مؤشرات القسم — يُعرض في مجموعة أخيرة «بلا مؤشر» ولا يدخل أي نسبة. */
+function groupByIndicator(evs: SupabaseEvidence[], indicators: SectionIndicator[]) {
+  const known = new Set(indicators.map(i => i.id));
+  const groups = indicators
+    .map(ind => ({ indicator: ind, evs: evs.filter(e => e.indicator_id === ind.id) }))
+    .filter(g => g.evs.length > 0);
+  const orphans = evs.filter(e => !e.indicator_id || !known.has(e.indicator_id));
+  return { groups, orphans };
+}
+
+const NO_INDICATOR_LABEL = 'بلا مؤشر';
+
+type EvidenceGroup = { key: string; label: string; evs: PublicRow[] };
+
+/** groupByIndicator بشكل قائمة عرض: مجموعة لكل مؤشر ثم «بلا مؤشر» إن وُجد. */
+function toGroupList({ groups, orphans }: ReturnType<typeof groupByIndicator>): EvidenceGroup[] {
+  const list = groups.map(g => ({ key: g.indicator.id, label: g.indicator.name_ar, evs: g.evs.map(toPublicRow) }));
+  if (orphans.length > 0) list.push({ key: 'no-indicator', label: NO_INDICATOR_LABEL, evs: orphans.map(toPublicRow) });
+  return list;
+}
+
 /** امتدادات مستندات Office — تميّزها عن PDF ضمن شواهد النوع 'file' (كلاهما
  * يُحوَّل إلى نفس Evidence['type'] المجمَّد 'pdf' عبر supabaseEvidenceTypeToLocal،
  * فالتمييز الفعلي يحتاج فحص الامتداد الحقيقي في الرابط عبر extensionFromUrl). */
@@ -106,13 +146,17 @@ const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   pdf: {icon: 'ti-file-type-pdf', cls: 'bg-gradient-to-br from-[#b91c1c]/20 to-[#b91c1c]/10 text-[#f87171] border border-[#b91c1c]/20', label: 'PDF'},
   img: {icon: 'ti-photo', cls: 'bg-gradient-to-br from-[#1d4ed8]/20 to-[#1d4ed8]/10 text-[#93c5fd] border border-[#1d4ed8]/20', label: 'صورة'},
   doc: {icon: 'ti-file-text', cls: 'bg-gradient-to-br from-[#6d28d9]/20 to-[#6d28d9]/10 text-[#c4b5fd] border border-[#6d28d9]/20', label: 'مستند'},
-  vid: {icon: 'ti-video', cls: 'bg-gradient-to-br from-[#b45309]/20 to-[#b45309]/10 text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'}
+  vid: {icon: 'ti-video', cls: 'bg-gradient-to-br from-[#b45309]/20 to-[#b45309]/10 text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'},
+  audio: {icon: 'ti-microphone', cls: 'bg-gradient-to-br from-[#b45309]/20 to-[#b45309]/10 text-[#fcd34d] border border-[#b45309]/20', label: 'تسجيل صوتي'},
+  link: {icon: 'ti-link', cls: 'bg-gradient-to-br from-[#6d28d9]/20 to-[#6d28d9]/10 text-[#c4b5fd] border border-[#6d28d9]/20', label: 'رابط'},
+  note: {icon: 'ti-notes', cls: 'bg-gradient-to-br from-[#6d28d9]/20 to-[#6d28d9]/10 text-[#c4b5fd] border border-[#6d28d9]/20', label: 'ملاحظة'}
 };
 
 type SectionWithPct = SectionData & {
   fullName: string;
   evCount: number;
-  evs: (EvRow & { sub: string })[];
+  /** orphan: شاهد بلا مؤشر معروف في القسم (sub = «بلا مؤشر») — يُعرض ولا يُحسب في النسبة */
+  evs: (PublicRow & { sub: string; orphan: boolean })[];
   pct: number;
 };
 
@@ -143,7 +187,7 @@ function SocialIconsRow({ profile, justify }: { profile: PublicPortfolioState['p
   );
 }
 
-function StatsRow({ totalEvs, sectionsCount, years, justify }: { totalEvs: number; sectionsCount: number; years: number; justify: string }) {
+function StatsRow({ totalEvs, coveredCount, totalCount, years, justify }: { totalEvs: number; coveredCount: number; totalCount: number; years: number; justify: string }) {
   return (
     <div className={`relative z-10 flex ${justify}`}>
       <div className="flex flex-col sm:flex-row gap-0 bg-white/5 border border-[var(--line)] rounded-2xl inline-flex overflow-hidden">
@@ -152,8 +196,8 @@ function StatsRow({ totalEvs, sectionsCount, years, justify }: { totalEvs: numbe
           <div className="text-[11px] text-[var(--text4)] mt-1">أدلة موثّقة</div>
         </div>
         <div className="py-4 px-8 text-center text-white border-b sm:border-b-0 sm:border-l border-[var(--line)]">
-          <div className="text-[28px] font-black leading-none bg-clip-text text-transparent bg-gradient-to-br from-[var(--em8)] to-[var(--gold3)]">{sectionsCount}</div>
-          <div className="text-[11px] text-[var(--text4)] mt-1">قسم</div>
+          <div className="text-[28px] font-black leading-none bg-clip-text text-transparent bg-gradient-to-br from-[var(--em8)] to-[var(--gold3)]">{coveredCount}</div>
+          <div className="text-[11px] text-[var(--text4)] mt-1">من {totalCount} مجالات</div>
         </div>
         <div className="py-4 px-8 text-center text-white">
           <div className="text-[28px] font-black leading-none bg-clip-text text-transparent bg-gradient-to-br from-[var(--em8)] to-[var(--gold3)]">{years}</div>
@@ -241,35 +285,6 @@ function ContinuityGrid({ continuity, referenceDate = new Date() }: { continuity
   );
 }
 
-/** شارة لقب المستوى (خطوة ثابتة / مسيرة واثقة / قدوة متميزة) — بجانب اسم المعلم
- * أعلى صفحة المشاركة، بنفس تصميم الشارة الذهبية المستخدمة في بطاقات الأقسام.
- * pointsSubtitle: نص التلميح خلف عدد النقاط — "آخر 3 أشهر" في المسار الحي،
- * أو نص مخصص لفترة التقرير في وضع ?report= (النقاط ليست نافذة 3 أشهر هناك). */
-function LevelBadge({ pointsLevel, pointsSubtitle = 'خلال آخر 3 أشهر' }: { pointsLevel: Pick<ReturnType<typeof calculatePointsLevel>, 'points' | 'levelIcon' | 'levelLabel'>; pointsSubtitle?: string }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 text-[12px] sm:text-[13px] font-black text-[var(--gold3)] bg-[var(--gold)]/12 border border-[var(--gold)]/35 py-1.5 px-3 rounded-full leading-none relative z-10"
-      style={{ animation: 'scaleIn .35s var(--sp) both' }}
-      title={`${pointsLevel.points} نقطة ${pointsSubtitle}`}
-    >
-      <i className={`ti ${pointsLevel.levelIcon} text-[13px]`} /> {pointsLevel.levelLabel}
-    </span>
-  );
-}
-
-function BadgesRow({ justify }: { justify: string }) {
-  return (
-    <div className={`flex ${justify} gap-2 flex-wrap relative z-10`}>
-      <div className="inline-flex items-center gap-1.5 py-1.5 px-4 bg-white/5 border border-white/10 rounded-full text-[12.5px] text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/25 hover:-translate-y-0.5">
-        <i className="ti ti-school text-[var(--gold)]"></i> وزارة التعليم
-      </div>
-      <div className="inline-flex items-center gap-1.5 py-1.5 px-4 bg-white/5 border border-white/10 rounded-full text-[12.5px] text-[var(--text2)] backdrop-blur-md cursor-default transition-all duration-250 hover:bg-[var(--em7)]/10 hover:border-[var(--em7)]/25 hover:-translate-y-0.5">
-        <i className="ti ti-map-pin text-[var(--gold)]"></i> المملكة العربية السعودية
-      </div>
-    </div>
-  );
-}
-
 /** سطر عنوان فترة التقرير + تاريخ التوليد — يظهر فقط في وضع ?report=، أعلى
  * اسم المعلم في الهيرو (كل من تخطيطي الجوال والديسكتوب). */
 function ReportPeriodBanner({ periodLabel, generatedAt, justify }: { periodLabel: string; generatedAt: string; justify: string }) {
@@ -307,26 +322,22 @@ function Avatar({ profile, size }: { profile: PublicPortfolioState['profile']; s
  * اللون مأخوذ بالكامل من getCompletionColor(pct) في utils.ts. */
 const SECTION_SUMMARY_PREVIEW_MAX = 70;
 
-function SectionCard({ sec, isTop, onClick, style, summary }: { sec: SectionWithPct; isTop?: boolean; onClick: () => void; style?: React.CSSProperties; summary?: string | null }) {
+function SectionCard({ sec, onClick, style, summary }: { sec: SectionWithPct; onClick: () => void; style?: React.CSSProperties; summary?: string | null }) {
   const color = getCompletionColor(sec.pct);
-  // العمق التراكمي = إجمالي الأدلة (evCount) ÷ عدد المؤشرات الفرعية المغطاة تراكمياً
-  const filledSubsCount = new Set(sec.evs.map(e => e.sub)).size;
-  const depth = filledSubsCount > 0 ? sec.evCount / filledSubsCount : 0;
-  const hasBadges = isTop || sec.evCount > 3;
+  // العمق التراكمي = أدلة المؤشرات المعروفة ÷ عدد المؤشرات المغطاة («بلا مؤشر» لا يُعدّ مؤشراً)
+  const indicatorEvs = sec.evs.filter(e => !e.orphan);
+  const filledSubsCount = new Set(indicatorEvs.map(e => e.sub)).size;
+  const depth = filledSubsCount > 0 ? indicatorEvs.length / filledSubsCount : 0;
+  const hasBadges = sec.evCount > 3;
   return (
     <div
-      className={`print-card group bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl shadow-lg cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,0,0,.3)] relative overflow-hidden ${isTop ? 'px-6 pt-6 border-2' : 'px-5 pt-5 border'} ${hasBadges ? (isTop ? 'pb-11' : 'pb-10') : (isTop ? 'pb-6' : 'pb-5')}`}
-      style={{ borderColor: isTop ? color : 'var(--line)', ...style }}
+      className={`print-card group bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl shadow-lg cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,0,0,.3)] relative overflow-hidden px-5 pt-5 border ${hasBadges ? 'pb-10' : 'pb-5'}`}
+      style={{ borderColor: 'var(--line)', ...style }}
       onClick={onClick}
       title={depth > 1 ? `متوسط ${depth.toFixed(1)} دليل لكل مؤشر مغطى` : undefined}
     >
       {hasBadges && (
         <div className="print-decor absolute bottom-3 left-3 z-20 flex flex-row items-center gap-1.5">
-          {isTop && (
-            <div className="flex items-center gap-1 py-0.5 px-2 rounded-full text-[9px] font-black text-white shrink-0" style={{ backgroundColor: color }}>
-              <i className="ti ti-trophy text-[10px]"></i> أبرز إنجاز
-            </div>
-          )}
           {/* شارة "تجاوز الهدف" — الرقم المطلق للأدلة التراكمية (لا "+N") لأن
               الجمهور الخارجي لا يعرف سقف الهدف الشهري الداخلي؛ تظهر فقط إن > 3 */}
           {sec.evCount > 3 && (
@@ -341,16 +352,16 @@ function SectionCard({ sec, isTop, onClick, style, summary }: { sec: SectionWith
 
       <div className="flex items-center gap-4 relative z-10">
         <div
-          className={`print-decor rounded-2xl flex items-center justify-center border shrink-0 transition-all duration-300 ${isTop ? 'w-14 h-14 text-[28px]' : 'w-12 h-12 text-[24px]'}`}
+          className={`print-decor rounded-2xl flex items-center justify-center border shrink-0 transition-all duration-300 w-12 h-12 text-[24px]`}
           style={{ color, borderColor: `${color}40`, background: `${color}1a` }}
         >
           <i className={`ti ${sec.icon}`}></i>
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className={`font-bold text-white leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isTop ? 'text-[16.5px]' : 'text-[15px]'}`}>{sec.fullName}</h3>
+          <h3 className={`font-bold text-white leading-tight overflow-hidden text-ellipsis whitespace-nowrap text-[15px]`}>{sec.fullName}</h3>
           <p className="text-[12.5px] text-[var(--text4)] mt-2 flex items-baseline gap-1.5">
             <span>{sec.isStrat ? 'الاستراتيجيات المضافة' : 'الأدلة الموثقة'}</span>
-            <strong className="text-white font-black" style={{ fontSize: isTop ? 22 : 19 }}>{sec.evCount}</strong>
+            <strong className="text-white font-black" style={{ fontSize: 19 }}>{sec.evCount}</strong>
           </p>
           {/* معاينة ملخص القسم — سطر واحد مقتطع، عند وجود ملخص فعلي */}
           {summary && (
@@ -369,23 +380,22 @@ function SectionCard({ sec, isTop, onClick, style, summary }: { sec: SectionWith
   );
 }
 
-/** مصغّرة دليل واحد ضمن بطاقة الاستراتيجيات — صورة فعلية / مصغّرة يوتيوب /
- * أيقونة ملف+اسم / أيقونة رابط+دومين / أيقونة ملاحظة، حسب نوع الدليل ورابطه. */
-/** onClick اختياري: يُستدعى بدلاً من فتح رابط خارجي مباشرة عند توفره (يُستخدم
- * لفتح نافذة معاينة/lightbox). الروابط الخارجية العامة (type: 'doc') تبقى
- * تفتح في تبويب جديد مباشرة دون معاينة. */
-/** شكل بنيوي أدنى تحتاجه EvidenceThumb — Evidence القديم يحقّقه تلقائياً، وكذلك
- * أي SupabaseEvidence مُحوَّل يدوياً (انظر toThumbEvidence أدناه لبطاقة الاستراتيجيات). */
-type ThumbEvidence = { type: Evidence['type']; name: string; url?: string };
+/** مصغّرة دليل واحد ضمن بطاقات الاستراتيجيات والفروق الفردية وبندي 5/10 —
+ * صورة فعلية / مصغّرة يوتيوب / أيقونة ملف+اسم / أيقونة رابط+دومين / ملاحظة،
+ * حسب kind (publicKind). onClick يفتح نافذة المعاينة (StrategyLightbox)؛ الرابط
+ * العادي (غير يوتيوب) يفتح في تبويب جديد مباشرة دون معاينة. */
+/** عنصر معاينة واحد — يشترك فيه previewFile (نافذة البند) وstratPreview
+ * (البطاقات). url غائب للملاحظة فقط. */
+type PreviewItem = { kind: PublicKind; name: string; url?: string; description?: string | null };
 
-function EvidenceThumb({ e, onClick }: { e: ThumbEvidence; onClick?: (e: ThumbEvidence) => void }) {
+function EvidenceThumb({ e, onClick }: { e: PreviewItem; onClick?: (e: PreviewItem) => void }) {
   const handleClick = (ev: React.MouseEvent) => {
     if (!onClick) return;
     ev.stopPropagation();
     onClick(e);
   };
 
-  if (e.type === 'img' && e.url) {
+  if (e.kind === 'img' && e.url) {
     return (
       <img
         src={e.url}
@@ -408,8 +418,8 @@ function EvidenceThumb({ e, onClick }: { e: ThumbEvidence; onClick?: (e: ThumbEv
     );
   }
 
-  if (e.type === 'pdf' || e.type === 'vid') {
-    const t = EVT_CONFIG[e.type];
+  if (e.kind === 'pdf' || e.kind === 'vid' || e.kind === 'audio') {
+    const t = EVT_CONFIG[e.kind];
     return (
       <div
         onClick={e.url && onClick ? handleClick : undefined}
@@ -423,7 +433,7 @@ function EvidenceThumb({ e, onClick }: { e: ThumbEvidence; onClick?: (e: ThumbEv
     );
   }
 
-  if (e.type === 'doc' && e.url) {
+  if (e.kind === 'link' && e.url) {
     return (
       <a href={e.url} target="_blank" rel="noreferrer" onClick={ev => ev.stopPropagation()} className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-[var(--em8)] hover:bg-white/10 transition-colors">
         <i className="ti ti-link text-[18px]"></i>
@@ -432,24 +442,67 @@ function EvidenceThumb({ e, onClick }: { e: ThumbEvidence; onClick?: (e: ThumbEv
     );
   }
 
-  // ملاحظة نصية بلا رابط أو ملف
+  // ملاحظة نصية بلا رابط أو ملف — النقر يعرض العنوان والوصف
   return (
-    <div className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-[var(--text3)]">
+    <div
+      onClick={onClick ? handleClick : undefined}
+      className={`flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-[var(--text3)] ${onClick ? 'hover:bg-white/10 cursor-pointer' : ''}`}
+    >
       <i className="ti ti-notes text-[18px]"></i>
       <span className="text-[12px] font-bold truncate">{e.name}</span>
     </div>
   );
 }
 
-/** الحقول السياقية الخمسة لدليل استراتيجية — تُعرض فقط إن وُجدت قيمة لها؛
- * الأدلة القديمة بلا هذي الحقول لا تُعرض لها أي شارة (لا "غير محدد" مكرّرة). */
-/** نافذة معاينة مصغّرة (lightbox) خاصة بأدلة قسم الاستراتيجيات فقط — منفصلة
- * كلياً عن previewFile العام حتى لا تمتد التعديلات لأي قسم آخر في الصفحة.
- * ترتيب الفحص يطابق EvidenceThumb تماماً: صورة → يوتيوب → PDF → فيديو مباشر. */
-function StrategyLightbox({ item, onClose }: { item: { name: string; url: string; type: Evidence['type'] } | null; onClose: () => void }) {
+/** مجموعات شواهد بعنوان صغير لكل مجموعة (مؤشر، أو «بلا مؤشر»، أو «شواهد
+ * أخرى») — نفس كتلة المجموعة التي كانت في بطاقة بند 5، تُستعمل الآن في بندي
+ * 5/10 و«شواهد أخرى» في بطاقة الاستراتيجيات. */
+function IndicatorGroups({ groups, onPreview }: { groups: EvidenceGroup[]; onPreview: (e: PreviewItem) => void }) {
+  return (
+    <div className="flex flex-col gap-5">
+      {groups.map(g => (
+        <div key={g.key} className="bg-white/5 rounded-2xl p-4 border border-[var(--em7)]/10">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-2 h-2 rounded-full bg-[var(--em7)] shrink-0"></div>
+            <span className="text-[14px] font-bold text-white flex-1">{g.label}</span>
+            <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{g.evs.length} شواهد</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {g.evs.map(e => (
+              <div key={e.id}>
+                <EvidenceThumb e={e} onClick={onPreview} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** مشغّل يوتيوب المضمّن — مشترك بين StrategyLightbox ونافذة معاينة البند. */
+function YouTubeEmbed({ ytId, title }: { ytId: string; title: string }) {
+  return (
+    <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl">
+      <iframe
+        src={`https://www.youtube-nocookie.com/embed/${ytId}`}
+        className="w-full h-full border-none"
+        title={title}
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+      />
+    </div>
+  );
+}
+
+/** نافذة معاينة مصغّرة (lightbox) لأدلة البطاقات (الاستراتيجيات، الفروق
+ * الفردية، بندا 5/10) — منفصلة عن previewFile الخاص بنافذة البند.
+ * ترتيب الفحص يطابق EvidenceThumb: صورة → يوتيوب → PDF → فيديو → صوت → ملاحظة. */
+function StrategyLightbox({ item, onClose }: { item: PreviewItem | null; onClose: () => void }) {
   if (!item) return null;
-  const ytId = item.type !== 'img' ? extractYouTubeId(item.url) : null;
-  const ext = extensionFromUrl(item.url);
+  const url = item.url ?? '';
+  const ytId = item.kind !== 'img' && url ? extractYouTubeId(url) : null;
+  const ext = extensionFromUrl(url);
   const isPdf = ext === 'pdf';
   const isOfficeDoc = OFFICE_EXTENSIONS.includes(ext);
 
@@ -468,27 +521,17 @@ function StrategyLightbox({ item, onClose }: { item: { name: string; url: string
         </div>
 
         <div className="flex-1 overflow-auto p-6 bg-black/10 flex items-center justify-center">
-          {item.type === 'img' && (
-            <img src={item.url} alt={item.name} className="max-w-full max-h-[65vh] object-contain rounded-2xl shadow-2xl" />
+          {item.kind === 'img' && (
+            <img src={url} alt={item.name} className="max-w-full max-h-[65vh] object-contain rounded-2xl shadow-2xl" />
           )}
 
-          {item.type !== 'img' && ytId && (
-            <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl">
-              <iframe
-                src={`https://www.youtube.com/embed/${ytId}`}
-                className="w-full h-full border-none"
-                title={item.name}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
+          {item.kind !== 'img' && ytId && <YouTubeEmbed ytId={ytId} title={item.name} />}
+
+          {item.kind === 'pdf' && !ytId && isPdf && (
+            <PdfPreview url={url} name={item.name} className="w-full h-[65vh]" />
           )}
 
-          {item.type === 'pdf' && !ytId && isPdf && (
-            <PdfPreview url={item.url} name={item.name} className="w-full h-[65vh]" />
-          )}
-
-          {item.type === 'pdf' && !ytId && !isPdf && isOfficeDoc && (
+          {item.kind === 'pdf' && !ytId && !isPdf && isOfficeDoc && (
             <div className="text-center p-8 max-w-md bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md shadow-2xl">
               <div className="w-16 h-16 rounded-2xl bg-[#c4b5fd]/15 text-[#c4b5fd] flex items-center justify-center text-[34px] mx-auto mb-5 border border-[#c4b5fd]/20 animate-pulse">
                 <i className="ti ti-file-text"></i>
@@ -498,7 +541,7 @@ function StrategyLightbox({ item, onClose }: { item: { name: string; url: string
                 بما أن هذا الملف مستند ميكروسوفت (Word/Excel)، فيرجى الضغط على زر تحميل أدناه لاستعراض كامل محتوياته على جهازك بكل يسر وسهولة.
               </p>
               <a
-                href={item.url}
+                href={url}
                 download={item.name}
                 target="_blank"
                 rel="noreferrer"
@@ -510,12 +553,22 @@ function StrategyLightbox({ item, onClose }: { item: { name: string; url: string
             </div>
           )}
 
-          {item.type === 'pdf' && !ytId && !isPdf && !isOfficeDoc && (
-            <PdfPreviewFallback url={item.url} name={item.name} />
+          {item.kind === 'pdf' && !ytId && !isPdf && !isOfficeDoc && (
+            <PdfPreviewFallback url={url} name={item.name} />
           )}
 
-          {item.type === 'vid' && !ytId && (
-            <video src={item.url} controls className="max-w-full max-h-[65vh] rounded-2xl" />
+          {item.kind === 'vid' && !ytId && (
+            <video src={url} controls className="max-w-full max-h-[65vh] rounded-2xl" />
+          )}
+
+          {item.kind === 'audio' && url && (
+            <audio src={url} controls className="w-full max-w-md" />
+          )}
+
+          {item.kind === 'note' && (
+            item.description
+              ? <p className="w-full text-[14px] text-[var(--text2)] leading-relaxed whitespace-pre-line" dir="rtl">{item.description}</p>
+              : <p className="w-full text-[14px] text-[var(--t3)]" dir="rtl">لا يوجد وصف</p>
           )}
         </div>
       </div>
@@ -611,7 +664,7 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
 
 const NO_CUSTOM_INDICATORS: PublicCustomIndicator[] = [];
 
-export default function Public({ state, sections: allSections, isSharedView, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, sectionSummaries, strategyNames = {}, customIndicators = NO_CUSTOM_INDICATORS }: PublicProps) {
+export default function Public({ state, sections: allSections, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, sectionSummaries, strategyNames = {}, customIndicators = NO_CUSTOM_INDICATORS }: PublicProps) {
   // مخصص useSections مستبعد دائماً: يحمّل مخصص المعلم المسجّل، وهو قد يكون
   // زائراً يفتح صفحة غيره. مخصص صاحب الصفحة يأتي من customIndicators فقط،
   // ويُلحَق بعد الرسمية في قسمه بلا أي تمييز بصري.
@@ -628,18 +681,14 @@ export default function Public({ state, sections: allSections, isSharedView, con
   const [printDate, setPrintDate] = useState('');
   const [copied, setCopied] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
-  const [previewFile, setPreviewFile] = useState<{
-    name: string;
-    url: string;
-    type: 'pdf' | 'img' | 'doc' | 'vid';
-  } | null>(null);
+  const [previewFile, setPreviewFile] = useState<PreviewItem | null>(null);
 
   // حالة بطاقة "استراتيجيات التدريس المتنوعة" فقط — طي/فتح القسم كاملاً
   // (مطوي افتراضياً)، طي/فتح كل استراتيجية على حدة (مفتوحة افتراضياً، يُحفظ
   // اسمها في closedStrats فقط عند طيّها يدوياً)، ومعاينة مصغّرات الأدلة.
   const [stratCollapsed, setStratCollapsed] = useState(true);
   const [closedStrats, setClosedStrats] = useState<Set<string>>(new Set());
-  const [stratPreview, setStratPreview] = useState<{ name: string; url: string; type: Evidence['type'] } | null>(null);
+  const [stratPreview, setStratPreview] = useState<PreviewItem | null>(null);
 
   // بطاقة "مراعاة الفروق الفردية بين المتعلمين" — طي/فتح مستقل عن بطاقة
   // الاستراتيجيات أعلاه (مطوية افتراضياً، نفس مبدأ stratCollapsed).
@@ -652,48 +701,22 @@ export default function Public({ state, sections: allSections, isSharedView, con
     });
   };
 
-  // totalEvs: عدد الأدلة الفعلي من جدول evidence —
-  // calculateEvaluation() حُذفت 14 سبتمبر 2026، راجع utils.ts للتفاصيل.
-  const totalEvs = evidence?.length ?? 0;
+  // totalEvs: عدد شواهد جدول evidence التي لها قسم — كل شاهد منها يُعرض في
+  // مكان ما بالصفحة (نافذة البند، أو بطاقة الاستراتيجيات/الفروق الفردية، أو
+  // بطاقتا بندي 5/10). الشاهد بلا section_id لا مكان له فلا يُعدّ (يصل فقط في
+  // معاينة المالك؛ get_shared_evidence ولقطة التقرير تستبعدانه أصلاً).
+  const totalEvs = (evidence ?? []).filter(e => e.section_id != null).length;
 
   // تجميع شواهد جدول evidence حسب section_id — المصدر الوحيد لشواهد الصفحة
   // (نسب البنود، نافذة البند، والبطاقات الخاصة).
   const evidenceBySection = useMemo(() => {
     const map: Record<number, SupabaseEvidence[]> = {};
     (evidence ?? []).forEach(e => {
+      if (e.section_id == null) return;
       (map[e.section_id] ??= []).push(e);
     });
     return map;
   }, [evidence]);
-
-  // "أبرز إنجاز" مُختار بالذكاء الاصطناعي (ai_top_achievement_evidence_id) —
-  // مستقل تماماً عن شارة "أبرز إنجاز" على مستوى القسم (SectionCard/isTop/
-  // activeSecs أدناه)، لا بديل لها ولا تعديل عليها. يُعتمَد فقط إذا طابق شاهداً
-  // موجوداً فعلياً ضمن evidence (لا نفترض أن المعرّف صالح دائماً) وله section_id
-  // غير فارغ يقابل قسماً حقيقياً ضمن sections — حراسة مزدوجة تمنع الإشارة لشاهد
-  // غير مصنَّف أو لقسم لم يعد موجوداً، حتى لو لم يُطبَّق فلتر section_id IS NOT
-  // NULL على مستوى get_shared_evidence نفسها (غير مؤكَّد من ملفات هذا المستودع).
-  const aiTopAchievement = useMemo(() => {
-    const targetId = state.ai_top_achievement_evidence_id;
-    if (!targetId || !evidence) return null;
-    const matched = evidence.find(e => e.id === targetId);
-    if (!matched || matched.section_id == null) return null;
-    const section = sections.find(s => s.id === matched.section_id);
-    if (!section) return null;
-    return { evidence: matched, sectionName: section.ttl };
-  }, [state.ai_top_achievement_evidence_id, evidence, sections]);
-
-  // نقاط ومستوى الملف العام: في وضع التقرير (?report=) قيمة مجمَّدة وقت
-  // التوليد (reportMeta.pointsLevel) — لأن حساب "آخر 3 أشهر تقويمية" الحي
-  // يعتمد على "اليوم" فيصبح خاطئاً لأي تقرير قديم يُفتح لاحقاً. في المسار
-  // الحي (?share=) يبقى الحساب كما هو تماماً من continuity.activeMonths.
-  const pointsLevel = reportMeta
-    ? reportMeta.pointsLevel
-    : continuity
-    ? calculatePointsLevel(
-        continuity.activeMonths.map(m => ({ year: m.year, month: m.month, evidenceCount: m.evidenceCount ?? 0 }))
-      )
-    : null;
 
   // مرجع "اليوم" لشبكة الاستمرارية — بداية فترة التقرير في وضع ?report=، وإلا
   // اليوم الفعلي (بلا أي تغيير عن المسار الحي — undefined يجعل ContinuityGrid
@@ -703,14 +726,25 @@ export default function Public({ state, sections: allSections, isSharedView, con
   // قسم "التنويع في استراتيجيات التدريس" مُستبعد كلياً من نظام النسب (المستويات
   // 1-2-3 أدناه) — له بطاقة طولية مستقلة بلا أي رقم نسبة (انظر أسفل الصفحة).
   // نفس الاستبعاد يشمل بندي 5/10 (isResultsSection) — لا مؤشرات فرعية عادية
-  // تُحتسب ضمن هذا النظام. بند 5 له بطاقة عرض شواهد فعلية أدناه؛ بند 10
-  // (تحليل نتائج المتعلمين) له الآن بطاقة عرض مبسَّطة أدناه أيضاً عبر
+  // تُحتسب ضمن هذا النظام. بند 5 له بطاقة شواهده مجمّعة حسب المؤشر؛ بند 10
+  // (تحليل نتائج المتعلمين) له بطاقة التحليلات المبسَّطة عبر
   // get_shared_results_analysis() (resultsAnalysis prop) — لا summary/students
-  // إطلاقاً بهذا الشكل، فقط متوسط/مدى/عدد طلاب لكل تحليل.
+  // إطلاقاً بهذا الشكل، فقط متوسط/مدى/عدد طلاب لكل تحليل — وتحتها شواهده إن وُجدت.
   const stratSection = sections.find(s => s.isStrat) ?? null;
   const resultsSections = sections.filter(s => s.isResultsSection);
   const improvementSection = resultsSections.find(s => s.id === 5) ?? null;
   const analysisSection = resultsSections.find(s => s.id === 10) ?? null;
+
+  // شواهد بندي 5/10 مجمّعة حسب المؤشر (groupByIndicator) — المؤشر بلا شواهد
+  // لا يظهر، والشاهد بلا مؤشر معروف في مجموعة أخيرة «بلا مؤشر».
+  const improvementGroups = useMemo(
+    () => improvementSection ? toGroupList(groupByIndicator(evidenceBySection[improvementSection.id] ?? [], improvementSection.indicators)) : [],
+    [improvementSection, evidenceBySection]
+  );
+  const analysisGroups = useMemo(
+    () => analysisSection ? toGroupList(groupByIndicator(evidenceBySection[analysisSection.id] ?? [], analysisSection.indicators)) : [],
+    [analysisSection, evidenceBySection]
+  );
 
   // عناصر المقارنة التلقائية لبطاقة بند 10 — مادة واحدة لكل مجموعة subject
   // بها تحليلان فأكثر (نفس شرط تبويب "مقارنة" بلوحة التحكم)، بالشكل المبسَّط
@@ -736,27 +770,16 @@ export default function Public({ state, sections: allSections, isSharedView, con
   // بجدول section_indicators غير مضمون التطابق مع الترتيب القديم في data.ts.
   // غير موجود ⇐ console.error وإخفاء البطاقة (الشرط أدناه) لا كسر الصفحة.
   // أدلته = evidence ذات indicator_id لهذا المؤشر حصراً.
-  const evidenceForIndicator = (indicator: SectionIndicator | undefined) =>
-    indicator ? (evidence ?? []).filter(e => e.indicator_id === indicator.id).map(toEvRow) : [];
   const indivDiffIndicator = useMemo(() => findIndicatorByName(stratSection, 'الفروق الفردية'), [stratSection]);
   const indivDiffSub = indivDiffIndicator?.name_ar;
   // شواهد الاستراتيجيات (strategy_id) تُعرض في بطاقة الاستراتيجيات وحدها
   const indivDiffEvs = indivDiffIndicator
-    ? (evidence ?? []).filter(e => e.indicator_id === indivDiffIndicator.id && !e.strategy_id).map(toEvRow)
+    ? (evidence ?? []).filter(e => e.indicator_id === indivDiffIndicator.id && !e.strategy_id).map(toPublicRow)
     : [];
-
-  // مؤشر بند 5 "خطط علاجية وإثرائية" — بالاسم لتحديد المؤشر فقط، ثم الربط
-  // بـ indicator_id (انظر بطاقة بند 5 أدناه).
-  const remedialIndicator = useMemo(() => findIndicatorByName(improvementSection, 'خطط علاجية'), [improvementSection]);
 
   // بطاقة الاستراتيجيات — مُشتقّة من evidenceBySection[stratSection.id] (أدلة
   // جدول evidence الحقيقية ذات strategy_id غير فارغ)، مجمَّعة حسب strategy_id
   // واسمها محلول عبر strategyNames (بند 9 بـApp.tsx) — لا state.strats بعد الآن.
-  const toThumbEvidence = (e: SupabaseEvidence): ThumbEvidence => ({
-    type: supabaseEvidenceTypeToLocal(e.evidence_type),
-    name: e.title,
-    url: e.file_url ?? e.link_url ?? undefined,
-  });
   const stratGroups = useMemo(() => {
     if (!stratSection) return [];
     const map = new Map<string, SupabaseEvidence[]>();
@@ -773,22 +796,28 @@ export default function Public({ state, sections: allSections, isSharedView, con
     }));
   }, [stratSection, evidenceBySection, strategyNames]);
 
+  // «شواهد أخرى» في بطاقة الاستراتيجيات: شاهد في البند 4 بلا strategy_id
+  // ومؤشره ليس «مراعاة الفروق الفردية» — لا مكان آخر له في الصفحة.
+  const otherStratEvs = useMemo(() => {
+    if (!stratSection) return [];
+    return (evidenceBySection[stratSection.id] ?? [])
+      .filter(e => !e.strategy_id && (!indivDiffIndicator || e.indicator_id !== indivDiffIndicator.id))
+      .map(toPublicRow);
+  }, [stratSection, evidenceBySection, indivDiffIndicator]);
+
   // البنود الثمانية (بلا الاستراتيجيات وبندي 5/10): شواهد كل بند من
   // evidenceBySection مجمّعة حسب المؤشر بترتيب sec.indicators، والربط
   // بـ indicator_id حصراً. pct = المؤشرات التي لها شاهد واحد على الأقل ÷ عدد
   // مؤشرات القسم — نفس completionPct في Dashboard.tsx (evStats) تماماً.
-  // شاهد لا يطابق أي مؤشر من مؤشرات قسمه لا يُعرض (console.error).
+  // شاهد لا يطابق أي مؤشر من مؤشرات قسمه يُعرض آخراً بـ«بلا مؤشر» ولا يدخل النسبة.
   const sectionsWithPct: SectionWithPct[] = useMemo(() => {
     return sections.filter(s => !s.isStrat && !s.isResultsSection).map(sec => {
       const secEvidence = evidenceBySection[sec.id] ?? [];
-      const evs = sec.indicators.flatMap(ind =>
-        secEvidence.filter(e => e.indicator_id === ind.id).map(e => ({ ...toEvRow(e), sub: ind.name_ar }))
-      );
-      if (evs.length !== secEvidence.length) {
-        const known = new Set(sec.indicators.map(i => i.id));
-        const orphans = secEvidence.filter(e => !e.indicator_id || !known.has(e.indicator_id)).map(e => e.id);
-        console.error(`[Public] شواهد في القسم ${sec.id} لا تطابق أي مؤشر من مؤشراته:`, orphans);
-      }
+      const { groups, orphans } = groupByIndicator(secEvidence, sec.indicators);
+      const evs = [
+        ...groups.flatMap(g => g.evs.map(e => ({ ...toPublicRow(e), sub: g.indicator.name_ar, orphan: false }))),
+        ...orphans.map(e => ({ ...toPublicRow(e), sub: NO_INDICATOR_LABEL, orphan: true })),
+      ];
       // النسبة من المؤشرات الرسمية فقط — المخصص يُعرض ولا يُحسب
       const official = sec.indicators.filter(ind => !ind.isCustom);
       const filled = official.filter(ind => secEvidence.some(e => e.indicator_id === ind.id)).length;
@@ -821,6 +850,8 @@ export default function Public({ state, sections: allSections, isSharedView, con
     return b.evCount - a.evCount;
   });
   const emptySecs = sectionsWithPct.filter(s => !sectionHasEvidence(s));
+  // صف الإحصاءات: البنود العادية التي فيها شاهد واحد على الأقل (يشمل «بلا مؤشر»)
+  const coveredCount = activeSecs.length;
 
   const exportToPDF = () => {
     // تاريخ التصدير الفعلي لحظة الطباعة (وليس تاريخاً ثابتاً من لحظة تحميل
@@ -884,17 +915,17 @@ export default function Public({ state, sections: allSections, isSharedView, con
   // نفس sectionHasEvidence المستخدمة أعلاه لتصنيف activeSecs/emptySecs.
   const showEmptyMessage = !selectedSecData || !sectionHasEvidence(selectedSecData);
 
-  // previewFile.type مشتق من evidence_type ('file' ⇐ 'pdf' لملفات PDF وOffice
-  // معاً) — الفرع الفعلي يُختار من الامتداد الحقيقي في
-  // previewFile.url بدل previewFile.type، الذي يبقى فقط لاختيار أيقونة EVT_CONFIG.
-  const previewExt = previewFile ? extensionFromUrl(previewFile.url) : '';
+  // previewFile.kind مشتق من evidence_type (publicKind) — ملف 'pdf' يشمل PDF
+  // وOffice معاً، فيُختار فرعه من الامتداد الحقيقي في previewFile.url.
+  // الرابط لا يصل هنا (يُفتح في تبويب جديد)، والملاحظة بلا url.
+  const previewUrl = previewFile?.url ?? '';
+  const previewExt = previewFile?.kind === 'pdf' ? extensionFromUrl(previewUrl) : '';
   const previewIsPdf = previewExt === 'pdf';
   const previewIsOfficeDoc = OFFICE_EXTENSIONS.includes(previewExt);
-  // حارس أخير: إن لم يتطابق أي فرع معروف (نادر — مثلاً شاهد نوعه 'pdf' لكن
-  // بامتداد غير pdf وغير Office)، تُعرض بطاقة فشل عامة بدل نافذة فارغة.
-  const previewMatchedKnownBranch = previewFile
-    ? previewFile.type === 'img' || previewIsPdf || previewFile.type === 'vid' || previewIsOfficeDoc
-    : true;
+  // حارس أخير: ملف 'pdf' بامتداد غير pdf وغير Office ⇐ بطاقة فشل عامة بدل نافذة فارغة.
+  const previewIsUnknownFile = previewFile?.kind === 'pdf' && !previewIsPdf && !previewIsOfficeDoc;
+  // رابط يوتيوب — الرابط الوحيد الذي يصل هنا (غيره يُفتح في تبويب جديد)
+  const previewYtId = previewFile?.kind === 'link' && previewUrl ? extractYouTubeId(previewUrl) : null;
 
   return (
     <div>
@@ -953,7 +984,6 @@ export default function Public({ state, sections: allSections, isSharedView, con
 
             <div className="flex items-center justify-center gap-3 flex-wrap mb-2">
               <h1 className="text-[34px] font-black text-white tracking-tight relative z-10">{state.profile.name}</h1>
-              {pointsLevel && <LevelBadge pointsLevel={pointsLevel} pointsSubtitle={reportMeta ? 'خلال هذه الفترة' : undefined} />}
             </div>
             <p className="text-[15px] text-[var(--text3)] mb-5 relative z-10">{state.profile.role} — {state.profile.school}</p>
 
@@ -962,11 +992,7 @@ export default function Public({ state, sections: allSections, isSharedView, con
             </div>
 
             <div className="mb-6">
-              <StatsRow totalEvs={totalEvs} sectionsCount={sections.length} years={state.profile.yearsOfExperience} justify="justify-center" />
-            </div>
-
-            <div className="mt-5">
-              <BadgesRow justify="justify-center" />
+              <StatsRow totalEvs={totalEvs} coveredCount={coveredCount} totalCount={sectionsWithPct.length} years={state.profile.yearsOfExperience} justify="justify-center" />
             </div>
           </div>
 
@@ -983,14 +1009,12 @@ export default function Public({ state, sections: allSections, isSharedView, con
                 {reportMeta && <ReportPeriodBanner periodLabel={reportMeta.periodLabel} generatedAt={reportMeta.generatedAt} justify="justify-end" />}
                 <div className="flex items-center justify-end gap-3 flex-wrap mb-2">
                   <h1 className="text-[34px] font-black text-white tracking-tight relative z-10">{state.profile.name}</h1>
-                  {pointsLevel && <LevelBadge pointsLevel={pointsLevel} pointsSubtitle={reportMeta ? 'خلال هذه الفترة' : undefined} />}
-                </div>
+                    </div>
                 <p className="text-[15px] text-[var(--text3)] relative z-10">{state.profile.role} — {state.profile.school}</p>
               </div>
 
               <SocialIconsRow profile={state.profile} justify="justify-end" />
-              <StatsRow totalEvs={totalEvs} sectionsCount={sections.length} years={state.profile.yearsOfExperience} justify="justify-end" />
-              <BadgesRow justify="justify-end" />
+              <StatsRow totalEvs={totalEvs} coveredCount={coveredCount} totalCount={sectionsWithPct.length} years={state.profile.yearsOfExperience} justify="justify-end" />
             </div>
           </div>
         </div>
@@ -1038,45 +1062,6 @@ export default function Public({ state, sections: allSections, isSharedView, con
             </div>
           )}
 
-          {/* بطاقة "أبرز إنجاز" المُختارة بالذكاء الاصطناعي — منفصلة تماماً عن
-              شارة "أبرز إنجاز" على مستوى القسم في شبكة الأقسام أدناه (لا تستبدلها
-              ولا تعدّلها). لا تُعرض إطلاقاً إن لم يجتز aiTopAchievement الحراسة
-              المزدوجة أعلاه */}
-          {aiTopAchievement && (
-            <div className="print-card mb-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--gold)]/25 shadow-lg p-6 sm:p-8 relative overflow-hidden">
-              <div className="print-decor absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-[var(--gold)] to-transparent" />
-              <div className="flex items-start gap-4 relative z-10">
-                <div className="w-12 h-12 rounded-2xl shrink-0 bg-[var(--gold)]/10 border border-[var(--gold)]/25 flex items-center justify-center text-[22px] text-[var(--gold)]">
-                  <i className="ti ti-trophy"></i>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-bold text-[var(--gold3)] tracking-wider uppercase mb-1.5 flex items-center gap-1.5">
-                    <i className="ti ti-sparkles text-[12px]"></i> أبرز إنجاز
-                  </div>
-                  <h3 className="text-[17px] font-black text-white leading-snug">{aiTopAchievement.evidence.title}</h3>
-                  {aiTopAchievement.evidence.description && (
-                    <p className="text-[13px] text-[var(--text3)] mt-2 leading-relaxed">{aiTopAchievement.evidence.description}</p>
-                  )}
-                  <div className="flex items-center gap-2 mt-3 flex-wrap">
-                    <span className="text-[11px] font-bold text-[var(--text4)] bg-white/5 border border-white/10 rounded-md py-1 px-2.5">
-                      {aiTopAchievement.sectionName}
-                    </span>
-                    {(aiTopAchievement.evidence.file_url || aiTopAchievement.evidence.link_url) && (
-                      <a
-                        href={aiTopAchievement.evidence.file_url ?? aiTopAchievement.evidence.link_url ?? undefined}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] font-bold text-[var(--gold)] hover:underline flex items-center gap-1"
-                      >
-                        <i className="ti ti-external-link text-[11px]"></i> عرض الدليل
-                      </a>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {continuity && <ContinuityGrid continuity={continuity} referenceDate={continuityReferenceDate} />}
 
           <div className="mb-6 flex justify-between items-end flex-wrap gap-4">
@@ -1095,7 +1080,6 @@ export default function Public({ state, sections: allSections, isSharedView, con
               <SectionCard
                 key={sec.id}
                 sec={sec}
-                isTop={i === 0}
                 onClick={() => setSelectedSecId(sec.id)}
                 style={{ animation: `fadeUp .4s var(--sp) both ${i * 0.05}s` }}
                 summary={sectionSummaries?.[sec.id]}
@@ -1166,7 +1150,7 @@ export default function Public({ state, sections: allSections, isSharedView, con
               </div>
 
               <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 print:!mt-6 ${stratCollapsed ? 'max-h-0 opacity-0' : 'max-h-[10000px] opacity-100 mt-6'}`}>
-                {stratGroups.length === 0 ? (
+                {stratGroups.length === 0 && otherStratEvs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 text-center">
                     <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
                       <i className="ti ti-bulb-off"></i>
@@ -1192,7 +1176,7 @@ export default function Public({ state, sections: allSections, isSharedView, con
                             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                               {group.evidence.map(e => (
                                 <div key={e.id}>
-                                  <EvidenceThumb e={toThumbEvidence(e)} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
+                                  <EvidenceThumb e={toPublicRow(e)} onClick={setStratPreview} />
                                 </div>
                               ))}
                             </div>
@@ -1200,6 +1184,9 @@ export default function Public({ state, sections: allSections, isSharedView, con
                         </div>
                       );
                     })}
+                    {otherStratEvs.length > 0 && (
+                      <IndicatorGroups groups={[{ key: 'other', label: 'شواهد أخرى', evs: otherStratEvs }]} onPreview={setStratPreview} />
+                    )}
                   </div>
                 )}
               </div>
@@ -1237,9 +1224,9 @@ export default function Public({ state, sections: allSections, isSharedView, con
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {indivDiffEvs.map((e, idx) => (
-                      <div key={idx}>
-                        <EvidenceThumb e={e} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
+                    {indivDiffEvs.map(e => (
+                      <div key={e.id}>
+                        <EvidenceThumb e={e} onClick={setStratPreview} />
                       </div>
                     ))}
                   </div>
@@ -1259,21 +1246,23 @@ export default function Public({ state, sections: allSections, isSharedView, con
               نفس تقنية زوج الاستراتيجيات/الفروق الفردية. ترتيب العرض: التحليل
               أولاً ثم التحسين — نفس ترتيب لوحة التحكم. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 items-start">
-          {analysisSection && resultsAnalysis && (
+          {/* البطاقة تظهر إن جُلبت التحليلات، أو إن فشل جلبها وفي البند شواهد
+              (فتُعرض الشواهد وحدها). الشواهد تحت التحليلات، ولا رسالة فارغة لها. */}
+          {analysisSection && (resultsAnalysis || analysisGroups.length > 0) && (
             <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8" style={{ borderRight: '4px solid var(--violet)' }}>
               <div className="flex items-center justify-between gap-3 mb-6">
                 <div className="flex items-center gap-2">
                   <i className={`ti ${analysisSection.icon} text-[var(--violet2)] text-[20px]`}></i>
                   <h2 className="text-[18px] font-black text-white">{analysisSection.ttl}</h2>
                 </div>
-                {resultsAnalysis.length > 0 && (
+                {resultsAnalysis && resultsAnalysis.length > 0 && (
                   <span className="text-[11px] font-black text-[var(--violet2)] bg-[var(--violet)]/10 px-2.5 py-1 rounded-full whitespace-nowrap">
                     {resultsAnalysis.length} تحليل
                   </span>
                 )}
               </div>
 
-              {resultsAnalysis.length === 0 ? (
+              {resultsAnalysis && (resultsAnalysis.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 text-center">
                   <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
                     <i className="ti ti-ghost"></i>
@@ -1289,63 +1278,37 @@ export default function Public({ state, sections: allSections, isSharedView, con
                     <ResultComparisonMini key={c.subject} subject={c.subject} series={c.series} />
                   ))}
                 </div>
+              ))}
+
+              {analysisGroups.length > 0 && (
+                <div className={resultsAnalysis ? 'mt-5' : ''}>
+                  <IndicatorGroups groups={analysisGroups} onPreview={setStratPreview} />
+                </div>
               )}
             </div>
           )}
 
-          {/* بطاقة بند 5 "تحسين نتائج المتعلمين" — عرض قراءة فقط لشواهد فعلية
-              موثّقة (evidence بمعرّف مؤشر الخطط العلاجية والإثرائية)، بلا أي تنبيهات
-              خام إطلاقاً (تلك أداة تخطيط داخلية للمعلم وحده، ليست محتوى عرض
-              لمشرف خارجي). فارغ بشكل محايد تماماً كأي قسم فارغ آخر لو صفر شواهد.
-              شريط اللون البنفسجي (--violet) يطابق بطاقتَي التحليل/التحسين في
-              Dashboard.tsx — الآن ضمن نفس حاوية grid المجاورة لبطاقة بند 10
-              أعلاه (انظر تعليقها). */}
+          {/* بطاقة بند 5 "تحسين نتائج المتعلمين" — عرض قراءة فقط لكل شواهد البند
+              مجمّعة حسب المؤشر (improvementGroups)، بلا أي تنبيهات خام إطلاقاً
+              (تلك أداة تخطيط داخلية للمعلم وحده). رسالة الفراغ فقط إن لم يكن في
+              البند أي شاهد. شريط اللون البنفسجي (--violet) يطابق بطاقتَي
+              التحليل/التحسين في Dashboard.tsx. */}
           {improvementSection && (
             <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8" style={{ borderRight: '4px solid var(--violet)' }}>
               <div className="flex items-center gap-2 mb-6">
                 <i className={`ti ${improvementSection.icon} text-[var(--em8)] text-[20px]`}></i>
                 <h2 className="text-[18px] font-black text-white">{improvementSection.ttl}</h2>
               </div>
-              {(() => {
-                const remedialEvs = evidenceForIndicator(remedialIndicator);
-                // كتلة "تكريم المتميزين" مخفية: لا يوجد مؤشر مقابل في
-                // section_indicators، والقرار مؤجل للمرحلة 3.
-                const groups = [
-                  { label: 'خطط علاجية وإثرائية', evs: remedialEvs },
-                ].filter(g => g.evs.length > 0);
-
-                if (groups.length === 0) {
-                  return (
-                    <div className="flex flex-col items-center justify-center py-10 text-center">
-                      <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
-                        <i className="ti ti-ghost"></i>
-                      </div>
-                      <p className="text-[var(--text3)] text-[13.5px]">لا توجد شواهد موثّقة بعد لهذا البند</p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="flex flex-col gap-5">
-                    {groups.map(g => (
-                      <div key={g.label} className="bg-white/5 rounded-2xl p-4 border border-[var(--em7)]/10">
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="w-2 h-2 rounded-full bg-[var(--em7)] shrink-0"></div>
-                          <span className="text-[14px] font-bold text-white flex-1">{g.label}</span>
-                          <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{g.evs.length} شواهد</span>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                          {g.evs.map((e, idx) => (
-                            <div key={idx}>
-                              <EvidenceThumb e={e} onClick={ev => ev.url && setStratPreview({ name: ev.name, url: ev.url, type: ev.type })} />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+              {improvementGroups.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
+                    <i className="ti ti-ghost"></i>
                   </div>
-                );
-              })()}
+                  <p className="text-[var(--text3)] text-[13.5px]">لا توجد شواهد موثّقة بعد لهذا البند</p>
+                </div>
+              ) : (
+                <IndicatorGroups groups={improvementGroups} onPreview={setStratPreview} />
+              )}
             </div>
           )}
           </div>
@@ -1446,14 +1409,21 @@ export default function Public({ state, sections: allSections, isSharedView, con
                 )}
                 {!showEmptyMessage ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {selectedSecData.evs.map((e, idx) => {
-                      const t = EVT_CONFIG[e.type] || EVT_CONFIG.doc;
+                    {selectedSecData.evs.map(e => {
+                      const t = EVT_CONFIG[e.kind];
+                      // الرابط يُفتح في تبويب جديد مباشرة، إلا يوتيوب فيُعاين بالمشغّل
+                      // المضمّن؛ الملاحظة تُعاين نصاً بلا رابط
+                      const isLink = e.kind === 'link' && !!e.url && !extractYouTubeId(e.url);
+                      const clickable = isLink || e.kind === 'note' || !!e.url;
                       return (
                         <div
-                          key={idx}
-                          className={`flex items-center gap-3 py-3 px-4 bg-[var(--surf2)] rounded-xl border border-[var(--line)] transition-all duration-200 ${e.url ? 'cursor-pointer hover:border-[var(--em7)]/40 hover:bg-[var(--surf3)] hover:-translate-y-0.5' : ''}`}
-                          onClick={() => e.url && setPreviewFile({ name: e.name, url: e.url, type: e.type })}
-                          title={e.url ? 'انقر لمعاينة الدليل فوراً' : ''}
+                          key={e.id}
+                          className={`flex items-center gap-3 py-3 px-4 bg-[var(--surf2)] rounded-xl border border-[var(--line)] transition-all duration-200 ${clickable ? 'cursor-pointer hover:border-[var(--em7)]/40 hover:bg-[var(--surf3)] hover:-translate-y-0.5' : ''}`}
+                          onClick={() => {
+                            if (isLink) window.open(e.url, '_blank', 'noopener,noreferrer');
+                            else if (clickable) setPreviewFile(e);
+                          }}
+                          title={isLink ? 'انقر لفتح الرابط' : clickable ? 'انقر لمعاينة الدليل فوراً' : ''}
                         >
                           <div className={`w-[40px] h-[40px] rounded-lg text-[20px] flex items-center justify-center shrink-0 ${t.cls}`}>
                             <i className={`ti ${t.icon}`}></i>
@@ -1462,7 +1432,9 @@ export default function Public({ state, sections: allSections, isSharedView, con
                             <div className="text-[13.5px] font-bold text-white truncate group-hover:text-[var(--em8)] transition-colors">{e.name}</div>
                             <div className="text-[11px] text-[var(--text4)] mt-1 truncate">
                               {e.sub} · {e.date}
-                              {e.url && <span className="text-[var(--em8)] mr-1.5 font-bold"><i className="ti ti-eye"></i> معاينة</span>}
+                              {isLink
+                                ? <span className="text-[var(--em8)] mr-1.5 font-bold"><i className="ti ti-external-link"></i> فتح الرابط</span>
+                                : clickable && <span className="text-[var(--em8)] mr-1.5 font-bold"><i className="ti ti-eye"></i> معاينة</span>}
                             </div>
                           </div>
                         </div>
@@ -1500,8 +1472,8 @@ export default function Public({ state, sections: allSections, isSharedView, con
 
             <div className="flex items-center justify-between py-4.5 px-7 border-b border-white/10 bg-black/20 relative z-10">
               <div className="flex items-center gap-3">
-                <div className={`w-[42px] h-[42px] rounded-xl flex items-center justify-center text-[22px] ${EVT_CONFIG[previewFile.type]?.cls || EVT_CONFIG.doc.cls}`}>
-                  <i className={`ti ${EVT_CONFIG[previewFile.type]?.icon || EVT_CONFIG.doc.icon}`}></i>
+                <div className={`w-[42px] h-[42px] rounded-xl flex items-center justify-center text-[22px] ${EVT_CONFIG[previewFile.kind].cls}`}>
+                  <i className={`ti ${EVT_CONFIG[previewFile.kind].icon}`}></i>
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-[16px] font-black text-white truncate max-w-[280px] sm:max-w-[450px]" dir="rtl">{previewFile.name}</h3>
@@ -1510,17 +1482,19 @@ export default function Public({ state, sections: allSections, isSharedView, con
               </div>
 
               <div className="flex items-center gap-2.5">
-                <a
-                  href={previewFile.url}
-                  download={previewFile.name}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="py-2.5 px-4.5 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[13px] font-bold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_4px_16px_rgba(42,122,68,.4)] flex items-center gap-2 no-underline cursor-pointer border-none"
-                  title="تحميل الملف للجهاز"
-                >
-                  <i className="ti ti-download text-[16px]"></i>
-                  <span>تحميل</span>
-                </a>
+                {previewFile.url && previewFile.kind !== 'link' && (
+                  <a
+                    href={previewFile.url}
+                    download={previewFile.name}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-2.5 px-4.5 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[13px] font-bold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_4px_16px_rgba(42,122,68,.4)] flex items-center gap-2 no-underline cursor-pointer border-none"
+                    title="تحميل الملف للجهاز"
+                  >
+                    <i className="ti ti-download text-[16px]"></i>
+                    <span>تحميل</span>
+                  </a>
+                )}
 
                 <button
                   className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[var(--text3)] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 transition-all cursor-pointer"
@@ -1532,10 +1506,10 @@ export default function Public({ state, sections: allSections, isSharedView, con
             </div>
 
             <div className="flex-1 overflow-auto p-6 bg-black/10 flex items-center justify-center">
-              {previewFile.type === 'img' && (
+              {previewFile.kind === 'img' && (
                 <div className="relative group max-w-full max-h-[68vh] overflow-hidden rounded-2xl shadow-2xl">
                   <img
-                    src={previewFile.url}
+                    src={previewUrl}
                     alt={previewFile.name}
                     className="max-w-full max-h-[68vh] object-contain rounded-2xl"
                   />
@@ -1543,20 +1517,32 @@ export default function Public({ state, sections: allSections, isSharedView, con
               )}
 
               {previewIsPdf && (
-                <PdfPreview url={previewFile.url} name={previewFile.name} className="w-full h-[68vh]" />
+                <PdfPreview url={previewUrl} name={previewFile.name} className="w-full h-[68vh]" />
               )}
 
-              {previewFile.type === 'vid' && (
+              {previewFile.kind === 'vid' && (
                 <div className="w-full max-h-[68vh] rounded-2xl overflow-hidden shadow-2xl bg-black flex items-center justify-center">
                   <video
-                    src={previewFile.url}
+                    src={previewUrl}
                     controls
                     className="max-w-full max-h-[68vh] rounded-2xl"
                   />
                 </div>
               )}
 
-              {(previewFile.type === 'doc' || previewIsOfficeDoc) && (
+              {previewYtId && <YouTubeEmbed ytId={previewYtId} title={previewFile.name} />}
+
+              {previewFile.kind === 'audio' && previewUrl && (
+                <audio src={previewUrl} controls className="w-full max-w-md" />
+              )}
+
+              {previewFile.kind === 'note' && (
+                previewFile.description
+                  ? <p className="w-full text-[14px] text-[var(--text2)] leading-relaxed whitespace-pre-line" dir="rtl">{previewFile.description}</p>
+                  : <p className="w-full text-[14px] text-[var(--t3)]" dir="rtl">لا يوجد وصف</p>
+              )}
+
+              {previewIsOfficeDoc && (
                 <div className="text-center p-8 max-w-md bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md shadow-2xl">
                   <div className="w-16 h-16 rounded-2xl bg-[#c4b5fd]/15 text-[#c4b5fd] flex items-center justify-center text-[34px] mx-auto mb-5 border border-[#c4b5fd]/20 animate-pulse">
                     <i className="ti ti-file-text"></i>
@@ -1566,7 +1552,7 @@ export default function Public({ state, sections: allSections, isSharedView, con
                     بما أن هذا الملف مستند ميكروسوفت (Word/Excel)، فيرجى الضغط على زر تحميل أدناه لاستعراض كامل محتوياته على جهازك بكل يسر وسهولة.
                   </p>
                   <a
-                    href={previewFile.url}
+                    href={previewUrl}
                     download={previewFile.name}
                     target="_blank"
                     rel="noreferrer"
@@ -1578,8 +1564,8 @@ export default function Public({ state, sections: allSections, isSharedView, con
                 </div>
               )}
 
-              {!previewMatchedKnownBranch && (
-                <PdfPreviewFallback url={previewFile.url} name={previewFile.name} />
+              {previewIsUnknownFile && (
+                <PdfPreviewFallback url={previewUrl} name={previewFile.name} />
               )}
             </div>
 

@@ -28,7 +28,8 @@
                                      Supabase Storage public files
       • media-src  blob:           — video evidence previews
       • connect-src wss:           — Supabase Realtime WebSocket channels
-      • object-src / frame-src     — hard block; no plugins, no iframes
+      • object-src                 — hard block; no plugins
+      • frame-src                  — YouTube embed player only (youtube-nocookie / youtube)
       • base-uri / form-action     — prevent base-tag hijacking and form redirect
       ─────────────────────────────────────────────────────────────────────
       Note: frame-ancestors is HTTP-header only; set in server.js as well.
@@ -38,11 +39,11 @@
       script-src 'self';
       style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
       font-src 'self' https://fonts.gstatic.com;
-      img-src 'self' data: blob: https://*.supabase.co;
+      img-src 'self' data: blob: https://*.supabase.co https://img.youtube.com;
       media-src 'self' blob: https://*.supabase.co;
       connect-src 'self' https://*.supabase.co wss://*.supabase.co;
       object-src 'none';
-      frame-src 'none';
+      frame-src https://www.youtube-nocookie.com https://www.youtube.com;
       base-uri 'self';
       form-action 'self';
     ">

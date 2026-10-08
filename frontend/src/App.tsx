@@ -1031,7 +1031,7 @@ export default function App() {
           </div>
         </nav>
         <main>
-          <Public state={sharedState} sections={sections} isSharedView continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} sectionSummaries={sharedSectionSummaries} strategyNames={sharedStrategyNames} customIndicators={sharedCustomIndicators} />
+          <Public state={sharedState} sections={sections} continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} sectionSummaries={sharedSectionSummaries} strategyNames={sharedStrategyNames} customIndicators={sharedCustomIndicators} />
         </main>
       </>
     );
@@ -1063,7 +1063,6 @@ export default function App() {
           <Public
             state={snapshot.state}
             sections={sections}
-            isSharedView
             continuity={snapshot.continuity}
             evidence={snapshot.evidence}
             resultsAnalysis={snapshot.resultsAnalysis}

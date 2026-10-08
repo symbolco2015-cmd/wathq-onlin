@@ -114,8 +114,9 @@ export type PublicPortfolioState = Pick<AppState, 'profile'> & {
    * الحالي بدون هذا الحقل. */
   ai_summary?: string | null;
   /** معرّف الشاهد الذي اختاره الذكاء الاصطناعي كأبرز إنجاز (عمود
-   * ai_top_achievement_evidence_id) — يُطابَق مقابل مصفوفة evidence المجلوبة من
-   * get_shared_evidence()؛ غائب أو null يعني الرجوع لمنطق heuristic القسم الأعلى اكتمالاً. */
+   * ai_top_achievement_evidence_id) — يُجلب ويُمرَّر إلى Public.tsx، لكنه لا
+   * يُعرض حالياً: بطاقة «أبرز إنجاز» محذوفة حتى موافقة المعلم (المرحلة 5.6).
+   * لا بديل heuristic له. */
   ai_top_achievement_evidence_id?: string | null;
   /** ملخص الجاهزية التراكمي (get_portfolio_completion عبر get_shared_portfolio)
    * — نفس الرقم الموحَّد المعروض في Dashboard.tsx. غائب لحساب لم يُحدَّث كاشه
@@ -133,14 +134,15 @@ export type PublicPortfolioState = Pick<AppState, 'profile'> & {
 export interface ContinuityData {
   yearStartMonth: number;
   /** evidenceCount: مجموع evidence_count عبر كل الأقسام لهذا الشهر (بصرف النظر
-   * عن القسم) — اختياري لأن الاستمرارية القديمة لا تحتاجه، يُستخدم فقط من
-   * calculatePointsLevel في Public.tsx لحساب نقاط/مستوى الملف العام. */
+   * عن القسم) — اختياري. لا يقرؤه Public.tsx حالياً (شارة اللقب حُذفت في 5.1)؛
+   * شبكة الاستمرارية تحتاج activeMonths فقط. */
   activeMonths: { year: number; month: number; evidenceCount?: number }[];
 }
 
 /** نسخة مجمَّدة من PointsLevelInfo (utils.ts) وقت توليد تقرير الحصاد الفصلي —
  * مكرَّرة هنا عمداً (بدل استيراد النوع من utils.ts) لتفادي أي اعتماد دائري
- * بين types.ts وutils.ts؛ الحقول مطابقة تماماً لما يُرجعه calculatePointsLevel. */
+ * بين types.ts وutils.ts؛ الحقول مطابقة تماماً لما يُرجعه calculatePointsLevel.
+ * ما زالت تُحفظ في اللقطة، لكن Public.tsx لا يعرضها منذ حذف شارة اللقب (5.1). */
 export interface FrozenPointsLevel {
   points: number;
   levelId: 'steady' | 'confident' | 'exemplary';
@@ -168,8 +170,8 @@ export interface HarvestSnapshot {
    * أعلاه)، فلا يمكن حل strategy_id إلى اسم إلا بتجميده هنا مسبقاً. */
   strategyNames: Record<string, string>;
   /** شارة اللقب/النقاط محسوبة مرة واحدة وقت التوليد من شواهد المدى المختار
-   * فقط (وليس نافذة آخر 3 أشهر التقويمية المعتادة) — Public.tsx يعرضها كما
-   * هي في وضع التقرير بدل إعادة حسابها حياً من continuity. */
+   * فقط (وليس نافذة آخر 3 أشهر التقويمية المعتادة). تُمرَّر إلى Public.tsx
+   * (reportMeta.pointsLevel) لكنها لا تُعرض: شارة اللقب حُذفت في 5.1. */
   pointsLevel: FrozenPointsLevel;
   /** بند 10 (تحليل نتائج المتعلمين) ضمن المدى المختار — الشكل المبسَّط الآمن
    * فقط (مطابق تماماً لما تُرجعه get_shared_results_analysis)، بلا summary/

@@ -1,26 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import type { ContinuityData, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
-import { getCompletionColor, getCompletionLabel, extensionFromUrl, formatDate } from '../utils';
+import { getCompletionColor, extensionFromUrl, formatDate } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { PublicCustomIndicator } from '../hooks/usePublicCustomIndicators';
 import { findIndicatorByName, toEvRow } from '../indicators';
 import PdfPreview, { PdfPreviewFallback } from './PdfPreview';
+import PublicHero from './PublicHero';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
 import { groupPublicAnalysesBySubject, buildPublicComparisonSeries, comparisonDelta } from './ResultsAnalysis/logic';
 import './Public.print.css';
-
-/** تدرج رمادي واحد فقط لوضع الطباعة، تتحكم النسبة بدرجته — لا يُستخدم على
- * الشاشة أبداً، فقط كقيمة لمتغيّر CSS (--print-gray) يُفعَّل عبر @media print.
- * نسبة منخفضة → رمادي فاتح جداً، نسبة عالية → قريب من الأسود. */
-function printGray(pct: number): string {
-  const clamped = Math.min(100, Math.max(0, pct));
-  const v = Math.round(232 - (clamped / 100) * 204);
-  const hex = v.toString(16).padStart(2, '0');
-  return `#${hex}${hex}${hex}`;
-}
 
 interface PublicProps {
   state: PublicPortfolioState;
@@ -160,53 +151,6 @@ type SectionWithPct = SectionData & {
   pct: number;
 };
 
-/** صف أيقونات التواصل (هاتف/بريد + روابط اجتماعية) — تُعرض الأيقونة فقط إن
- * كان الحقل المقابل لها غير فارغ. مُستخرج لتجنّب تكرار الشرط الخماسي مرتين
- * بين تخطيط الجوال وتخطيط الديسكتوب (البند 4). */
-function SocialIconsRow({ profile, justify }: { profile: PublicPortfolioState['profile']; justify: string }) {
-  const links: { key: string; href: string; icon: string; hover: string }[] = [];
-  if (profile.phone) links.push({ key: 'phone', href: `tel:${profile.phone}`, icon: 'ti-phone', hover: 'hover:bg-[var(--em7)]/20 hover:text-[var(--em8)]' });
-  if (profile.email) links.push({ key: 'email', href: `mailto:${profile.email}`, icon: 'ti-mail', hover: 'hover:bg-[var(--em7)]/20 hover:text-[var(--em8)]' });
-  if (profile.twitter) links.push({ key: 'twitter', href: profile.twitter, icon: 'ti-brand-twitter', hover: 'hover:bg-[#1da1f2]/20 hover:text-[#1da1f2]' });
-  if (profile.linkedin) links.push({ key: 'linkedin', href: profile.linkedin, icon: 'ti-brand-linkedin', hover: 'hover:bg-[#0077b5]/20 hover:text-[#0077b5]' });
-  if (profile.youtube) links.push({ key: 'youtube', href: profile.youtube, icon: 'ti-brand-youtube', hover: 'hover:bg-[#ff0000]/20 hover:text-[#ff0000]' });
-
-  return (
-    <div className={`print-decor flex ${justify} gap-3 relative z-10`}>
-      {links.map(l => (
-        <a
-          key={l.key}
-          href={l.href}
-          {...(l.key !== 'phone' && l.key !== 'email' ? { target: '_blank', rel: 'noreferrer' } : {})}
-          className={`w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white transition-all ${l.hover}`}
-        >
-          <i className={`ti ${l.icon}`}></i>
-        </a>
-      ))}
-    </div>
-  );
-}
-
-function StatsRow({ totalEvs, coveredCount, totalCount, years, justify }: { totalEvs: number; coveredCount: number; totalCount: number; years: number; justify: string }) {
-  return (
-    <div className={`relative z-10 flex ${justify}`}>
-      <div className="flex flex-col sm:flex-row gap-0 bg-white/5 border border-[var(--line)] rounded-2xl inline-flex overflow-hidden">
-        <div className="py-4 px-8 text-center text-white border-b sm:border-b-0 sm:border-l border-[var(--line)]">
-          <div className="text-[28px] font-black leading-none bg-clip-text text-transparent bg-gradient-to-br from-[var(--em8)] to-[var(--gold3)]">{totalEvs}</div>
-          <div className="text-[11px] text-[var(--text4)] mt-1">أدلة موثّقة</div>
-        </div>
-        <div className="py-4 px-8 text-center text-white border-b sm:border-b-0 sm:border-l border-[var(--line)]">
-          <div className="text-[28px] font-black leading-none bg-clip-text text-transparent bg-gradient-to-br from-[var(--em8)] to-[var(--gold3)]">{coveredCount}</div>
-          <div className="text-[11px] text-[var(--text4)] mt-1">من {totalCount} مجالات</div>
-        </div>
-        <div className="py-4 px-8 text-center text-white">
-          <div className="text-[28px] font-black leading-none bg-clip-text text-transparent bg-gradient-to-br from-[var(--em8)] to-[var(--gold3)]">{years}</div>
-          <div className="text-[11px] text-[var(--text4)] mt-1">سنة خبرة</div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 const MONTH_ABBR: Record<number, string> = {
   1: 'ينا', 2: 'فبر', 3: 'مار', 4: 'أبر', 5: 'ماي', 6: 'يون',
@@ -281,38 +225,6 @@ function ContinuityGrid({ continuity, referenceDate = new Date() }: { continuity
       <p className="mt-3 text-[12.5px] text-[var(--text3)]">
         نشط في <strong className="text-white">{activeCount}</strong> من 12 شهراً
       </p>
-    </div>
-  );
-}
-
-/** سطر عنوان فترة التقرير + تاريخ التوليد — يظهر فقط في وضع ?report=، أعلى
- * اسم المعلم في الهيرو (كل من تخطيطي الجوال والديسكتوب). */
-function ReportPeriodBanner({ periodLabel, generatedAt, justify }: { periodLabel: string; generatedAt: string; justify: string }) {
-  const generatedLabel = formatDate(generatedAt, 'long');
-  return (
-    <div className={`flex ${justify} relative z-10 mb-3`}>
-      <div className="inline-flex flex-col items-center sm:items-start gap-0.5 py-2 px-4 rounded-2xl bg-white/5 border border-[var(--gold)]/25 backdrop-blur-md">
-        <span className="text-[13px] font-black text-[var(--gold3)] flex items-center gap-1.5">
-          <i className="ti ti-file-report text-[13px]" /> {periodLabel}
-        </span>
-        <span className="text-[11px] text-[var(--text4)]">تقرير مُولَّد بتاريخ {generatedLabel}</span>
-      </div>
-    </div>
-  );
-}
-
-function Avatar({ profile, size }: { profile: PublicPortfolioState['profile']; size: number }) {
-  return (
-    <div className="inline-block relative z-10" style={{ width: size, height: size }}>
-      <div
-        className="print-avatar rounded-full bg-gradient-to-br from-[var(--em3)] to-[var(--em6)] text-white inline-flex items-center justify-center font-black border-2 border-white/15 shadow-[0_0_0_8px_rgba(42,122,68,.1),0_0_0_16px_rgba(42,122,68,.05),0_20px_60px_rgba(0,0,0,.5)] relative z-10 bg-cover bg-center overflow-hidden"
-        style={{ width: size, height: size, fontSize: size * 0.39, ...(profile.avatar ? { backgroundImage: `url(${profile.avatar})` } : {}) }}
-      >
-        {!profile.avatar && profile.name.substring(0, 2)}
-      </div>
-      <div className="print-decor absolute -inset-3 rounded-full border border-[var(--gold)]/20 z-0" style={{ animation: 'spin 12s linear infinite' }}></div>
-      <div className="print-decor absolute -inset-5 rounded-full border border-[var(--em7)]/10 z-0" style={{ animation: 'spin 20s linear infinite reverse' }}></div>
-      <div className="print-decor absolute bottom-2 left-2 w-5 h-5 bg-[#4ade80] border-[3px] border-[var(--em2)] rounded-full shadow-[0_0_10px_rgba(74,222,128,.5)] z-20" style={{ animation: 'pulse 2s infinite' }}></div>
     </div>
   );
 }
@@ -836,12 +748,6 @@ export default function Public({ state, sections: allSections, continuity, evide
   // العرض (activeSecs/emptySecs + رسالة المودال).
   const sectionHasEvidence = (sec: Pick<SectionWithPct, 'evs'>): boolean => sec.evs.length > 0;
 
-  // مؤشر الجاهزية الإجمالي (المستوى 1) — من get_portfolio_completion (عبر
-  // get_shared_portfolio)، موحَّد مع نفس الرقم المعروض في Dashboard.tsx، بدل
-  // متوسط sectionsWithPct.pct المحلي القديم. state.completion غائب (كاش لحساب
-  // لم يُحدَّث بعد) ⇐ 0% بدل انهيار الصفحة أو undefined.
-  const overallPct = state.completion?.overall_pct ?? 0;
-
   // تنازلياً بـpct، وعند التساوي يُرجَّح القسم الأعلى إجمالي أدلة تراكمية
   // (evCount) — يعكس عمق التوثيق الفعلي رغم تساوي النسبة.
   const activeSecs = sectionsWithPct.filter(s => sectionHasEvidence(s)).sort((a, b) => {
@@ -850,7 +756,7 @@ export default function Public({ state, sections: allSections, continuity, evide
     return b.evCount - a.evCount;
   });
   const emptySecs = sectionsWithPct.filter(s => !sectionHasEvidence(s));
-  // صف الإحصاءات: البنود العادية التي فيها شاهد واحد على الأقل (يشمل «بلا مؤشر»)
+  // «X من 8 مجالات» في الرأس: البنود العادية التي فيها شاهد واحد على الأقل (يشمل «بلا مؤشر»)
   const coveredCount = activeSecs.length;
 
   const exportToPDF = () => {
@@ -952,115 +858,19 @@ export default function Public({ state, sections: allSections, continuity, evide
           <div className="print-header-rule"></div>
         </div>
 
-        <div className="print-hero relative overflow-hidden bg-gradient-to-br from-[var(--em1)] via-[var(--em2)] to-[rgba(20,60,35,.9)] pt-20 px-8 pb-16 text-center">
-
-          <div id="pdf-action-buttons" className="absolute top-6 left-6 z-20 flex gap-2 print:hidden">
-            <button
-              onClick={exportToPDF}
-              className="flex items-center gap-2 py-2 px-4 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-[13px] font-bold transition-all backdrop-blur-md cursor-pointer"
-            >
-              <i className="ti ti-download text-[16px]"></i>
-              <span className="hidden sm:inline">تصدير PDF</span>
-            </button>
-            <button
-              onClick={handleOpenShare}
-              className="flex items-center gap-2 py-2 px-4 rounded-xl bg-[var(--em7)]/20 hover:bg-[var(--em7)]/40 border border-[var(--em7)]/30 text-white text-[13px] font-bold transition-all cursor-pointer backdrop-blur-md"
-            >
-              <i className="ti ti-share text-[16px]"></i>
-              <span className="hidden sm:inline">مشاركة</span>
-            </button>
-          </div>
-
-          <div className="print-decor absolute inset-0 z-0 bg-[linear-gradient(rgba(82,196,120,.04)_1px,transparent_1px),linear-gradient(90deg,rgba(82,196,120,.04)_1px,transparent_1px)] bg-[length:40px_40px]"></div>
-          <div className="print-decor absolute w-[600px] h-[600px] rounded-full bg-[radial-gradient(circle,rgba(82,196,120,.15),transparent_70%)] -top-50 left-1/2 -translate-x-1/2 pointer-events-none z-0"></div>
-
-          {/* تخطيط الجوال (الحالي والمستقر) — يبقى دون أي تغيير، مخفي من lg فصاعداً */}
-          <div className="lg:hidden">
-            {reportMeta && <ReportPeriodBanner periodLabel={reportMeta.periodLabel} generatedAt={reportMeta.generatedAt} justify="justify-center" />}
-
-            <div className="mb-7">
-              <Avatar profile={state.profile} size={112} />
-            </div>
-
-            <div className="flex items-center justify-center gap-3 flex-wrap mb-2">
-              <h1 className="text-[34px] font-black text-white tracking-tight relative z-10">{state.profile.name}</h1>
-            </div>
-            <p className="text-[15px] text-[var(--text3)] mb-5 relative z-10">{state.profile.role} — {state.profile.school}</p>
-
-            <div className="mb-7">
-              <SocialIconsRow profile={state.profile} justify="justify-center" />
-            </div>
-
-            <div className="mb-6">
-              <StatsRow totalEvs={totalEvs} coveredCount={coveredCount} totalCount={sectionsWithPct.length} years={state.profile.yearsOfExperience} justify="justify-center" />
-            </div>
-          </div>
-
-          {/* تخطيط الديسكتوب الجديد (البند 4): الصورة يسار البطاقة مرفوعة عن
-              المنتصف، البيانات النصية يمين البطاقة — flex-row-reverse يضع أول
-              عنصر (الصورة) على يسار البطاقة فعلياً داخل سياق RTL. */}
-          <div className="hidden lg:flex lg:flex-row-reverse lg:items-start lg:justify-center lg:gap-12 lg:max-w-4xl lg:mx-auto lg:text-right">
-            <div className="lg:mt-3 lg:shrink-0">
-              <Avatar profile={state.profile} size={132} />
-            </div>
-
-            <div className="flex-1 flex flex-col gap-5 items-end">
-              <div>
-                {reportMeta && <ReportPeriodBanner periodLabel={reportMeta.periodLabel} generatedAt={reportMeta.generatedAt} justify="justify-end" />}
-                <div className="flex items-center justify-end gap-3 flex-wrap mb-2">
-                  <h1 className="text-[34px] font-black text-white tracking-tight relative z-10">{state.profile.name}</h1>
-                    </div>
-                <p className="text-[15px] text-[var(--text3)] relative z-10">{state.profile.role} — {state.profile.school}</p>
-              </div>
-
-              <SocialIconsRow profile={state.profile} justify="justify-end" />
-              <StatsRow totalEvs={totalEvs} coveredCount={coveredCount} totalCount={sectionsWithPct.length} years={state.profile.yearsOfExperience} justify="justify-end" />
-            </div>
-          </div>
-        </div>
+        <PublicHero
+          profile={state.profile}
+          completion={state.completion}
+          aiSummary={state.ai_summary}
+          totalEvs={totalEvs}
+          coveredCount={coveredCount}
+          totalSections={sectionsWithPct.length}
+          reportMeta={reportMeta}
+          onExportPdf={exportToPDF}
+          onShare={handleOpenShare}
+        />
 
         <div className="max-w-[1000px] mx-auto py-10 px-4 sm:px-7">
-
-          {/* المستوى 1: مؤشر الجاهزية الإجمالي — بارز فوق كل شيء. في وضع التقرير
-              يصبح «جاهزية الفترة» (مخبوزة في snapshot.state.completion وقت التوليد)،
-              ويُخفى إطلاقاً في التقارير القديمة التي لا تحويها بدل عرض 0%. */}
-          {!(reportMeta && !state.completion) && (
-          <div className="print-card mb-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line)] shadow-lg p-6 sm:p-8 relative overflow-hidden">
-            <div className="print-decor absolute top-0 left-0 w-full h-[4px]" style={{ backgroundColor: getCompletionColor(overallPct) }}></div>
-            <div className="flex items-center justify-between flex-wrap gap-4 mb-4 relative z-10">
-              <div>
-                <h2 className="text-[15px] font-bold text-[var(--text3)] flex items-center gap-2">
-                  <i className="ti ti-gauge text-[var(--em8)]"></i> {reportMeta ? 'جاهزية الفترة' : 'مؤشر الجاهزية العام'}
-                </h2>
-                <p className="text-[12px] text-[var(--text4)] mt-1">
-                  {reportMeta
-                    ? 'المؤشرات التي غطّيتها بشواهد خلال هذه الفترة'
-                    : <>متوسط نسبة الاكتمال عبر {state.completion?.total_sections ?? sectionsWithPct.length} مجالات أساسية</>}
-                </p>
-              </div>
-              <div className="text-[40px] sm:text-[48px] font-black leading-none" style={{ color: getCompletionColor(overallPct) }}>{overallPct}%</div>
-            </div>
-            <div className="print-progress-track h-3.5 w-full bg-[#060f0a] rounded-full overflow-hidden border border-white/5 relative z-10">
-              <div
-                className="print-progress-fill h-full rounded-full transition-all duration-1000 ease-out"
-                style={{ width: `${overallPct}%`, backgroundColor: getCompletionColor(overallPct), '--print-gray': printGray(overallPct) } as React.CSSProperties}
-              ></div>
-            </div>
-            <div className="mt-3 text-[12.5px] font-bold relative z-10" style={{ color: getCompletionColor(overallPct) }}>{getCompletionLabel(overallPct)}</div>
-          </div>
-          )}
-
-          {/* ملخص الملف بالذكاء الاصطناعي (ai_summary) — لا يُعرض شيء إطلاقاً إن
-              كانت القيمة غائبة أو فارغة، بلا أي نص بديل أو رسالة خطأ */}
-          {state.ai_summary && (
-            <div className="print-card mb-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line)] shadow-lg p-6 sm:p-8 relative overflow-hidden">
-              <div className="print-decor absolute top-0 left-0 w-full h-[3px] bg-[var(--em7)]" />
-              <h2 className="text-[15px] font-bold text-[var(--text3)] flex items-center gap-2 mb-3 relative z-10">
-                <i className="ti ti-sparkles text-[var(--em8)]"></i> نبذة عن الملف
-              </h2>
-              <p className="text-[14px] text-[var(--text2)] leading-relaxed relative z-10">{state.ai_summary}</p>
-            </div>
-          )}
 
           {continuity && <ContinuityGrid continuity={continuity} referenceDate={continuityReferenceDate} />}
 

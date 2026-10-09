@@ -75,6 +75,8 @@ interface SectionViewProps {
   onToggleSummaryHidden?: (sectionId: number) => void;
   /** إدارة المؤشرات المخصصة — للأقسام العادية فقط */
   indicatorHandlers?: IndicatorHandlers;
+  /** «أبرز إنجاز» و«اللمحات» في قائمة ⋯ للشاهد */
+  highlight?: EvHighlightActions;
 }
 
 /** إضافة مؤشر مخصص وإعادة تسميته وحذفه — المنفّذ في App.tsx */
@@ -221,21 +223,48 @@ function DeleteIndicatorDialog({ indicator, evidenceCount, targets, onCancel, on
 /** شاهد بلا وصف — الوصف مصدر ملخص القسم */
 const noDesc = (ev: SupabaseEvidence) => !(ev.description ?? '').trim();
 
-export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete, canEdit = true }: {
+/** «أبرز إنجاز» و«اللمحات» على صف الشاهد — المنفّذ في App.tsx */
+export interface EvHighlightActions {
+  /** الشاهد المثبّت حالياً (موجود في الشواهد المحمّلة)، أو null */
+  pinnedId: string | null;
+  onTogglePin: (ev: SupabaseEvidence) => void;
+  onToggleGallery: (ev: SupabaseEvidence) => void;
+}
+
+// زر في قائمة ⋯ للشاهد
+const MENU_ITEM = 'w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer';
+
+export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete, canEdit = true, highlight }: {
   ev: SupabaseEvidence; menuOpen: boolean; onToggleMenu: () => void; onCloseMenu: () => void; onEdit?: () => void; onDelete: () => void;
   /** false يخفي «تعديل» من القائمة (شواهد الأقسام الخاصة) */
   canEdit?: boolean;
+  highlight?: EvHighlightActions;
 }) {
   const url = ev.file_url ?? ev.link_url ?? undefined;
+  const pinned = !!highlight && highlight.pinnedId === ev.id;
+  // الشاهد غير المصنّف لا يظهر في الصفحة العامة، فلا يُثبَّت
+  const canPin = !!highlight && ev.section_id !== null;
+  // المعرض للصور والفيديو فقط
+  const canGallery = !!highlight && (ev.evidence_type === 'image' || ev.evidence_type === 'video');
   const content = (
     <>
       <span className="w-8 h-8 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[16px] text-[var(--t2)] shrink-0">
         <i className={`ti ${TYPE_ICON[ev.evidence_type] ?? 'ti-file-text'}`} />
       </span>
       <span className="min-w-0 flex-1 text-right">
-        <b dir="auto" className="block font-normal text-[length:var(--fs-sm)] text-[var(--t1)] whitespace-nowrap overflow-hidden text-ellipsis">{ev.title}</b>
+        <span className="flex items-center gap-1.5 min-w-0">
+          <b dir="auto" className="block min-w-0 font-normal text-[length:var(--fs-sm)] text-[var(--t1)] whitespace-nowrap overflow-hidden text-ellipsis">{ev.title}</b>
+          {pinned && (
+            <span className="inline-flex items-center gap-1 shrink-0 rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--st-gold)]">
+              <i className="ti ti-pin" />أبرز إنجاز
+            </span>
+          )}
+        </span>
         <small className="block text-[length:var(--fs-xs)] text-[var(--t3)]">
           {TYPE_LABEL[ev.evidence_type] ?? 'ملف'} · {formatDate(ev.created_at)}{noDesc(ev) && ' · بلا وصف'}
+          {ev.hidden_from_gallery && (
+            <> · <i className="ti ti-eye-off text-[var(--t3)]" title="مخفي من اللمحات" aria-label="مخفي من اللمحات" /></>
+          )}
         </small>
       </span>
     </>
@@ -263,6 +292,28 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
         <>
           <div className="fixed inset-0 z-20" onClick={onCloseMenu} />
           <div role="menu" className="absolute left-3.5 top-full mt-1 z-30 min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]">
+            {highlight && canPin && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { onCloseMenu(); highlight.onTogglePin(ev); }}
+                className={`${MENU_ITEM} text-[var(--t1)]`}
+              >
+                <i className="ti ti-pin text-[16px]" /> {pinned ? 'إلغاء التثبيت' : 'تثبيت كأبرز إنجاز'}
+              </button>
+            )}
+            {highlight && canGallery && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { onCloseMenu(); highlight.onToggleGallery(ev); }}
+                className={`${MENU_ITEM} text-[var(--t1)]`}
+              >
+                {ev.hidden_from_gallery
+                  ? <><i className="ti ti-eye text-[16px]" /> إظهار في اللمحات</>
+                  : <><i className="ti ti-eye-off text-[16px]" /> إخفاء من اللمحات</>}
+              </button>
+            )}
             {canEdit && onEdit && (
               <button
                 type="button"
@@ -345,7 +396,7 @@ export function SectionHeader({ onBack, icon, title, level, evCount, progress }:
   );
 }
 
-export default function SectionView({ section, evidence, onBack, onAddEvClick, onDeleteEv, onEditEv, sectionSummary, onToggleSummaryHidden, indicatorHandlers }: SectionViewProps) {
+export default function SectionView({ section, evidence, onBack, onAddEvClick, onDeleteEv, onEditEv, sectionSummary, onToggleSummaryHidden, indicatorHandlers, highlight }: SectionViewProps) {
   const [menuEvId, setMenuEvId] = useState<string | null>(null);
   // المؤشرات المخصصة: قائمة ⋯ المفتوحة، والنموذج المفتوح (إضافة أو تعديل)، ونافذة الحذف
   const [menuIndId, setMenuIndId] = useState<string | null>(null);
@@ -542,6 +593,7 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
                     onCloseMenu={() => setMenuEvId(null)}
                     onEdit={() => onEditEv(section.id, ev)}
                     onDelete={() => onDeleteEv(ev.id)}
+                    highlight={highlight}
                   />
                 ))}
               </div>

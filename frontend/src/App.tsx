@@ -79,6 +79,11 @@ export default function App() {
     setAiSuggestConsent,
     aiSummary,
     aiTopAchievementEvidenceId,
+    pinnedTopEvidenceId,
+    aiTopAchievementApproved,
+    setPinnedTopEvidence,
+    approveTopSuggestion,
+    dismissTopSuggestion,
   } = useAppStore();
 
   const {
@@ -916,6 +921,35 @@ export default function App() {
   // openEvalModal() حُذفت (14 سبتمبر 2026) مع calculateEvaluation() — كانت تفتح
   // مودال تفصيلي (50/30/20 نقطة) لنفس الشارة المهجورة المحذوفة من utils.ts.
 
+  // «أبرز إنجاز»: الشاهد المثبّت إن كان موجوداً في الشواهد المحمّلة. حذفه يجعل
+  // العمود NULL في القاعدة (ON DELETE SET NULL)، وهذا الاشتقاق يتبعها فوراً.
+  const effectivePinnedId = pinnedTopEvidenceId && supabaseEv.evidence.some(e => e.id === pinnedTopEvidenceId)
+    ? pinnedTopEvidenceId : null;
+  // أولوية get_shared_portfolio نفسها — لمعاينة المالك صفحته
+  const approvedAiTopId = aiTopAchievementApproved && aiTopAchievementEvidenceId
+    && supabaseEv.evidence.some(e => e.id === aiTopAchievementEvidenceId && e.section_id !== null)
+    ? aiTopAchievementEvidenceId : null;
+
+  const handleTogglePin = async (ev: SupabaseEvidence) => {
+    const unpin = ev.id === effectivePinnedId;
+    const ok = await setPinnedTopEvidence(unpin ? null : ev.id);
+    if (!ok) { showToast('تعذّر التثبيت، حاول مجدداً', '⚠️'); return; }
+    showToast(unpin ? 'أُلغي التثبيت' : 'ثُبّت كأبرز إنجاز', '✓');
+  };
+
+  const handleToggleGallery = async (ev: SupabaseEvidence) => {
+    const hide = !ev.hidden_from_gallery;
+    const ok = await supabaseEv.setHiddenFromGallery(ev.id, hide);
+    if (!ok) { showToast('تعذّر الحفظ، حاول مجدداً', '⚠️'); return; }
+    showToast(hide ? 'أُخفي من اللمحات' : 'ظهر في اللمحات', '✓');
+  };
+
+  const handleApproveTopSuggestion = async (evidenceId: string) => {
+    const ok = await approveTopSuggestion(evidenceId);
+    if (!ok) { showToast('تعذّر الاعتماد، حاول مجدداً', '⚠️'); return; }
+    showToast('اعتُمد كأبرز إنجاز', '✓');
+  };
+
   const handleDeleteEv = (evidenceId: string) => {
     setModalConfig({
       isOpen: true,
@@ -1150,12 +1184,22 @@ export default function App() {
             onAddIndicator={handleAddIndicator}
             onRenameIndicator={handleRenameIndicator}
             onDeleteIndicator={handleDeleteIndicator}
+            highlight={{ pinnedId: effectivePinnedId, onTogglePin: handleTogglePin, onToggleGallery: handleToggleGallery }}
+            topSuggestionId={aiTopAchievementApproved ? null : aiTopAchievementEvidenceId}
+            onApproveTopSuggestion={handleApproveTopSuggestion}
+            onDismissTopSuggestion={dismissTopSuggestion}
           />
         )}
 
         {currentPage === 'public' && (
           <Public
-            state={{ ...state, ai_summary: aiSummary, ai_top_achievement_evidence_id: aiTopAchievementEvidenceId, completion: portfolioCompletion.completion ?? undefined }}
+            state={{
+              ...state,
+              ai_summary: aiSummary,
+              top_achievement_evidence_id: effectivePinnedId ?? approvedAiTopId,
+              top_achievement_source: effectivePinnedId ? 'teacher' : approvedAiTopId ? 'ai' : null,
+              completion: portfolioCompletion.completion ?? undefined,
+            }}
             sections={viewSections}
             continuity={ownContinuity}
             evidence={viewEvidence}

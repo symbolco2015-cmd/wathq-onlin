@@ -9,7 +9,7 @@ import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import SectionView, { nEv, sectionLevel, LevelBadge, BTN_PRI_SM, BTN_GH_SM, BTN_SM, BTN_DNG, type Level, type SectionSummary, type IndicatorHandlers } from './SectionView';
+import SectionView, { nEv, sectionLevel, LevelBadge, BTN_PRI_SM, BTN_GH_SM, BTN_SM, BTN_DNG, type Level, type SectionSummary, type IndicatorHandlers, type EvHighlightActions } from './SectionView';
 import { IndivDiffView, StrategiesView, AnalysisView, ImprovementView } from './SpecialSectionViews';
 import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, formatDate, formatHijri } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
@@ -155,6 +155,12 @@ type DashboardProps = {
   onToast?: (msg: string, icon?: string) => void;
   aiConsentGiven?: boolean;
   onGiveAiConsent?: () => void;
+  /** «أبرز إنجاز» و«اللمحات» في قائمة ⋯ للشاهد — المنفّذ في App.tsx */
+  highlight?: EvHighlightActions;
+  /** اقتراح الذكاء الاصطناعي غير المعتمد (ai_top_achievement_evidence_id)، أو null */
+  topSuggestionId?: string | null;
+  onApproveTopSuggestion?: (evidenceId: string) => void;
+  onDismissTopSuggestion?: (evidenceId: string) => void;
 } & Partial<IndicatorHandlers>
 
 interface SectionReclassifyDropdownProps {
@@ -277,7 +283,7 @@ function SheetHeader({ title, onClose, badge }: { title: string; onClose: () => 
   );
 }
 
-export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkNotificationsSeen, onOpenProfileSettings, shareEnabled = false, onUpdateWelcome, onMarkHintSeen, accountCreatedAt, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator }: DashboardProps) {
+export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, onDeleteEv, onEditEv, onAddStrategyClick, strategyNames, announcements, onMarkNotificationsSeen, onOpenProfileSettings, shareEnabled = false, onUpdateWelcome, onMarkHintSeen, accountCreatedAt, academicDates, monthlyProgress, completion, completionError, userId, onEvidenceSaved, onToast, aiConsentGiven, onGiveAiConsent, onAddIndicator, onRenameIndicator, onDeleteIndicator, highlight, topSuggestionId, onApproveTopSuggestion, onDismissTopSuggestion }: DashboardProps) {
   // تذكيرات الجرس الموسمية — موعد دراسي قادم خلال 7 أيام، ونهاية الشهر (آخر 5 أيام).
   // كل منهما إشعار مستقل بمفتاح يُحفظ في state.seenNotifications.
   const reminders = useMemo(() => {
@@ -609,12 +615,26 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     ? `summary:${summaryStatus.generatedAt ?? 'none'}`
     : null;
   const accountCreatedMs = accountCreatedAt ? new Date(accountCreatedAt).getTime() : null;
+  // اقتراح «أبرز إنجاز»: غير معتمد، ولا تثبيت من المعلم، ولم يُتجاهل، وشاهده محمّل ومصنّف
+  const topSuggestionEv = topSuggestionId && highlight && highlight.pinnedId === null
+    && state.dismissedTopSuggestion !== topSuggestionId
+    ? (supabaseEv?.evidence ?? []).find(e => e.id === topSuggestionId && e.section_id !== null) ?? null
+    : null;
+  const topSuggestionItem = useMemo<NotificationItem | null>(() => topSuggestionEv ? {
+    key: `pending:top-suggestion:${topSuggestionEv.id}`,
+    kind: 'top-suggestion',
+    evidenceId: topSuggestionEv.id,
+    evidenceTitle: topSuggestionEv.title,
+    sectionTitle: sections.find(s => s.id === topSuggestionEv.section_id)?.ttl ?? '',
+    unread: false,
+  } : null, [topSuggestionEv, sections]);
   const notifItems = useMemo<NotificationItem[]>(() => {
     const read = state.readAnnouncements ?? [];
     const seen = state.seenNotifications ?? [];
     const items: NotificationItem[] = [];
     // المعلّق أولاً، ولا يدخل seenNotifications أبداً (unread: false دائماً)
     if (bulkImportReadyCount > 0) items.push({ key: 'pending:bulk-import', kind: 'pending', count: bulkImportReadyCount, unread: false });
+    if (topSuggestionItem) items.push(topSuggestionItem);
     if (summaryNotifKey) items.push({ key: summaryNotifKey, kind: 'summary', unread: !seen.includes(summaryNotifKey) });
     for (const r of reminders) items.push({ ...r, kind: 'reminder', unread: !seen.includes(r.key) });
     for (const ann of (announcements ?? []).slice(0, NOTIF_ANNOUNCEMENTS_LIMIT)) {
@@ -623,9 +643,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       items.push({ key: ann.id, kind: 'announcement', announcement: ann, unread: !beforeAccount && !read.includes(ann.id) });
     }
     return items;
-  }, [bulkImportReadyCount, summaryNotifKey, reminders, announcements, accountCreatedMs, state.readAnnouncements, state.seenNotifications]);
+  }, [bulkImportReadyCount, topSuggestionItem, summaryNotifKey, reminders, announcements, accountCreatedMs, state.readAnnouncements, state.seenNotifications]);
   // الشارة = غير المقروء + 1 للمعلّق (عدد إشعارات لا عدد ملفات)
-  const unreadCount = notifItems.filter(i => i.unread || i.kind === 'pending').length;
+  const unreadCount = notifItems.filter(i => i.unread || i.kind === 'pending' || i.kind === 'top-suggestion').length;
 
   // العدد إلى زر الجرس في Nav: يُرسل عند كل تغيّر، ويُعاد عند طلب Nav (تركيبها بعد Dashboard)
   const unreadCountRef = useRef(unreadCount);
@@ -920,6 +940,23 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   };
   const closeSection = () => { closeToHome(); };
 
+  /** يفتح شاشة البند التي يظهر فيها الشاهد — من عنصر اقتراح «أبرز إنجاز» في الجرس */
+  const openEvidenceScreen = (evidenceId: string) => {
+    const ev = supabaseEv?.evidence.find(e => e.id === evidenceId);
+    if (!ev || ev.section_id === null) return;
+    setNotifOpen(false);
+    if (stratSection && ev.section_id === stratSection.id) {
+      const indiv = !!indivDiffIndicator && ev.indicator_id === indivDiffIndicator.id && !ev.strategy_id;
+      pushScreen({ kind: indiv ? 'indiv' : 'strat' });
+    } else if (analysisSection && ev.section_id === analysisSection.id) {
+      pushScreen({ kind: 'analysis' });
+    } else if (improvementSection && ev.section_id === improvementSection.id) {
+      pushScreen({ kind: 'improvement' });
+    } else {
+      openSection(ev.section_id);
+    }
+  };
+
   // زر «البنود» في شريط الجوال السفلي (Nav في App)
   const goHomeAndScrollRef = useRef(goHomeAndScroll);
   goHomeAndScrollRef.current = goHomeAndScroll;
@@ -1173,6 +1210,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             indicatorHandlers={openSectionIsCore && onAddIndicator && onRenameIndicator && onDeleteIndicator
               ? { onAddIndicator, onRenameIndicator, onDeleteIndicator }
               : undefined}
+            highlight={highlight}
           />
         ) : openSpecial === 'strat' && stratSection ? (
           <StrategiesView
@@ -1187,6 +1225,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             onAddForGroup={group => onAddEvClick(stratSection.id, group.name, group.id)}
             onAddStrategy={onAddStrategyClick}
             onDeleteEv={onDeleteEv}
+            highlight={highlight}
           />
         ) : openSpecial === 'indiv' && stratSection && indivDiffIndicator ? (
           <IndivDiffView
@@ -1195,6 +1234,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             onBack={closeSection}
             onAdd={() => onAddEvClick(stratSection.id, indivDiffIndicator.name_ar, undefined, indivDiffIndicator.id)}
             onDeleteEv={onDeleteEv}
+            highlight={highlight}
           />
         ) : openScreen?.kind === 'analysis' && analysisSection ? (
           <AnalysisView
@@ -1208,6 +1248,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             evidence={supabaseEv?.evidence ?? []}
             onEditEv={ev => onEditEv(analysisSection.id, ev)}
             onDeleteEv={onDeleteEv}
+            highlight={highlight}
           >
             <AnalysisSectionBody
               sections={sections}
@@ -1234,6 +1275,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             evidence={supabaseEv?.evidence ?? []}
             onEditEv={ev => onEditEv(improvementSection.id, ev)}
             onDeleteEv={onDeleteEv}
+            highlight={highlight}
           >
             <ImprovementActionsBody
               section={improvementSection}
@@ -1621,6 +1663,9 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         unreadAtOpen={unreadAtOpen}
         onOpenSummary={() => { setNotifOpen(false); setToolsOpen(true); }}
         onOpenBulkReview={() => { setNotifOpen(false); setIsBulkImportReviewOpen(true); }}
+        onApproveTopSuggestion={id => onApproveTopSuggestion?.(id)}
+        onDismissTopSuggestion={id => onDismissTopSuggestion?.(id)}
+        onOpenTopSuggestion={openEvidenceScreen}
       />
 
       {/* Bottom Sheet — إضافة شاهد (الخطوة الثانية) — جوال فقط */}

@@ -25,6 +25,8 @@ export interface SupabaseEvidence {
   /** معرّف استراتيجية التدريس (teaching_strategies.id) — غير NULL فقط لأدلة
    *  بند 4 (isStrat) المُضافة عبر تدفّق "استراتيجيات التدريس" الجديد. */
   strategy_id: string | null;
+  /** المعلم أخفى الشاهد من معرض «لمحات» — للصور والفيديو */
+  hidden_from_gallery?: boolean;
 }
 
 /** الحقول التي يسمح نموذج التعديل بتغييرها — لا ملف ولا نوع ولا قسم */
@@ -147,6 +149,20 @@ export function useSupabaseEvidence(
     return true;
   };
 
+  /** إخفاء الشاهد من معرض «لمحات» أو إظهاره — تحديث محلي بعد النجاح، بلا إعادة جلب */
+  const setHiddenFromGallery = async (id: string, hidden: boolean): Promise<boolean> => {
+    if (!supabase) return false;
+    const { data, error } = await supabase
+      .from('evidence')
+      .update({ hidden_from_gallery: hidden })
+      .eq('id', id)
+      .select('id');
+    if (error) { console.error('[Supabase Evidence] gallery error:', error.message, error); return false; }
+    if (!data || data.length === 0) { console.error('[Supabase Evidence] لم يُعدَّل الشاهد في قاعدة البيانات'); return false; }
+    setEvidence(prev => prev.map(e => (e.id === id ? { ...e, hidden_from_gallery: hidden } : e)));
+    return true;
+  };
+
   const deleteEvidence = async (id: string): Promise<void> => {
     if (!supabase) return;
 
@@ -201,6 +217,7 @@ export function useSupabaseEvidence(
     updateEvidence,
     moveIndicatorEvidence,
     deleteEvidence,
+    setHiddenFromGallery,
     getBySection,
     refetch: fetch,
   };

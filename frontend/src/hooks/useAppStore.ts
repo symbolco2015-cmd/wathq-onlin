@@ -40,6 +40,7 @@ export const pickAppStateFields = (raw: Record<string, any>): Partial<AppState> 
   if (raw.welcome !== undefined) picked.welcome = raw.welcome;
   if (raw.welcomeNoAvatar !== undefined) picked.welcomeNoAvatar = raw.welcomeNoAvatar;
   if (raw.seenHints !== undefined) picked.seenHints = raw.seenHints;
+  if (raw.dismissedTopSuggestion !== undefined) picked.dismissedTopSuggestion = raw.dismissedTopSuggestion;
   return picked;
 };
 
@@ -64,6 +65,9 @@ export function useAppStore() {
   // كائن مركَّب عند التمرير لمكوّن Public.tsx فقط في معاينة المالك لملفه الخاص.
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiTopAchievementEvidenceId, setAiTopAchievementEvidenceId] = useState<string | null>(null);
+  // «أبرز إنجاز»: تثبيت المعلم وموافقته على الاقتراح — عمودان مستقلان كذلك، خارج state
+  const [pinnedTopEvidenceId, setPinnedTopEvidenceId] = useState<string | null>(null);
+  const [aiTopAchievementApproved, setAiTopAchievementApproved] = useState(false);
   // عدّاد طلبات تحميل state — يزيده أي تحميل جديد (الـeffect رقم 2) وأي حفظ
   // يدوي ناجح (saveState). عند رجوع نتيجة SELECT متأخرة، إن لم يعد رقمها
   // المحلي مطابقاً لهذا العدّاد، تُتجاهل تماماً بدل استدعاء setState — يمنع
@@ -114,6 +118,8 @@ export function useAppStore() {
         setShareEnabled(false);
         setAiSummary(null);
         setAiTopAchievementEvidenceId(null);
+        setPinnedTopEvidenceId(null);
+        setAiTopAchievementApproved(false);
       }
     });
 
@@ -229,7 +235,7 @@ export function useAppStore() {
         try {
           const { data, error } = await supabase
             .from('portfolios')
-            .select('state, share_enabled, ai_summary, ai_top_achievement_evidence_id')
+            .select('state, share_enabled, ai_summary, ai_top_achievement_evidence_id, pinned_top_evidence_id, ai_top_achievement_approved')
             .eq('id', user.id)
             .single();
 
@@ -253,6 +259,8 @@ export function useAppStore() {
             setShareEnabled(!!data.share_enabled);
             setAiSummary(data.ai_summary ?? null);
             setAiTopAchievementEvidenceId(data.ai_top_achievement_evidence_id ?? null);
+            setPinnedTopEvidenceId(data.pinned_top_evidence_id ?? null);
+            setAiTopAchievementApproved(data.ai_top_achievement_approved === true);
             setLoading(false);
             return;
           } else {
@@ -270,6 +278,8 @@ export function useAppStore() {
             setShareEnabled(false); // ملف جديد دائماً غير مفعّل للمشاركة العامة افتراضياً
             setAiSummary(null);
             setAiTopAchievementEvidenceId(null);
+            setPinnedTopEvidenceId(null);
+            setAiTopAchievementApproved(false);
 
             // Save newly seeded state to DB
             const { error: insertError } = await supabase
@@ -316,6 +326,8 @@ export function useAppStore() {
       } catch (e) {}
       setAiSummary(null);
       setAiTopAchievementEvidenceId(null);
+      setPinnedTopEvidenceId(null);
+      setAiTopAchievementApproved(false);
       setLoading(false);
     }
 
@@ -439,6 +451,44 @@ export function useAppStore() {
     return saveState({ ...prev, seenHints: [...seen, key] });
   };
 
+  // «أبرز إنجاز» يثبّته المعلم — عمود مستقل يُكتب مباشرة لا عبر saveState. الحالة
+  // المحلية تتغير بعد النجاح فقط؛ مشغّل الحماية يرفض شاهداً ليس من الملف.
+  const setPinnedTopEvidence = async (evidenceId: string | null): Promise<boolean> => {
+    if (!user || !supabase) return false;
+    const { data, error } = await supabase
+      .from('portfolios')
+      .update({ pinned_top_evidence_id: evidenceId })
+      .eq('id', user.id)
+      .select('id');
+    if (error) { console.error('[pinned_top_evidence_id] تعذّر التثبيت:', error.message, error); return false; }
+    if (!data || data.length === 0) { console.error('[pinned_top_evidence_id] لم يُعدَّل الملف في قاعدة البيانات'); return false; }
+    setPinnedTopEvidenceId(evidenceId);
+    return true;
+  };
+
+  // اعتماد اقتراح الذكاء الاصطناعي — مشروط بأن يكون الاقتراح في القاعدة هو نفسه
+  // المعروض، فلا يُعتمد اقتراح أحدث لم يره المعلم.
+  const approveTopSuggestion = async (evidenceId: string): Promise<boolean> => {
+    if (!user || !supabase) return false;
+    const { data, error } = await supabase
+      .from('portfolios')
+      .update({ ai_top_achievement_approved: true })
+      .eq('id', user.id)
+      .eq('ai_top_achievement_evidence_id', evidenceId)
+      .select('id');
+    if (error) { console.error('[ai_top_achievement_approved] تعذّر الاعتماد:', error.message, error); return false; }
+    if (!data || data.length === 0) { console.error('[ai_top_achievement_approved] الاقتراح تغيّر أو لم يُعدَّل الملف'); return false; }
+    setAiTopAchievementApproved(true);
+    return true;
+  };
+
+  // تجاهل الاقتراح — يبني من latestStateRef، ولا يكتب إن كان المعرّف نفسه محفوظاً.
+  const dismissTopSuggestion = (evidenceId: string) => {
+    const prev = latestStateRef.current;
+    if (prev.dismissedTopSuggestion === evidenceId) return;
+    return saveState({ ...prev, dismissedTopSuggestion: evidenceId });
+  };
+
   // يُسجَّل مرة واحدة فقط لكل حساب — يمنع تكرار عرض تحذير خصوصية ميزة
   // "اقتراح تلقائي من الصورة" بعد أول موافقة.
   const setAiSuggestConsent = () => {
@@ -469,6 +519,11 @@ export function useAppStore() {
     setAiSuggestConsent,
     aiSummary,
     aiTopAchievementEvidenceId,
+    pinnedTopEvidenceId,
+    aiTopAchievementApproved,
+    setPinnedTopEvidence,
+    approveTopSuggestion,
+    dismissTopSuggestion,
   };
 }
 

@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import type { Announcement } from '../types';
 import { formatDate } from '../utils';
 import NavPanel from './NavPanel';
-import { BTN_PRI_SM } from './SectionView';
+import { BTN_PRI_SM, BTN_SM } from './SectionView';
 
 /** عنصر واحد في قائمة الجرس — يبنيه Dashboard من التعاميم والتذكيرات وحالة الملخص */
 export type NotificationItem =
   // معلّق: لا يُعلَّم مقروءاً أبداً، ويبقى في الشارة حتى يصير عدده صفراً
   | { key: string; kind: 'pending'; count: number; unread: false }
+  // اقتراح «أبرز إنجاز» — معلّق كذلك: يبقى في الشارة حتى يُعتمد أو يُتجاهل
+  | { key: string; kind: 'top-suggestion'; evidenceId: string; evidenceTitle: string; sectionTitle: string; unread: false }
   | { key: string; kind: 'announcement'; announcement: Announcement; unread: boolean }
   | { key: string; kind: 'reminder'; icon: string; title: string; subtitle: string; unread: boolean }
   | { key: string; kind: 'summary'; unread: boolean };
@@ -20,6 +22,10 @@ type NotificationsSheetProps = {
   unreadAtOpen: ReadonlySet<string>;
   onOpenSummary: () => void;
   onOpenBulkReview: () => void;
+  onApproveTopSuggestion: (evidenceId: string) => void;
+  onDismissTopSuggestion: (evidenceId: string) => void;
+  /** يفتح شاشة بند الشاهد المقترح */
+  onOpenTopSuggestion: (evidenceId: string) => void;
 };
 
 const CATEGORY_META: Record<string, { icon: string; color: string; label: string }> = {
@@ -45,7 +51,7 @@ function UnreadDot({ show }: { show: boolean }) {
 }
 
 /** لوحة الإشعارات (الجرس): ورقة سفلية في الجوال، ولوحة منسدلة تحت الشريط فيما عداه */
-export default function NotificationsSheet({ isOpen, onClose, items, unreadAtOpen, onOpenSummary, onOpenBulkReview }: NotificationsSheetProps) {
+export default function NotificationsSheet({ isOpen, onClose, items, unreadAtOpen, onOpenSummary, onOpenBulkReview, onApproveTopSuggestion, onDismissTopSuggestion, onOpenTopSuggestion }: NotificationsSheetProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,6 +81,30 @@ export default function NotificationsSheet({ isOpen, onClose, items, unreadAtOpe
               <button type="button" onClick={onOpenBulkReview} className={`${BTN_PRI_SM} shrink-0`}>
                 مراجعة الآن
               </button>
+            </div>
+          );
+        }
+
+        if (item.kind === 'top-suggestion') {
+          return (
+            <div key={item.key} className="w-full flex flex-col gap-2 p-2 rounded-[var(--r-sm)] text-right bg-[var(--s2)]">
+              <button
+                type="button"
+                onClick={() => onOpenTopSuggestion(item.evidenceId)}
+                className="w-full min-h-11 flex items-center gap-3 text-right cursor-pointer"
+              >
+                <IconBox icon="ti-sparkles" color="text-[var(--st-gold)]" unread />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">اقتراح لأبرز إنجاز</span>
+                  <span className="block text-[length:var(--fs-xs)] text-[var(--t3)] whitespace-nowrap overflow-hidden text-ellipsis">
+                    {item.evidenceTitle} · {item.sectionTitle}
+                  </span>
+                </span>
+              </button>
+              <div className="flex gap-2 ps-12">
+                <button type="button" onClick={() => onApproveTopSuggestion(item.evidenceId)} className={BTN_SM}>اعتماد</button>
+                <button type="button" onClick={() => onDismissTopSuggestion(item.evidenceId)} className={BTN_SM}>تجاهل</button>
+              </div>
             </div>
           );
         }

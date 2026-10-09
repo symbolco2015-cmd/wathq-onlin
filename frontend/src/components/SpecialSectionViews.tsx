@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { SectionIndicator } from '../types';
-import { SectionHeader, EvRow, nEv } from './SectionView';
+import { SectionHeader, EvRow, nEv, type EvHighlightActions } from './SectionView';
 
 // شاشات الأقسام الخاصة «مراعاة الفروق الفردية» و«التنويع في استراتيجيات
 // التدريس» و«تحليل نتائج المتعلمين» و«تحسين نتائج المتعلمين» — بتصميم شاشة القسم العادي (SectionView)،
@@ -23,7 +23,7 @@ function useEvMenu() {
 }
 
 /** بطاقة المؤشر في SectionView: الدائرة (اختيارية) والاسم والعدد وزر «+» ثم الشواهد */
-function ItemCard({ name, evidence, circle, addLabel, onAdd, onEditEv, onDeleteEv, menuEvId, setMenuEvId }: {
+function ItemCard({ name, evidence, circle, addLabel, onAdd, onEditEv, onDeleteEv, menuEvId, setMenuEvId, highlight }: {
   name: string;
   evidence: SupabaseEvidence[];
   /** حالة الدائرة؛ undefined = بلا دائرة */
@@ -36,6 +36,7 @@ function ItemCard({ name, evidence, circle, addLabel, onAdd, onEditEv, onDeleteE
   onDeleteEv: (evidenceId: string) => void;
   menuEvId: string | null;
   setMenuEvId: Dispatch<SetStateAction<string | null>>;
+  highlight?: EvHighlightActions;
 }) {
   const evs = newestFirst(evidence);
   const count = evs.length;
@@ -86,6 +87,7 @@ function ItemCard({ name, evidence, circle, addLabel, onAdd, onEditEv, onDeleteE
               onCloseMenu={() => setMenuEvId(null)}
               onEdit={onEditEv ? () => onEditEv(ev) : undefined}
               onDelete={() => onDeleteEv(ev.id)}
+              highlight={highlight}
             />
           ))}
         </div>
@@ -97,7 +99,7 @@ function ItemCard({ name, evidence, circle, addLabel, onAdd, onEditEv, onDeleteE
 /** قسم «الشواهد» في شاشتي البندين 5 و10 — شواهد البند (section_id) مجمّعة حسب
  *  المؤشر بترتيب مؤشرات القسم، المؤشرات التي فيها شواهد فقط. شاهد بلا مؤشر أو
  *  بمؤشر من خارج القسم يُعرض في بطاقة أخيرة «بلا مؤشر» ولا يسقط من العرض. */
-function SectionEvidenceList({ sectionId, indicators, evidence, emptyText, onEditEv, onDeleteEv }: {
+function SectionEvidenceList({ sectionId, indicators, evidence, emptyText, onEditEv, onDeleteEv, highlight }: {
   sectionId: number;
   indicators: SectionIndicator[];
   evidence: SupabaseEvidence[];
@@ -105,6 +107,7 @@ function SectionEvidenceList({ sectionId, indicators, evidence, emptyText, onEdi
   emptyText?: string;
   onEditEv: (ev: SupabaseEvidence) => void;
   onDeleteEv: (evidenceId: string) => void;
+  highlight?: EvHighlightActions;
 }) {
   const [menuEvId, setMenuEvId] = useEvMenu();
   const sectionEvidence = evidence.filter(e => e.section_id === sectionId);
@@ -135,6 +138,7 @@ function SectionEvidenceList({ sectionId, indicators, evidence, emptyText, onEdi
           onDeleteEv={onDeleteEv}
           menuEvId={menuEvId}
           setMenuEvId={setMenuEvId}
+          highlight={highlight}
         />
       ))}
     </>
@@ -142,12 +146,13 @@ function SectionEvidenceList({ sectionId, indicators, evidence, emptyText, onEdi
 }
 
 /** شاشة «مراعاة الفروق الفردية» — مؤشر واحد في قسم الاستراتيجيات */
-export function IndivDiffView({ title, evidence, onBack, onAdd, onDeleteEv }: {
+export function IndivDiffView({ title, evidence, onBack, onAdd, onDeleteEv, highlight }: {
   title: string;
   evidence: SupabaseEvidence[];
   onBack: () => void;
   onAdd: () => void;
   onDeleteEv: (evidenceId: string) => void;
+  highlight?: EvHighlightActions;
 }) {
   const [menuEvId, setMenuEvId] = useEvMenu();
   const n = evidence.length;
@@ -163,6 +168,7 @@ export function IndivDiffView({ title, evidence, onBack, onAdd, onDeleteEv }: {
         onDeleteEv={onDeleteEv}
         menuEvId={menuEvId}
         setMenuEvId={setMenuEvId}
+        highlight={highlight}
       />
     </div>
   );
@@ -175,7 +181,7 @@ export interface StrategyGroup {
 }
 
 /** شاشة «التنويع في استراتيجيات التدريس» — بطاقة لكل استراتيجية لها شاهد */
-export function StrategiesView({ icon, title, evCount, yearEvCount, monthName, usedThisMonth, groups, onBack, onAddForGroup, onAddStrategy, onDeleteEv }: {
+export function StrategiesView({ icon, title, evCount, yearEvCount, monthName, usedThisMonth, groups, onBack, onAddForGroup, onAddStrategy, onDeleteEv, highlight }: {
   icon: string;
   title: string;
   /** كل شواهد الاستراتيجيات — شارة الرأس، تطابق القائمة أدناه */
@@ -190,6 +196,7 @@ export function StrategiesView({ icon, title, evCount, yearEvCount, monthName, u
   onAddForGroup: (group: StrategyGroup) => void;
   onAddStrategy: () => void;
   onDeleteEv: (evidenceId: string) => void;
+  highlight?: EvHighlightActions;
 }) {
   const [menuEvId, setMenuEvId] = useEvMenu();
   return (
@@ -212,6 +219,7 @@ export function StrategiesView({ icon, title, evCount, yearEvCount, monthName, u
           onDeleteEv={onDeleteEv}
           menuEvId={menuEvId}
           setMenuEvId={setMenuEvId}
+          highlight={highlight}
         />
       )) : (
         <p className="px-1 text-[length:var(--fs-sm)] text-[var(--t3)]">لا توجد استراتيجيات موثّقة بدليل بعد.</p>
@@ -237,6 +245,7 @@ interface SectionEvidenceProps {
   evidence: SupabaseEvidence[];
   onEditEv: (ev: SupabaseEvidence) => void;
   onDeleteEv: (evidenceId: string) => void;
+  highlight?: EvHighlightActions;
 }
 
 export function AnalysisView({ icon, title, analysisCount, loading, onBack, children, ...ev }: {

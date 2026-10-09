@@ -105,6 +105,9 @@ export interface AppState {
   /** مفاتيح التلميحات التي رآها المعلم (hint:add وhint:bell) — منفصلة عن
    * seenNotifications حتى لا يحذفها سقفه. لا تُرجعها get_shared_portfolio. */
   seenHints?: string[];
+  /** معرّف اقتراح «أبرز إنجاز» (ai_top_achievement_evidence_id) الذي تجاهله المعلم من
+   * الجرس — اقتراح بمعرّف مختلف يظهر من جديد. لا تُرجعها get_shared_portfolio. */
+  dismissedTopSuggestion?: string;
 }
 
 /** الحقول التي تُعرض فعلياً في واجهة المشاركة العامة — وحدها ما تُرجعه get_shared_portfolio() */
@@ -113,11 +116,10 @@ export type PublicPortfolioState = Pick<AppState, 'profile'> & {
    * أو null قبل أول توليد أو لملف بلا شواهد مصنَّفة؛ الصفحة تتدهور بأمان لسلوكها
    * الحالي بدون هذا الحقل. */
   ai_summary?: string | null;
-  /** معرّف الشاهد الذي اختاره الذكاء الاصطناعي كأبرز إنجاز (عمود
-   * ai_top_achievement_evidence_id) — يُجلب ويُمرَّر إلى Public.tsx، لكنه لا
-   * يُعرض حالياً: بطاقة «أبرز إنجاز» محذوفة حتى موافقة المعلم (المرحلة 5.6).
-   * لا بديل heuristic له. */
-  ai_top_achievement_evidence_id?: string | null;
+  /** «أبرز إنجاز» كما تحسبه get_shared_portfolio: تثبيت المعلم أولاً، ثم اقتراح
+   * الذكاء الاصطناعي الموافَق عليه. لا يُعرض حالياً (المرحلة 5.6). */
+  top_achievement_evidence_id?: string | null;
+  top_achievement_source?: 'teacher' | 'ai' | null;
   /** ملخص الجاهزية التراكمي (get_portfolio_completion عبر get_shared_portfolio)
    * — نفس الرقم الموحَّد المعروض في Dashboard.tsx. غائب لحساب لم يُحدَّث كاشه
    * بعد؛ Public.tsx يرجع في هذي الحالة لـ0% بدل الانهيار. */

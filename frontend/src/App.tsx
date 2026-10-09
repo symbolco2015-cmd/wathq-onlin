@@ -1207,6 +1207,7 @@ export default function App() {
             sectionSummaries={ownSectionSummaries}
             strategyNames={strategyNames}
             customIndicators={ownCustomIndicators}
+            ownerPreview
           />
         )}
         

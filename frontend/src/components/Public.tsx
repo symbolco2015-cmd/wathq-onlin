@@ -1,12 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import type { ContinuityData, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
-import { getCompletionColor, extensionFromUrl, formatDate } from '../utils';
+import { getCompletionColor, formatDate } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { PublicCustomIndicator } from '../hooks/usePublicCustomIndicators';
 import { findIndicatorByName, toEvRow } from '../indicators';
-import PdfPreview, { PdfPreviewFallback } from './PdfPreview';
+import EvidenceViewer, { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from './EvidenceViewer';
+import TopAchievementCard, { TopAchievementPlaceholder } from './TopAchievementCard';
+import PublicGallery, { pickGalleryItems } from './PublicGallery';
 import PublicHero from './PublicHero';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
@@ -57,24 +59,9 @@ interface PublicProps {
    *  (مسار ?share=)، أو snapshot.customIndicators (مسار ?report=)، أو مخصص
    *  المالك نفسه (المعاينة). تُعرض كأي مؤشر، ولا تدخل في أي نسبة. */
   customIndicators?: PublicCustomIndicator[];
-}
-
-/** يستخرج معرّف فيديو يوتيوب من أي صيغة رابط شائعة (watch؟v=, youtu.be/, embed/, shorts/)،
- * أو null إن لم يكن رابط يوتيوب صالحاً — يُستخدم لبناء مصغّرة img.youtube.com. */
-function extractYouTubeId(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('/')[0] || null;
-    if (u.hostname.includes('youtube.com')) {
-      const v = u.searchParams.get('v');
-      if (v) return v;
-      const m = u.pathname.match(/\/(embed|shorts)\/([^/?]+)/);
-      if (m) return m[2];
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  /** معاينة المالك لصفحته (App.tsx، currentPage === 'public') — تُظهر الإطار
+   *  المتقطع مكان «أبرز إنجاز» إن لم يُختر. لا تُمرَّر في ?share= ولا ?report=. */
+  ownerPreview?: boolean;
 }
 
 /** اسم الدومين فقط (بدون www.) لعرضه بجانب أيقونة رابط عام غير معروف */
@@ -84,19 +71,6 @@ function getDomain(url: string): string {
   } catch {
     return url;
   }
-}
-
-/** نوع العرض في الصفحة العامة، من evidence_type الأصلي وحقلي الملف والرابط —
- *  أدق من Evidence['type'] (supabaseEvidenceTypeToLocal) الذي يجعل الرابط
- *  والصوت والملاحظة كلها 'doc'. */
-type PublicKind = 'pdf' | 'img' | 'vid' | 'audio' | 'link' | 'note';
-
-function publicKind(e: SupabaseEvidence): PublicKind {
-  if (!e.file_url) return e.link_url ? 'link' : 'note';
-  if (e.evidence_type === 'image') return 'img';
-  if (e.evidence_type === 'video') return 'vid';
-  if (e.evidence_type === 'audio') return 'audio';
-  return 'pdf';
 }
 
 /** صف عرض شاهد: صف المؤشرات المعتاد + نوع العرض العام والوصف (لمعاينة الملاحظة). */
@@ -127,11 +101,6 @@ function toGroupList({ groups, orphans }: ReturnType<typeof groupByIndicator>): 
   if (orphans.length > 0) list.push({ key: 'no-indicator', label: NO_INDICATOR_LABEL, evs: orphans.map(toPublicRow) });
   return list;
 }
-
-/** امتدادات مستندات Office — تميّزها عن PDF ضمن شواهد النوع 'file' (كلاهما
- * يُحوَّل إلى نفس Evidence['type'] المجمَّد 'pdf' عبر supabaseEvidenceTypeToLocal،
- * فالتمييز الفعلي يحتاج فحص الامتداد الحقيقي في الرابط عبر extensionFromUrl). */
-const OFFICE_EXTENSIONS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
 
 const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
   pdf: {icon: 'ti-file-type-pdf', cls: 'bg-gradient-to-br from-[#b91c1c]/20 to-[#b91c1c]/10 text-[#f87171] border border-[#b91c1c]/20', label: 'PDF'},
@@ -294,13 +263,9 @@ function SectionCard({ sec, onClick, style, summary }: { sec: SectionWithPct; on
 
 /** مصغّرة دليل واحد ضمن بطاقات الاستراتيجيات والفروق الفردية وبندي 5/10 —
  * صورة فعلية / مصغّرة يوتيوب / أيقونة ملف+اسم / أيقونة رابط+دومين / ملاحظة،
- * حسب kind (publicKind). onClick يفتح نافذة المعاينة (StrategyLightbox)؛ الرابط
+ * حسب kind (publicKind). onClick يفتح نافذة العرض الموحّدة (EvidenceViewer)؛ الرابط
  * العادي (غير يوتيوب) يفتح في تبويب جديد مباشرة دون معاينة. */
-/** عنصر معاينة واحد — يشترك فيه previewFile (نافذة البند) وstratPreview
- * (البطاقات). url غائب للملاحظة فقط. */
-type PreviewItem = { kind: PublicKind; name: string; url?: string; description?: string | null };
-
-function EvidenceThumb({ e, onClick }: { e: PreviewItem; onClick?: (e: PreviewItem) => void }) {
+function EvidenceThumb({ e, onClick }: { e: ViewerItem; onClick?: (e: ViewerItem) => void }) {
   const handleClick = (ev: React.MouseEvent) => {
     if (!onClick) return;
     ev.stopPropagation();
@@ -312,6 +277,7 @@ function EvidenceThumb({ e, onClick }: { e: PreviewItem; onClick?: (e: PreviewIt
       <img
         src={e.url}
         alt={e.name}
+        loading="lazy"
         onClick={onClick ? handleClick : undefined}
         className={`w-full h-[88px] object-cover rounded-xl border border-white/10 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
       />
@@ -322,7 +288,7 @@ function EvidenceThumb({ e, onClick }: { e: PreviewItem; onClick?: (e: PreviewIt
   if (ytId) {
     return (
       <div onClick={onClick ? handleClick : undefined} className={`block relative group ${onClick ? 'cursor-pointer' : ''}`}>
-        <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt={e.name} className="w-full h-[88px] object-cover rounded-xl border border-white/10" />
+        <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt={e.name} loading="lazy" className="w-full h-[88px] object-cover rounded-xl border border-white/10" />
         <span className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors rounded-xl">
           <i className="ti ti-player-play-filled text-white text-[26px] drop-shadow-lg"></i>
         </span>
@@ -369,7 +335,7 @@ function EvidenceThumb({ e, onClick }: { e: PreviewItem; onClick?: (e: PreviewIt
 /** مجموعات شواهد بعنوان صغير لكل مجموعة (مؤشر، أو «بلا مؤشر»، أو «شواهد
  * أخرى») — نفس كتلة المجموعة التي كانت في بطاقة بند 5، تُستعمل الآن في بندي
  * 5/10 و«شواهد أخرى» في بطاقة الاستراتيجيات. */
-function IndicatorGroups({ groups, onPreview }: { groups: EvidenceGroup[]; onPreview: (e: PreviewItem) => void }) {
+function IndicatorGroups({ groups, onPreview }: { groups: EvidenceGroup[]; onPreview: (e: ViewerItem) => void }) {
   return (
     <div className="flex flex-col gap-5">
       {groups.map(g => (
@@ -388,102 +354,6 @@ function IndicatorGroups({ groups, onPreview }: { groups: EvidenceGroup[]; onPre
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-/** مشغّل يوتيوب المضمّن — مشترك بين StrategyLightbox ونافذة معاينة البند. */
-function YouTubeEmbed({ ytId, title }: { ytId: string; title: string }) {
-  return (
-    <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl">
-      <iframe
-        src={`https://www.youtube-nocookie.com/embed/${ytId}`}
-        className="w-full h-full border-none"
-        title={title}
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowFullScreen
-      />
-    </div>
-  );
-}
-
-/** نافذة معاينة مصغّرة (lightbox) لأدلة البطاقات (الاستراتيجيات، الفروق
- * الفردية، بندا 5/10) — منفصلة عن previewFile الخاص بنافذة البند.
- * ترتيب الفحص يطابق EvidenceThumb: صورة → يوتيوب → PDF → فيديو → صوت → ملاحظة. */
-function StrategyLightbox({ item, onClose }: { item: PreviewItem | null; onClose: () => void }) {
-  if (!item) return null;
-  const url = item.url ?? '';
-  const ytId = item.kind !== 'img' && url ? extractYouTubeId(url) : null;
-  const ext = extensionFromUrl(url);
-  const isPdf = ext === 'pdf';
-  const isOfficeDoc = OFFICE_EXTENSIONS.includes(ext);
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative bg-[#0c1c12]/95 border border-[var(--gold)]/25 w-full max-w-3xl rounded-[24px] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden" style={{ animation: 'jumpIn .4s var(--sp) both' }}>
-        <div className="flex items-center justify-between py-4 px-6 border-b border-white/10 bg-black/20">
-          <h3 className="text-[15px] font-black text-white truncate max-w-[280px] sm:max-w-[500px]" dir="rtl">{item.name}</h3>
-          <button
-            className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[var(--text3)] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 transition-all cursor-pointer"
-            onClick={onClose}
-          >
-            <i className="ti ti-x text-[18px]"></i>
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-auto p-6 bg-black/10 flex items-center justify-center">
-          {item.kind === 'img' && (
-            <img src={url} alt={item.name} className="max-w-full max-h-[65vh] object-contain rounded-2xl shadow-2xl" />
-          )}
-
-          {item.kind !== 'img' && ytId && <YouTubeEmbed ytId={ytId} title={item.name} />}
-
-          {item.kind === 'pdf' && !ytId && isPdf && (
-            <PdfPreview url={url} name={item.name} className="w-full h-[65vh]" />
-          )}
-
-          {item.kind === 'pdf' && !ytId && !isPdf && isOfficeDoc && (
-            <div className="text-center p-8 max-w-md bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md shadow-2xl">
-              <div className="w-16 h-16 rounded-2xl bg-[#c4b5fd]/15 text-[#c4b5fd] flex items-center justify-center text-[34px] mx-auto mb-5 border border-[#c4b5fd]/20 animate-pulse">
-                <i className="ti ti-file-text"></i>
-              </div>
-              <h4 className="text-[17px] font-black text-white mb-2.5">معاينة هذا المستند غير متوفرة مباشرة</h4>
-              <p className="text-[13px] text-[var(--text4)] leading-relaxed mb-6">
-                بما أن هذا الملف مستند ميكروسوفت (Word/Excel)، فيرجى الضغط على زر تحميل أدناه لاستعراض كامل محتوياته على جهازك بكل يسر وسهولة.
-              </p>
-              <a
-                href={url}
-                download={item.name}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 py-3.5 px-7 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[14px] font-black transition-all duration-300 hover:-translate-y-[3px] hover:shadow-[0_6px_20px_rgba(42,122,68,.5)] no-underline cursor-pointer border-none"
-              >
-                <i className="ti ti-download text-[18px]"></i>
-                تحميل مستند الشاهد
-              </a>
-            </div>
-          )}
-
-          {item.kind === 'pdf' && !ytId && !isPdf && !isOfficeDoc && (
-            <PdfPreviewFallback url={url} name={item.name} />
-          )}
-
-          {item.kind === 'vid' && !ytId && (
-            <video src={url} controls className="max-w-full max-h-[65vh] rounded-2xl" />
-          )}
-
-          {item.kind === 'audio' && url && (
-            <audio src={url} controls className="w-full max-w-md" />
-          )}
-
-          {item.kind === 'note' && (
-            item.description
-              ? <p className="w-full text-[14px] text-[var(--text2)] leading-relaxed whitespace-pre-line" dir="rtl">{item.description}</p>
-              : <p className="w-full text-[14px] text-[var(--t3)]" dir="rtl">لا يوجد وصف</p>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
@@ -576,7 +446,7 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
 
 const NO_CUSTOM_INDICATORS: PublicCustomIndicator[] = [];
 
-export default function Public({ state, sections: allSections, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, sectionSummaries, strategyNames = {}, customIndicators = NO_CUSTOM_INDICATORS }: PublicProps) {
+export default function Public({ state, sections: allSections, continuity, evidence, reportMeta, resultsAnalysis, frozenResultsComparisons, sectionSummaries, strategyNames = {}, customIndicators = NO_CUSTOM_INDICATORS, ownerPreview = false }: PublicProps) {
   // مخصص useSections مستبعد دائماً: يحمّل مخصص المعلم المسجّل، وهو قد يكون
   // زائراً يفتح صفحة غيره. مخصص صاحب الصفحة يأتي من customIndicators فقط،
   // ويُلحَق بعد الرسمية في قسمه بلا أي تمييز بصري.
@@ -593,14 +463,14 @@ export default function Public({ state, sections: allSections, continuity, evide
   const [printDate, setPrintDate] = useState('');
   const [copied, setCopied] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
-  const [previewFile, setPreviewFile] = useState<PreviewItem | null>(null);
+  // نافذة العرض الموحّدة — نافذة البند، والبطاقات، و«أبرز إنجاز»، والمعرض
+  const [viewerItem, setViewerItem] = useState<ViewerItem | null>(null);
 
   // حالة بطاقة "استراتيجيات التدريس المتنوعة" فقط — طي/فتح القسم كاملاً
-  // (مطوي افتراضياً)، طي/فتح كل استراتيجية على حدة (مفتوحة افتراضياً، يُحفظ
-  // اسمها في closedStrats فقط عند طيّها يدوياً)، ومعاينة مصغّرات الأدلة.
+  // (مطوي افتراضياً)، وطي/فتح كل استراتيجية على حدة (مفتوحة افتراضياً، يُحفظ
+  // اسمها في closedStrats فقط عند طيّها يدوياً).
   const [stratCollapsed, setStratCollapsed] = useState(true);
   const [closedStrats, setClosedStrats] = useState<Set<string>>(new Set());
-  const [stratPreview, setStratPreview] = useState<PreviewItem | null>(null);
 
   // بطاقة "مراعاة الفروق الفردية بين المتعلمين" — طي/فتح مستقل عن بطاقة
   // الاستراتيجيات أعلاه (مطوية افتراضياً، نفس مبدأ stratCollapsed).
@@ -629,6 +499,35 @@ export default function Public({ state, sections: allSections, continuity, evide
     });
     return map;
   }, [evidence]);
+
+  const sectionName = (id: number | null) => (id == null ? undefined : sections.find(s => s.id === id)?.ttl);
+
+  // «أبرز إنجاز»: المعرّف محسوب في get_shared_portfolio (أو محلياً في معاينة
+  // المالك)، ويُطابَق مع الشواهد المعروضة. غير موجود ⇐ لا بطاقة. لقطة ?report=
+  // لا تحمل المعرّف أصلاً، فلا بطاقة فيها.
+  const topId = state.top_achievement_evidence_id ?? null;
+  const topEvidence = useMemo(
+    () => (topId ? (evidence ?? []).find(e => e.id === topId && e.section_id != null) ?? null : null),
+    [evidence, topId]
+  );
+  const topIndicatorName = topEvidence
+    ? sections.find(s => s.id === topEvidence.section_id)?.indicators.find(ind => ind.id === topEvidence.indicator_id)?.name_ar
+    : undefined;
+
+  const galleryItems = useMemo(() => pickGalleryItems(evidence ?? [], topId), [evidence, topId]);
+
+  /** شاهد من evidence ⇐ عنصر نافذة العرض، بسطر «البند · التاريخ». الرابط
+   *  العادي (غير يوتيوب) يُفتح في تبويب جديد كما في نافذة البند. */
+  const openEvidence = (e: SupabaseEvidence) => {
+    if (publicKind(e) === 'link' && e.link_url && !extractYouTubeId(e.link_url)) {
+      window.open(e.link_url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setViewerItem({
+    ...toPublicRow(e),
+      meta: [sectionName(e.section_id), formatDate(e.created_at, 'long')].filter(Boolean).join(' · '),
+    });
+  };
 
   // مرجع "اليوم" لشبكة الاستمرارية — بداية فترة التقرير في وضع ?report=، وإلا
   // اليوم الفعلي (بلا أي تغيير عن المسار الحي — undefined يجعل ContinuityGrid
@@ -821,18 +720,6 @@ export default function Public({ state, sections: allSections, continuity, evide
   // نفس sectionHasEvidence المستخدمة أعلاه لتصنيف activeSecs/emptySecs.
   const showEmptyMessage = !selectedSecData || !sectionHasEvidence(selectedSecData);
 
-  // previewFile.kind مشتق من evidence_type (publicKind) — ملف 'pdf' يشمل PDF
-  // وOffice معاً، فيُختار فرعه من الامتداد الحقيقي في previewFile.url.
-  // الرابط لا يصل هنا (يُفتح في تبويب جديد)، والملاحظة بلا url.
-  const previewUrl = previewFile?.url ?? '';
-  const previewExt = previewFile?.kind === 'pdf' ? extensionFromUrl(previewUrl) : '';
-  const previewIsPdf = previewExt === 'pdf';
-  const previewIsOfficeDoc = OFFICE_EXTENSIONS.includes(previewExt);
-  // حارس أخير: ملف 'pdf' بامتداد غير pdf وغير Office ⇐ بطاقة فشل عامة بدل نافذة فارغة.
-  const previewIsUnknownFile = previewFile?.kind === 'pdf' && !previewIsPdf && !previewIsOfficeDoc;
-  // رابط يوتيوب — الرابط الوحيد الذي يصل هنا (غيره يُفتح في تبويب جديد)
-  const previewYtId = previewFile?.kind === 'link' && previewUrl ? extractYouTubeId(previewUrl) : null;
-
   return (
     <div>
       <div id="public-portfolio-content" className="bg-[#060f0a] min-h-screen">
@@ -869,6 +756,28 @@ export default function Public({ state, sections: allSections, continuity, evide
           onExportPdf={exportToPDF}
           onShare={handleOpenShare}
         />
+
+        {/* «أبرز إنجاز» ثم «لمحات» — بعد الرأس مباشرة كما في النموذج، وبعرضه (1100px) */}
+        {(topEvidence || (ownerPreview && !reportMeta)) && (
+          <div className="max-w-[1100px] mx-auto px-4 lg:px-8 pt-6">
+            {topEvidence ? (
+              <TopAchievementCard
+                evidence={topEvidence}
+                source={state.top_achievement_source}
+                sectionName={sectionName(topEvidence.section_id)}
+                indicatorName={topIndicatorName}
+                onOpen={() => openEvidence(topEvidence)}
+              />
+            ) : (
+              <TopAchievementPlaceholder />
+            )}
+          </div>
+        )}
+        {galleryItems.length > 0 && (
+          <div className="print:hidden max-w-[1100px] mx-auto px-4 lg:px-8 pt-6">
+            <PublicGallery items={galleryItems} sectionName={sectionName} onOpen={openEvidence} />
+          </div>
+        )}
 
         <div className="max-w-[1000px] mx-auto py-10 px-4 sm:px-7">
 
@@ -986,7 +895,7 @@ export default function Public({ state, sections: allSections, continuity, evide
                             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                               {group.evidence.map(e => (
                                 <div key={e.id}>
-                                  <EvidenceThumb e={toPublicRow(e)} onClick={setStratPreview} />
+                                  <EvidenceThumb e={toPublicRow(e)} onClick={setViewerItem} />
                                 </div>
                               ))}
                             </div>
@@ -995,7 +904,7 @@ export default function Public({ state, sections: allSections, continuity, evide
                       );
                     })}
                     {otherStratEvs.length > 0 && (
-                      <IndicatorGroups groups={[{ key: 'other', label: 'شواهد أخرى', evs: otherStratEvs }]} onPreview={setStratPreview} />
+                      <IndicatorGroups groups={[{ key: 'other', label: 'شواهد أخرى', evs: otherStratEvs }]} onPreview={setViewerItem} />
                     )}
                   </div>
                 )}
@@ -1036,7 +945,7 @@ export default function Public({ state, sections: allSections, continuity, evide
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                     {indivDiffEvs.map(e => (
                       <div key={e.id}>
-                        <EvidenceThumb e={e} onClick={setStratPreview} />
+                        <EvidenceThumb e={e} onClick={setViewerItem} />
                       </div>
                     ))}
                   </div>
@@ -1092,7 +1001,7 @@ export default function Public({ state, sections: allSections, continuity, evide
 
               {analysisGroups.length > 0 && (
                 <div className={resultsAnalysis ? 'mt-5' : ''}>
-                  <IndicatorGroups groups={analysisGroups} onPreview={setStratPreview} />
+                  <IndicatorGroups groups={analysisGroups} onPreview={setViewerItem} />
                 </div>
               )}
             </div>
@@ -1117,7 +1026,7 @@ export default function Public({ state, sections: allSections, continuity, evide
                   <p className="text-[var(--text3)] text-[13.5px]">لا توجد شواهد موثّقة بعد لهذا البند</p>
                 </div>
               ) : (
-                <IndicatorGroups groups={improvementGroups} onPreview={setStratPreview} />
+                <IndicatorGroups groups={improvementGroups} onPreview={setViewerItem} />
               )}
             </div>
           )}
@@ -1231,7 +1140,7 @@ export default function Public({ state, sections: allSections, continuity, evide
                           className={`flex items-center gap-3 py-3 px-4 bg-[var(--surf2)] rounded-xl border border-[var(--line)] transition-all duration-200 ${clickable ? 'cursor-pointer hover:border-[var(--em7)]/40 hover:bg-[var(--surf3)] hover:-translate-y-0.5' : ''}`}
                           onClick={() => {
                             if (isLink) window.open(e.url, '_blank', 'noopener,noreferrer');
-                            else if (clickable) setPreviewFile(e);
+                            else if (clickable) setViewerItem({ ...e, meta: `${e.sub} · ${e.date}` });
                           }}
                           title={isLink ? 'انقر لفتح الرابط' : clickable ? 'انقر لمعاينة الدليل فوراً' : ''}
                         >
@@ -1273,117 +1182,7 @@ export default function Public({ state, sections: allSections, continuity, evide
         </div>
       )}
 
-      {previewFile && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setPreviewFile(null)}></div>
-          <div className="relative bg-[#0c1c12]/95 border border-[var(--em7)]/25 w-full max-w-4xl rounded-[28px] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden" style={{ animation: 'jumpIn .4s var(--sp) both' }}>
-
-            <div className="absolute -top-px right-[15%] left-[15%] h-px bg-gradient-to-r from-transparent via-[var(--em7)] via-[var(--gold)] via-[var(--em7)] to-transparent opacity-60"></div>
-
-            <div className="flex items-center justify-between py-4.5 px-7 border-b border-white/10 bg-black/20 relative z-10">
-              <div className="flex items-center gap-3">
-                <div className={`w-[42px] h-[42px] rounded-xl flex items-center justify-center text-[22px] ${EVT_CONFIG[previewFile.kind].cls}`}>
-                  <i className={`ti ${EVT_CONFIG[previewFile.kind].icon}`}></i>
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-[16px] font-black text-white truncate max-w-[280px] sm:max-w-[450px]" dir="rtl">{previewFile.name}</h3>
-                  <p className="text-[12px] text-[var(--text4)] mt-0.5">معاينة الدليل الرقمي الآمن</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                {previewFile.url && previewFile.kind !== 'link' && (
-                  <a
-                    href={previewFile.url}
-                    download={previewFile.name}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="py-2.5 px-4.5 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[13px] font-bold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_4px_16px_rgba(42,122,68,.4)] flex items-center gap-2 no-underline cursor-pointer border-none"
-                    title="تحميل الملف للجهاز"
-                  >
-                    <i className="ti ti-download text-[16px]"></i>
-                    <span>تحميل</span>
-                  </a>
-                )}
-
-                <button
-                  className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[var(--text3)] hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 transition-all cursor-pointer"
-                  onClick={() => setPreviewFile(null)}
-                >
-                  <i className="ti ti-x text-[18px]"></i>
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-auto p-6 bg-black/10 flex items-center justify-center">
-              {previewFile.kind === 'img' && (
-                <div className="relative group max-w-full max-h-[68vh] overflow-hidden rounded-2xl shadow-2xl">
-                  <img
-                    src={previewUrl}
-                    alt={previewFile.name}
-                    className="max-w-full max-h-[68vh] object-contain rounded-2xl"
-                  />
-                </div>
-              )}
-
-              {previewIsPdf && (
-                <PdfPreview url={previewUrl} name={previewFile.name} className="w-full h-[68vh]" />
-              )}
-
-              {previewFile.kind === 'vid' && (
-                <div className="w-full max-h-[68vh] rounded-2xl overflow-hidden shadow-2xl bg-black flex items-center justify-center">
-                  <video
-                    src={previewUrl}
-                    controls
-                    className="max-w-full max-h-[68vh] rounded-2xl"
-                  />
-                </div>
-              )}
-
-              {previewYtId && <YouTubeEmbed ytId={previewYtId} title={previewFile.name} />}
-
-              {previewFile.kind === 'audio' && previewUrl && (
-                <audio src={previewUrl} controls className="w-full max-w-md" />
-              )}
-
-              {previewFile.kind === 'note' && (
-                previewFile.description
-                  ? <p className="w-full text-[14px] text-[var(--text2)] leading-relaxed whitespace-pre-line" dir="rtl">{previewFile.description}</p>
-                  : <p className="w-full text-[14px] text-[var(--t3)]" dir="rtl">لا يوجد وصف</p>
-              )}
-
-              {previewIsOfficeDoc && (
-                <div className="text-center p-8 max-w-md bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md shadow-2xl">
-                  <div className="w-16 h-16 rounded-2xl bg-[#c4b5fd]/15 text-[#c4b5fd] flex items-center justify-center text-[34px] mx-auto mb-5 border border-[#c4b5fd]/20 animate-pulse">
-                    <i className="ti ti-file-text"></i>
-                  </div>
-                  <h4 className="text-[17px] font-black text-white mb-2.5">معاينة هذا المستند غير متوفرة مباشرة</h4>
-                  <p className="text-[13px] text-[var(--text4)] leading-relaxed mb-6">
-                    بما أن هذا الملف مستند ميكروسوفت (Word/Excel)، فيرجى الضغط على زر تحميل أدناه لاستعراض كامل محتوياته على جهازك بكل يسر وسهولة.
-                  </p>
-                  <a
-                    href={previewUrl}
-                    download={previewFile.name}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 py-3.5 px-7 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[14px] font-black transition-all duration-300 hover:-translate-y-[3px] hover:shadow-[0_6px_20px_rgba(42,122,68,.5)] no-underline cursor-pointer border-none"
-                  >
-                    <i className="ti ti-download text-[18px]"></i>
-                    تحميل مستند الشاهد
-                  </a>
-                </div>
-              )}
-
-              {previewIsUnknownFile && (
-                <PdfPreviewFallback url={previewUrl} name={previewFile.name} />
-              )}
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      <StrategyLightbox item={stratPreview} onClose={() => setStratPreview(null)} />
+      <EvidenceViewer item={viewerItem} onClose={() => setViewerItem(null)} />
     </div>
   );
 }

@@ -99,7 +99,7 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
       role="dialog"
       aria-modal="true"
       aria-labelledby="evidence-viewer-title"
-      className="fixed inset-0 z-[70] bg-black/90 flex flex-col overflow-y-auto"
+      className="fixed inset-0 z-[450] bg-black/90 flex flex-col overflow-y-auto"
       onClick={onClose}
     >
       <div className="flex items-center gap-3 px-4 py-3" onClick={e => e.stopPropagation()}>

@@ -1,18 +1,26 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import type { ContinuityData, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
-import { getCompletionColor, formatDate } from '../utils';
+import { formatDate } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { PublicCustomIndicator } from '../hooks/usePublicCustomIndicators';
-import { findIndicatorByName, toEvRow } from '../indicators';
-import EvidenceViewer, { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from './EvidenceViewer';
+import { findIndicatorByName } from '../indicators';
+import EvidenceViewer, { extractYouTubeId, publicKind, type ViewerItem } from './EvidenceViewer';
 import TopAchievementCard, { TopAchievementPlaceholder } from './TopAchievementCard';
 import PublicGallery, { pickGalleryItems } from './PublicGallery';
 import PublicHero from './PublicHero';
+import PublicContinuity from './PublicContinuity';
+import {
+  toPublicRow, SectionsList, SectionSheet, CoreSectionBody,
+  StrategiesContent, IndivDiffContent, AnalysisContent, ImprovementContent,
+  type AreaItem, type EvidenceGroup, type OpenSec, type PublicRow, type SpecialKey,
+} from './PublicSections';
+import { sectionLevel, nEv, type Level } from './SectionView';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
-import { groupPublicAnalysesBySubject, buildPublicComparisonSeries, comparisonDelta } from './ResultsAnalysis/logic';
+import { groupPublicAnalysesBySubject, buildPublicComparisonSeries } from './ResultsAnalysis/logic';
 import './Public.print.css';
 
 interface PublicProps {
@@ -64,21 +72,6 @@ interface PublicProps {
   ownerPreview?: boolean;
 }
 
-/** اسم الدومين فقط (بدون www.) لعرضه بجانب أيقونة رابط عام غير معروف */
-function getDomain(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
-}
-
-/** صف عرض شاهد: صف المؤشرات المعتاد + نوع العرض العام والوصف (لمعاينة الملاحظة). */
-function toPublicRow(e: SupabaseEvidence) {
-  return { ...toEvRow(e), kind: publicKind(e), description: e.description };
-}
-type PublicRow = ReturnType<typeof toPublicRow>;
-
 /** شواهد قسم مجمّعة حسب مؤشراته (بترتيب indicators، أي weight ثم المخصص)،
  *  المؤشر بلا شواهد لا يظهر. orphans: شاهد بلا indicator_id أو بمؤشر ليس من
  *  مؤشرات القسم — يُعرض في مجموعة أخيرة «بلا مؤشر» ولا يدخل أي نسبة. */
@@ -93,8 +86,6 @@ function groupByIndicator(evs: SupabaseEvidence[], indicators: SectionIndicator[
 
 const NO_INDICATOR_LABEL = 'بلا مؤشر';
 
-type EvidenceGroup = { key: string; label: string; evs: PublicRow[] };
-
 /** groupByIndicator بشكل قائمة عرض: مجموعة لكل مؤشر ثم «بلا مؤشر» إن وُجد. */
 function toGroupList({ groups, orphans }: ReturnType<typeof groupByIndicator>): EvidenceGroup[] {
   const list = groups.map(g => ({ key: g.indicator.id, label: g.indicator.name_ar, evs: g.evs.map(toPublicRow) }));
@@ -102,346 +93,25 @@ function toGroupList({ groups, orphans }: ReturnType<typeof groupByIndicator>): 
   return list;
 }
 
-const EVT_CONFIG: Record<string, {icon: string, cls: string, label: string}> = {
-  pdf: {icon: 'ti-file-type-pdf', cls: 'bg-gradient-to-br from-[#b91c1c]/20 to-[#b91c1c]/10 text-[#f87171] border border-[#b91c1c]/20', label: 'PDF'},
-  img: {icon: 'ti-photo', cls: 'bg-gradient-to-br from-[#1d4ed8]/20 to-[#1d4ed8]/10 text-[#93c5fd] border border-[#1d4ed8]/20', label: 'صورة'},
-  doc: {icon: 'ti-file-text', cls: 'bg-gradient-to-br from-[#6d28d9]/20 to-[#6d28d9]/10 text-[#c4b5fd] border border-[#6d28d9]/20', label: 'مستند'},
-  vid: {icon: 'ti-video', cls: 'bg-gradient-to-br from-[#b45309]/20 to-[#b45309]/10 text-[#fcd34d] border border-[#b45309]/20', label: 'فيديو'},
-  audio: {icon: 'ti-microphone', cls: 'bg-gradient-to-br from-[#b45309]/20 to-[#b45309]/10 text-[#fcd34d] border border-[#b45309]/20', label: 'تسجيل صوتي'},
-  link: {icon: 'ti-link', cls: 'bg-gradient-to-br from-[#6d28d9]/20 to-[#6d28d9]/10 text-[#c4b5fd] border border-[#6d28d9]/20', label: 'رابط'},
-  note: {icon: 'ti-notes', cls: 'bg-gradient-to-br from-[#6d28d9]/20 to-[#6d28d9]/10 text-[#c4b5fd] border border-[#6d28d9]/20', label: 'ملاحظة'}
-};
-
-type SectionWithPct = SectionData & {
+type SectionWithLevel = SectionData & {
   fullName: string;
   evCount: number;
   /** orphan: شاهد بلا مؤشر معروف في القسم (sub = «بلا مؤشر») — يُعرض ولا يُحسب في النسبة */
   evs: (PublicRow & { sub: string; orphan: boolean })[];
-  pct: number;
+  /** مستوى التغطية — sectionLevel (lvl() في النموذج) من المؤشرات الرسمية فقط */
+  level: Level;
 };
 
-
-const MONTH_ABBR: Record<number, string> = {
-  1: 'ينا', 2: 'فبر', 3: 'مار', 4: 'أبر', 5: 'ماي', 6: 'يون',
-  7: 'يول', 8: 'أغس', 9: 'سبت', 10: 'أكت', 11: 'نوف', 12: 'ديس',
-};
-const MONTH_FULL: Record<number, string> = {
-  1: 'يناير', 2: 'فبراير', 3: 'مارس', 4: 'أبريل', 5: 'مايو', 6: 'يونيو',
-  7: 'يوليو', 8: 'أغسطس', 9: 'سبتمبر', 10: 'أكتوبر', 11: 'نوفمبر', 12: 'ديسمبر',
-};
-
-/** يبني 12 شهراً بالترتيب بدءاً من yearStartMonth للسنة الدراسية المرجعية —
- * نفس منطق academicStartYear في useMonthlyProgress.ts، معاد محلياً هنا لأن
- * تلك النسخة مرتبطة بحالة قابلة للتعديل خاصة بلوحة التحكم (recordEvidence/
- * removeEvidence) لا حاجة لها في العرض العام للقراءة فقط.
- * referenceDate: افتراضياً "اليوم" (مسار ?share= الحي، بلا أي تغيير)؛ في وضع
- * تقرير الحصاد الفصلي (?report=) يُمرَّر بداية الفترة نفسها بدل "اليوم"، حتى
- * لا تُبنى شبكة سنة دراسية غير متعلقة بالتقرير عند فتح رابط قديم لاحقاً. */
-function buildAcademicMonths(yearStartMonth: number, referenceDate: Date = new Date()): { year: number; month: number }[] {
-  const currentYear = referenceDate.getFullYear();
-  const currentMonth = referenceDate.getMonth() + 1;
-  const startYear = currentMonth >= yearStartMonth ? currentYear : currentYear - 1;
-  const startFlat = startYear * 12 + (yearStartMonth - 1);
-
-  return Array.from({ length: 12 }, (_, i) => {
-    const flat = startFlat + i;
-    return { year: Math.floor(flat / 12), month: (flat % 12) + 1 };
-  });
-}
-
-/** شبكة "الاستمرارية عبر العام الدراسي" — 12 مربعاً بترتيب السنة الدراسية،
- * بثلاث حالات بصرية: نشط (توثيق فعلي)، مضى بلا توثيق، ومستقبلي لم يحن بعد
- * (منقّط بلا خلفية) حتى لا يُقرأ كإخفاق.
- * referenceDate: انظر تعليق buildAcademicMonths — نفس المرجع يُستخدم هنا
- * لتحديد الخلايا "المستقبلية" بالنسبة لفترة التقرير، لا بالنسبة لتاريخ فتح الرابط. */
-function ContinuityGrid({ continuity, referenceDate = new Date() }: { continuity: ContinuityData; referenceDate?: Date }) {
-  const months = buildAcademicMonths(continuity.yearStartMonth, referenceDate);
-  const activeSet = new Set(continuity.activeMonths.map(m => `${m.year}-${m.month}`));
-
-  const currentFlat = referenceDate.getFullYear() * 12 + (referenceDate.getMonth() + 1);
-
-  let activeCount = 0;
-  const cells = months.map(m => {
-    const flat = m.year * 12 + m.month;
-    const isFuture = flat > currentFlat;
-    const isActive = !isFuture && activeSet.has(`${m.year}-${m.month}`);
-    if (isActive) activeCount++;
-    return { ...m, isFuture, isActive };
-  });
-
-  return (
-    <div className="print-card mb-8 bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line)] shadow-lg p-6 sm:p-8">
-      <h2 className="text-[15px] font-bold text-[var(--text3)] flex items-center gap-2 mb-4">
-        <i className="ti ti-calendar-stats text-[var(--em8)]"></i> الاستمرارية عبر العام الدراسي
-      </h2>
-      <div className="grid grid-cols-12 gap-1.5 sm:gap-2">
-        {cells.map((c, i) => (
-          <div
-            key={i}
-            title={`${MONTH_FULL[c.month]} ${c.year} — ${c.isFuture ? 'لم يحن بعد' : c.isActive ? 'تم التوثيق' : 'بلا توثيق'}`}
-            className={`aspect-square rounded-lg flex items-center justify-center text-[9px] sm:text-[11px] font-bold transition-colors ${
-              c.isFuture
-                ? 'border border-dashed border-[var(--line)] text-[var(--text4)]/50 bg-transparent'
-                : c.isActive
-                ? 'bg-[var(--em7)]/20 border border-[var(--em7)]/50 text-[var(--em8)]'
-                : 'bg-white/5 border border-[var(--line)] text-[var(--text4)]'
-            }`}
-          >
-            {MONTH_ABBR[c.month]}
-          </div>
-        ))}
-      </div>
-      <p className="mt-3 text-[12.5px] text-[var(--text3)]">
-        نشط في <strong className="text-white">{activeCount}</strong> من 12 شهراً
-      </p>
-    </div>
-  );
-}
-
-/** بطاقة قسم واحدة — تُستخدم لكل من الأقسام النشطة (المستوى 2) والأقسام
- * الفارغة الموسّعة (المستوى 3)، حتى لا يتكرر تصميم البطاقة في أكثر من مكان.
- * اللون مأخوذ بالكامل من getCompletionColor(pct) في utils.ts. */
-const SECTION_SUMMARY_PREVIEW_MAX = 70;
-
-function SectionCard({ sec, onClick, style, summary }: { sec: SectionWithPct; onClick: () => void; style?: React.CSSProperties; summary?: string | null }) {
-  const color = getCompletionColor(sec.pct);
-  // العمق التراكمي = أدلة المؤشرات المعروفة ÷ عدد المؤشرات المغطاة («بلا مؤشر» لا يُعدّ مؤشراً)
-  const indicatorEvs = sec.evs.filter(e => !e.orphan);
-  const filledSubsCount = new Set(indicatorEvs.map(e => e.sub)).size;
-  const depth = filledSubsCount > 0 ? indicatorEvs.length / filledSubsCount : 0;
-  const hasBadges = sec.evCount > 3;
-  return (
-    <div
-      className={`print-card group bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl shadow-lg cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(0,0,0,.3)] relative overflow-hidden px-5 pt-5 border ${hasBadges ? 'pb-10' : 'pb-5'}`}
-      style={{ borderColor: 'var(--line)', ...style }}
-      onClick={onClick}
-      title={depth > 1 ? `متوسط ${depth.toFixed(1)} دليل لكل مؤشر مغطى` : undefined}
-    >
-      {hasBadges && (
-        <div className="print-decor absolute bottom-3 left-3 z-20 flex flex-row items-center gap-1.5">
-          {/* شارة "تجاوز الهدف" — الرقم المطلق للأدلة التراكمية (لا "+N") لأن
-              الجمهور الخارجي لا يعرف سقف الهدف الشهري الداخلي؛ تظهر فقط إن > 3 */}
-          {sec.evCount > 3 && (
-            <div className="flex items-center justify-center gap-[1px] rounded-full text-[var(--gold)] bg-[var(--gold)]/15 border border-[var(--gold)]/30 shrink-0" style={{ width: 24, height: 24 }}>
-              <i className="ti ti-bolt text-[9px]"></i>
-              <span className="text-[9px] font-black leading-none">{sec.evCount}</span>
-            </div>
-          )}
-        </div>
-      )}
-      <div className="print-decor absolute top-0 left-0 w-full h-[3px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundColor: color }}></div>
-
-      <div className="flex items-center gap-4 relative z-10">
-        <div
-          className={`print-decor rounded-2xl flex items-center justify-center border shrink-0 transition-all duration-300 w-12 h-12 text-[24px]`}
-          style={{ color, borderColor: `${color}40`, background: `${color}1a` }}
-        >
-          <i className={`ti ${sec.icon}`}></i>
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className={`font-bold text-white leading-tight overflow-hidden text-ellipsis whitespace-nowrap text-[15px]`}>{sec.fullName}</h3>
-          <p className="text-[12.5px] text-[var(--text4)] mt-2 flex items-baseline gap-1.5">
-            <span>{sec.isStrat ? 'الاستراتيجيات المضافة' : 'الأدلة الموثقة'}</span>
-            <strong className="text-white font-black" style={{ fontSize: 19 }}>{sec.evCount}</strong>
-          </p>
-          {/* معاينة ملخص القسم — سطر واحد مقتطع، عند وجود ملخص فعلي */}
-          {summary && (
-            <p className="text-[11.5px] text-[var(--em8)] mt-1.5 flex items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              <i className="ti ti-sparkles text-[11px] shrink-0" />
-              <span className="overflow-hidden text-ellipsis whitespace-nowrap">
-                {summary.length > SECTION_SUMMARY_PREVIEW_MAX
-                  ? `${summary.slice(0, SECTION_SUMMARY_PREVIEW_MAX)}…`
-                  : summary}
-              </span>
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** مصغّرة دليل واحد ضمن بطاقات الاستراتيجيات والفروق الفردية وبندي 5/10 —
- * صورة فعلية / مصغّرة يوتيوب / أيقونة ملف+اسم / أيقونة رابط+دومين / ملاحظة،
- * حسب kind (publicKind). onClick يفتح نافذة العرض الموحّدة (EvidenceViewer)؛ الرابط
- * العادي (غير يوتيوب) يفتح في تبويب جديد مباشرة دون معاينة. */
-function EvidenceThumb({ e, onClick }: { e: ViewerItem; onClick?: (e: ViewerItem) => void }) {
-  const handleClick = (ev: React.MouseEvent) => {
-    if (!onClick) return;
-    ev.stopPropagation();
-    onClick(e);
-  };
-
-  if (e.kind === 'img' && e.url) {
-    return (
-      <img
-        src={e.url}
-        alt={e.name}
-        loading="lazy"
-        onClick={onClick ? handleClick : undefined}
-        className={`w-full h-[88px] object-cover rounded-xl border border-white/10 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-      />
-    );
-  }
-
-  const ytId = e.url ? extractYouTubeId(e.url) : null;
-  if (ytId) {
-    return (
-      <div onClick={onClick ? handleClick : undefined} className={`block relative group ${onClick ? 'cursor-pointer' : ''}`}>
-        <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt={e.name} loading="lazy" className="w-full h-[88px] object-cover rounded-xl border border-white/10" />
-        <span className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors rounded-xl">
-          <i className="ti ti-player-play-filled text-white text-[26px] drop-shadow-lg"></i>
-        </span>
-      </div>
-    );
-  }
-
-  if (e.kind === 'pdf' || e.kind === 'vid' || e.kind === 'audio') {
-    const t = EVT_CONFIG[e.kind];
-    return (
-      <div
-        onClick={e.url && onClick ? handleClick : undefined}
-        className={`flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 ${e.url && onClick ? 'hover:bg-white/10 cursor-pointer' : ''}`}
-      >
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[16px] shrink-0 ${t.cls}`}>
-          <i className={`ti ${t.icon}`}></i>
-        </div>
-        <span className="text-[12px] font-bold text-white truncate">{e.name}</span>
-      </div>
-    );
-  }
-
-  if (e.kind === 'link' && e.url) {
-    return (
-      <a href={e.url} target="_blank" rel="noreferrer" onClick={ev => ev.stopPropagation()} className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-[var(--em8)] hover:bg-white/10 transition-colors">
-        <i className="ti ti-link text-[18px]"></i>
-        <span className="text-[12px] font-bold truncate" dir="ltr">{getDomain(e.url)}</span>
-      </a>
-    );
-  }
-
-  // ملاحظة نصية بلا رابط أو ملف — النقر يعرض العنوان والوصف
-  return (
-    <div
-      onClick={onClick ? handleClick : undefined}
-      className={`flex items-center gap-2 py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-[var(--text3)] ${onClick ? 'hover:bg-white/10 cursor-pointer' : ''}`}
-    >
-      <i className="ti ti-notes text-[18px]"></i>
-      <span className="text-[12px] font-bold truncate">{e.name}</span>
-    </div>
-  );
-}
-
-/** مجموعات شواهد بعنوان صغير لكل مجموعة (مؤشر، أو «بلا مؤشر»، أو «شواهد
- * أخرى») — نفس كتلة المجموعة التي كانت في بطاقة بند 5، تُستعمل الآن في بندي
- * 5/10 و«شواهد أخرى» في بطاقة الاستراتيجيات. */
-function IndicatorGroups({ groups, onPreview }: { groups: EvidenceGroup[]; onPreview: (e: ViewerItem) => void }) {
-  return (
-    <div className="flex flex-col gap-5">
-      {groups.map(g => (
-        <div key={g.key} className="bg-white/5 rounded-2xl p-4 border border-[var(--em7)]/10">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2 h-2 rounded-full bg-[var(--em7)] shrink-0"></div>
-            <span className="text-[14px] font-bold text-white flex-1">{g.label}</span>
-            <span className="text-[11px] font-black text-[var(--em8)] bg-[var(--em7)]/10 px-2 py-0.5 rounded-md">{g.evs.length} شواهد</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {g.evs.map(e => (
-              <div key={e.id}>
-                <EvidenceThumb e={e} onClick={onPreview} />
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** سطر تحليل واحد ببطاقة بند 10 العامة — بلا أي رسم توزيع فئات أو قائمة طلاب
- *  (بيانات داخلية فقط)، فقط شريط مدى (0-100) يوضّح موقع الأدنى/الأعلى، وعلامة
- *  بيضاء لموقع المتوسط. dir="ltr" مقصود ومعزول عن اتجاه الصفحة: شريط رقمي
- *  كهذا يحتاج تموضعاً مطلقاً (left: min%→max%) لا يصح تركه لموضع RTL افتراضي
- *  غامض، وقيم الدرجات تُقرأ تقليدياً من اليسار لليمين بصرف النظر عن اتجاه
- *  النص المحيط بها. */
-function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
-  const clamp = (n: number) => Math.min(100, Math.max(0, n));
-  const minPct = clamp(row.min_score);
-  const maxPct = clamp(row.max_score);
-  const avgPct = clamp(row.average);
-  const metaParts = [row.stage, row.class_section].filter(Boolean) as string[];
-
-  return (
-    <div className="bg-white/5 rounded-2xl p-4 border border-[var(--violet)]/10">
-      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-        <div className="min-w-0">
-          <span className="text-[14px] font-bold text-white">{row.subject}</span>
-          {metaParts.length > 0 && (
-            <span className="text-[12px] text-[var(--text4)] mr-2">{metaParts.join(' · ')}</span>
-          )}
-        </div>
-        <span className="text-[11px] font-black text-[var(--violet2)] bg-[var(--violet)]/10 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
-          {row.total_students} طالب
-        </span>
-      </div>
-
-      <div dir="ltr">
-        <div className="relative h-2 rounded-full bg-white/10">
-          <div
-            className="absolute top-0 h-2 rounded-full bg-[var(--violet)]"
-            style={{ left: `${minPct}%`, width: `${Math.max(1, maxPct - minPct)}%` }}
-          ></div>
-          <div
-            className="absolute top-1/2 w-[3px] h-3.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,.7)] -translate-y-1/2"
-            style={{ left: `${avgPct}%`, marginLeft: '-1.5px' }}
-            title={`المتوسط ${row.average.toFixed(1)}`}
-          ></div>
-        </div>
-        <div className="flex items-center justify-between text-[11px] text-[var(--text4)] font-bold mt-2">
-          <span>أدنى {row.min_score}</span>
-          <span className="text-[var(--violet2)]">متوسط {row.average.toFixed(1)}</span>
-          <span>أعلى {row.max_score}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** عنصر مقارنة تلقائي مصغّر لمادة بها تحليلان فأكثر — Sparkline بآخر نقطتين
- *  فقط (لا رسم زمني كامل، ذاك في لوحة التحكم) + نص الفرق (comparisonDelta،
- *  نفس المنطق ونفس صياغة النص المستخدَمة في ComparisonChart.tsx بلوحة
- *  التحكم). لا يُعرض إطلاقاً لو أقل من نقطتين (comparisonDelta يُرجع null). */
-function ResultComparisonMini({ subject, series }: { subject: string; series: ComparisonPoint[] }) {
-  const delta = comparisonDelta(series);
-  if (!delta) return null;
-
-  const last2 = series.slice(-2);
-  const values = last2.map(p => p.average);
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
-  const norm = (v: number) => (hi === lo ? 0.5 : (v - lo) / (hi - lo));
-  const w = 60, h = 24, pad = 4;
-  const y1 = pad + (1 - norm(values[0])) * (h - pad * 2);
-  const y2 = pad + (1 - norm(values[1])) * (h - pad * 2);
-
-  return (
-    <div className="bg-[var(--violet)]/8 border border-[var(--violet)]/20 rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap">
-      <div className="flex items-center gap-2 min-w-0">
-        <i className="ti ti-chart-line text-[var(--violet2)] text-[16px] shrink-0"></i>
-        <span className="text-[13px] font-bold text-white truncate">مقارنة — {subject}</span>
-      </div>
-      <div className="flex items-center gap-3 shrink-0" dir="ltr">
-        <svg width={w} height={h}>
-          <line x1={pad} y1={y1} x2={w - pad} y2={y2} stroke="var(--violet2)" strokeWidth={2} strokeLinecap="round" />
-          <circle cx={pad} cy={y1} r={2.5} fill="var(--violet2)" />
-          <circle cx={w - pad} cy={y2} r={2.5} fill="#fff" />
-        </svg>
-        <span className={`text-[12px] font-black whitespace-nowrap ${delta.improved ? 'text-[var(--em8)]' : 'text-red-400'}`}>
-          {delta.improved ? 'تحسّن' : 'تراجع'} {delta.improved ? '+' : ''}{delta.diff}
-        </span>
-      </div>
-    </div>
-  );
+/** ينتظر تحميل صور القسم الخاص بالطباعة (بحد أقصى timeoutMs) قبل حوار الطباعة */
+function waitForImages(root: HTMLElement | null, timeoutMs: number): Promise<void> {
+  if (!root) return Promise.resolve();
+  const pending = Array.from(root.querySelectorAll('img')).filter(img => !img.complete);
+  if (pending.length === 0) return Promise.resolve();
+  const all = Promise.all(pending.map(img => new Promise<void>(res => {
+    img.addEventListener('load', () => res(), { once: true });
+    img.addEventListener('error', () => res(), { once: true });
+  })));
+  return Promise.race([all.then(() => undefined), new Promise<void>(res => setTimeout(res, timeoutMs))]);
 }
 
 const NO_CUSTOM_INDICATORS: PublicCustomIndicator[] = [];
@@ -457,31 +127,34 @@ export default function Public({ state, sections: allSections, continuity, evide
     const indicators = [...s.indicators.filter(ind => !ind.isCustom), ...custom];
     return { ...s, indicators, subs: indicators.map(ind => ind.name_ar) };
   }), [allSections, customIndicators]);
-  const [selectedSecId, setSelectedSecId] = useState<number | null>(null);
+  // نافذة البند المفتوحة، والصف الذي فتحها (يعود إليه التركيز عند الإغلاق)
+  const [openSec, setOpenSec] = useState<OpenSec | null>(null);
+  const [openerEl, setOpenerEl] = useState<HTMLElement | null>(null);
   const [showShare, setShowShare] = useState(false);
-  const [showEmpty, setShowEmpty] = useState(false);
   const [printDate, setPrintDate] = useState('');
   const [copied, setCopied] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   // نافذة العرض الموحّدة — نافذة البند، والبطاقات، و«أبرز إنجاز»، والمعرض
   const [viewerItem, setViewerItem] = useState<ViewerItem | null>(null);
+  // نافذة البند تتجاهل Esc ما دامت نافذة العرض مفتوحة فوقها
+  const viewerOpenRef = useRef(false);
+  viewerOpenRef.current = viewerItem !== null;
 
-  // حالة بطاقة "استراتيجيات التدريس المتنوعة" فقط — طي/فتح القسم كاملاً
-  // (مطوي افتراضياً)، وطي/فتح كل استراتيجية على حدة (مفتوحة افتراضياً، يُحفظ
-  // اسمها في closedStrats فقط عند طيّها يدوياً).
-  const [stratCollapsed, setStratCollapsed] = useState(true);
-  const [closedStrats, setClosedStrats] = useState<Set<string>>(new Set());
-
-  // بطاقة "مراعاة الفروق الفردية بين المتعلمين" — طي/فتح مستقل عن بطاقة
-  // الاستراتيجيات أعلاه (مطوية افتراضياً، نفس مبدأ stratCollapsed).
-  const [indivDiffCollapsed, setIndivDiffCollapsed] = useState(true);
-  const toggleStratRow = (strategyId: string) => {
-    setClosedStrats(prev => {
-      const next = new Set(prev);
-      if (next.has(strategyId)) next.delete(strategyId); else next.add(strategyId);
-      return next;
-    });
-  };
+  // محتوى البنود الخاصة يُركَّب عند فتح نافذته فقط؛ للطباعة يُركَّب كله في قسم
+  // مخفي على الشاشة (hidden print:block) بين beforeprint وafterprint. flushSync
+  // لأن المتصفح يأخذ لقطة الطباعة مباشرة بعد beforeprint.
+  const [printAll, setPrintAll] = useState(false);
+  const printAllRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const before = () => flushSync(() => setPrintAll(true));
+    const after = () => setPrintAll(false);
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint', after);
+    return () => {
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint', after);
+    };
+  }, []);
 
   // totalEvs: عدد شواهد جدول evidence التي لها قسم — كل شاهد منها يُعرض في
   // مكان ما بالصفحة (نافذة البند، أو بطاقة الاستراتيجيات/الفروق الفردية، أو
@@ -563,14 +236,24 @@ export default function Public({ state, sections: allSections, continuity, evide
   // logic.ts) لا الداخلي الكامل — resultsAnalysis هنا مبسَّط أصلاً بلا أسماء.
   // في وضع ?report= تُستخدم frozenResultsComparisons كما هي (مخبوزة وقت
   // التوليد) بدل إعادة الحساب هنا — انظر تعليقها في PublicProps أعلاه.
+  // ترتيب واحد في المعاينة والمشاركة والتقرير: الأحدث أولاً، كلوحة التحكم.
+  // المصادر تختلف: useResultsAnalysis تنازلي، وget_shared_results_analysis
+  // تصاعدي، ولقطة التقرير بلا ترتيب.
+  const sortedAnalysis = useMemo(
+    () => resultsAnalysis
+      ? [...resultsAnalysis].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      : resultsAnalysis,
+    [resultsAnalysis]
+  );
+
   const resultsComparisons = useMemo(() => {
     if (frozenResultsComparisons) return frozenResultsComparisons;
-    if (!resultsAnalysis || resultsAnalysis.length === 0) return [];
-    const groups = groupPublicAnalysesBySubject(resultsAnalysis);
+    if (!sortedAnalysis || sortedAnalysis.length === 0) return [];
+    const groups = groupPublicAnalysesBySubject(sortedAnalysis);
     return Array.from(groups.entries())
       .filter(([, rows]) => rows.length >= 2)
-      .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(resultsAnalysis, subject) }));
-  }, [frozenResultsComparisons, resultsAnalysis]);
+      .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(sortedAnalysis, subject) }));
+  }, [frozenResultsComparisons, sortedAnalysis]);
 
   // "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي بالقسم الهجين،
   // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط أدلة
@@ -618,10 +301,10 @@ export default function Public({ state, sections: allSections, continuity, evide
 
   // البنود الثمانية (بلا الاستراتيجيات وبندي 5/10): شواهد كل بند من
   // evidenceBySection مجمّعة حسب المؤشر بترتيب sec.indicators، والربط
-  // بـ indicator_id حصراً. pct = المؤشرات التي لها شاهد واحد على الأقل ÷ عدد
-  // مؤشرات القسم — نفس completionPct في Dashboard.tsx (evStats) تماماً.
-  // شاهد لا يطابق أي مؤشر من مؤشرات قسمه يُعرض آخراً بـ«بلا مؤشر» ولا يدخل النسبة.
-  const sectionsWithPct: SectionWithPct[] = useMemo(() => {
+  // بـ indicator_id حصراً. level = sectionLevel(المؤشرات الرسمية التي لها شاهد،
+  // عدد الرسمية، عدد الشواهد) — نفس مستوى لوحة التحكم و lvl() في النموذج.
+  // شاهد لا يطابق أي مؤشر من مؤشرات قسمه يُعرض آخراً بـ«بلا مؤشر» ولا يدخل المستوى.
+  const sectionsWithLevel: SectionWithLevel[] = useMemo(() => {
     return sections.filter(s => !s.isStrat && !s.isResultsSection).map(sec => {
       const secEvidence = evidenceBySection[sec.id] ?? [];
       const { groups, orphans } = groupByIndicator(secEvidence, sec.indicators);
@@ -638,30 +321,83 @@ export default function Public({ state, sections: allSections, continuity, evide
         fullName: sec.ttl,
         evCount: evs.length,
         evs,
-        pct: total > 0 ? Math.round((filled / total) * 100) : 0,
+        level: sectionLevel(filled, total, evs.length),
       };
     });
   }, [sections, evidenceBySection]);
 
-  // هل يملك القسم أي دليل موثّق؟ يُستخدم لتصنيف "فارغ/غير فارغ" لأغراض
-  // العرض (activeSecs/emptySecs + رسالة المودال).
-  const sectionHasEvidence = (sec: Pick<SectionWithPct, 'evs'>): boolean => sec.evs.length > 0;
-
-  // تنازلياً بـpct، وعند التساوي يُرجَّح القسم الأعلى إجمالي أدلة تراكمية
-  // (evCount) — يعكس عمق التوثيق الفعلي رغم تساوي النسبة.
-  const activeSecs = sectionsWithPct.filter(s => sectionHasEvidence(s)).sort((a, b) => {
-    const pctDiff = b.pct - a.pct;
-    if (pctDiff !== 0) return pctDiff;
-    return b.evCount - a.evCount;
-  });
-  const emptySecs = sectionsWithPct.filter(s => !sectionHasEvidence(s));
+  // البنود التي عليها شواهد فقط، بترتيب البنود نفسه — acts في pub() بالنموذج.
+  // البند بلا شواهد لا يظهر في الصفحة العامة.
+  const activeSecs = sectionsWithLevel.filter(s => s.evs.length > 0);
   // «X من 8 مجالات» في الرأس: البنود العادية التي فيها شاهد واحد على الأقل (يشمل «بلا مؤشر»)
   const coveredCount = activeSecs.length;
 
-  const exportToPDF = () => {
+  const coreItems: AreaItem[] = activeSecs.map(sec => ({
+    key: `core-${sec.id}`,
+    open: { kind: 'core', id: sec.id },
+    icon: sec.icon,
+    title: sec.fullName,
+    count: nEv(sec.evCount),
+    level: sec.level,
+    summary: sectionSummaries?.[sec.id],
+  }));
+
+  // البنود الخاصة الأربعة — تظهر فقط إن كان فيها محتوى، بالعدد وحده (لا مستوى)
+  const stratEvCount = stratGroups.reduce((n, g) => n + g.evidence.length, 0) + otherStratEvs.length;
+  const analysisEvCount = analysisGroups.reduce((n, g) => n + g.evs.length, 0);
+  const analysisRowCount = sortedAnalysis?.length ?? 0;
+  const specialItems: AreaItem[] = [];
+  if (stratSection && stratEvCount > 0) {
+    specialItems.push({ key: 'strat', open: { kind: 'strat' }, icon: 'ti-bulb', title: 'استراتيجيات التدريس المتنوعة', count: nEv(stratEvCount) });
+  }
+  if (stratSection && indivDiffSub && indivDiffEvs.length > 0) {
+    specialItems.push({ key: 'indiv', open: { kind: 'indiv' }, icon: 'ti-users', title: indivDiffSub, count: nEv(indivDiffEvs.length) });
+  }
+  if (analysisSection && (analysisRowCount > 0 || analysisEvCount > 0)) {
+    const parts = [analysisRowCount > 0 ? `${analysisRowCount} تحليل` : '', analysisEvCount > 0 ? nEv(analysisEvCount) : ''].filter(Boolean);
+    specialItems.push({ key: 'analysis', open: { kind: 'analysis' }, icon: analysisSection.icon, title: analysisSection.ttl, count: parts.join(' · ') });
+  }
+  if (improvementSection && improvementGroups.length > 0) {
+    const n = improvementGroups.reduce((c, g) => c + g.evs.length, 0);
+    specialItems.push({ key: 'improvement', open: { kind: 'improvement' }, icon: improvementSection.icon, title: improvementSection.ttl, count: nEv(n) });
+  }
+
+  /** محتوى بند خاص — في نافذة البند، أو في قسم الطباعة (forPrint: كل شيء مفتوح والصور فورية) */
+  const renderSpecial = (kind: SpecialKey, forPrint = false) => {
+    switch (kind) {
+      case 'strat':
+        return <StrategiesContent groups={stratGroups} otherEvs={otherStratEvs} onPreview={setViewerItem} forceOpen={forPrint} eager={forPrint} />;
+      case 'indiv':
+        return <IndivDiffContent evs={indivDiffEvs} onPreview={setViewerItem} eager={forPrint} />;
+      case 'analysis':
+        return <AnalysisContent rows={sortedAnalysis} comparisons={resultsComparisons} groups={analysisGroups} onPreview={setViewerItem} eager={forPrint} />;
+      case 'improvement':
+        return <ImprovementContent groups={improvementGroups} onPreview={setViewerItem} eager={forPrint} />;
+    }
+  };
+
+  const openSection = (open: OpenSec, el: HTMLElement) => {
+    setOpenerEl(el);
+    setOpenSec(open);
+  };
+
+  /** صف شاهد في بند عادي: الرابط العادي يُفتح في تبويب جديد، والباقي في نافذة العرض */
+  const activateRow = (row: PublicRow, groupLabel: string) => {
+    if (row.kind === 'link' && row.url && !extractYouTubeId(row.url)) {
+      window.open(row.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setViewerItem({ ...row, meta: `${groupLabel} · ${row.date}` });
+  };
+
+  const exportToPDF = async () => {
     // تاريخ التصدير الفعلي لحظة الطباعة (وليس تاريخاً ثابتاً من لحظة تحميل
     // الصفحة) — يُحدَّث في الترويسة المخصّصة لوضع الطباعة قبل فتح حوار الطباعة.
     setPrintDate(formatDate(new Date(), 'long'));
+    // نفس مسار beforeprint: محتوى البنود الخاصة يُركَّب للطباعة، ثم ننتظر صوره
+    // (3 ثوانٍ كحد أقصى) حتى لا تخرج فارغة في PDF.
+    flushSync(() => setPrintAll(true));
+    await waitForImages(printAllRef.current, 3000);
     // ننتظر دورة رسم واحدة (requestAnimationFrame) لضمان وصول التاريخ الجديد
     // إلى الـDOM قبل أن يأخذ المتصفح "لقطته" الخاصة بحوار الطباعة.
     requestAnimationFrame(() => window.print());
@@ -715,10 +451,24 @@ export default function Public({ state, sections: allSections, continuity, evide
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const selectedSecData = selectedSecId ? sectionsWithPct.find(c => c.id === selectedSecId) : null;
-
-  // نفس sectionHasEvidence المستخدمة أعلاه لتصنيف activeSecs/emptySecs.
-  const showEmptyMessage = !selectedSecData || !sectionHasEvidence(selectedSecData);
+  // نافذة البند المفتوحة: رأسها ومحتواها. المحتوى لا يُركَّب قبل الفتح.
+  const closeSection = () => setOpenSec(null);
+  let sheet: { icon: string; title: string; body: React.ReactNode } | null = null;
+  if (openSec?.kind === 'core') {
+    const sec = sectionsWithLevel.find(s => s.id === openSec.id);
+    if (sec) {
+      const groups: EvidenceGroup[] = toGroupList(groupByIndicator(evidenceBySection[sec.id] ?? [], sec.indicators));
+      sheet = {
+        icon: sec.icon,
+        title: sec.fullName,
+        body: <CoreSectionBody groups={groups} summary={sectionSummaries?.[sec.id]} onActivate={activateRow} />,
+      };
+    }
+  } else if (openSec) {
+    const kind = openSec.kind;
+    const item = specialItems.find(i => i.open.kind === kind);
+    if (item) sheet = { icon: item.icon, title: item.title, body: renderSpecial(kind) };
+  }
 
   return (
     <div>
@@ -751,7 +501,7 @@ export default function Public({ state, sections: allSections, continuity, evide
           aiSummary={state.ai_summary}
           totalEvs={totalEvs}
           coveredCount={coveredCount}
-          totalSections={sectionsWithPct.length}
+          totalSections={sectionsWithLevel.length}
           reportMeta={reportMeta}
           onExportPdf={exportToPDF}
           onShare={handleOpenShare}
@@ -779,258 +529,33 @@ export default function Public({ state, sections: allSections, continuity, evide
           </div>
         )}
 
-        <div className="max-w-[1000px] mx-auto py-10 px-4 sm:px-7">
+        <div className="max-w-[1100px] mx-auto px-4 lg:px-8 py-8">
+          <SectionsList
+            core={coreItems}
+            special={specialItems}
+            coveredCount={coveredCount}
+            totalSections={sectionsWithLevel.length}
+            onOpen={openSection}
+          />
 
-          {continuity && <ContinuityGrid continuity={continuity} referenceDate={continuityReferenceDate} />}
-
-          <div className="mb-6 flex justify-between items-end flex-wrap gap-4">
-            <div>
-              <h2 className="text-[20px] font-black text-white flex items-center gap-2">
-                <i className="ti ti-apps text-[var(--em8)]"></i>
-                أقسام الملف
-              </h2>
-              <p className="text-[13px] text-[var(--text3)] mt-1">اضغط على أي قسم لاستعراض التفاصيل والأدلة الخاصة به</p>
-            </div>
-          </div>
-
-          {/* المستوى 2: الأقسام النشطة، مرتبة تنازلياً، أبرزها يحصل على تمييز بصري */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeSecs.map((sec, i) => (
-              <SectionCard
-                key={sec.id}
-                sec={sec}
-                onClick={() => setSelectedSecId(sec.id)}
-                style={{ animation: `fadeUp .4s var(--sp) both ${i * 0.05}s` }}
-                summary={sectionSummaries?.[sec.id]}
-              />
-            ))}
-          </div>
-
-          {/* المستوى 3: الأقسام الفارغة — سطر مختصر قابل للتوسيع على الشاشة */}
-          {emptySecs.length > 0 && (
-            <div className="print:hidden mt-5">
-              <button
-                onClick={() => setShowEmpty(v => !v)}
-                className="w-full flex items-center justify-between gap-3 py-3.5 px-5 bg-white/3 hover:bg-white/5 border border-[var(--line)] rounded-2xl text-[13px] font-bold text-[var(--text3)] transition-all cursor-pointer"
-              >
-                <span className="flex items-center gap-2">
-                  <i className="ti ti-folder-plus text-[var(--em8)]"></i>
-                  +{emptySecs.length} مجالات أخرى قيد التطوير
-                </span>
-                <i className={`ti ti-chevron-down transition-transform duration-300 ${showEmpty ? 'rotate-180' : ''}`}></i>
-              </button>
-              <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 overflow-hidden transition-all duration-300 ${showEmpty ? 'mt-4 max-h-[3000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                {emptySecs.map(sec => (
-                  <SectionCard key={sec.id} sec={sec} onClick={() => setSelectedSecId(sec.id)} summary={sectionSummaries?.[sec.id]} />
-                ))}
-              </div>
+          {continuity && (
+            <div className="mt-8">
+              <PublicContinuity continuity={continuity} referenceDate={continuityReferenceDate} />
             </div>
           )}
 
-          {/* نسخة الطباعة فقط: تعرض كل الأقسام الفارغة كبطاقات مباشرة بدون أكورديون */}
-          {emptySecs.length > 0 && (
-            <div className="hidden print:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
-              {emptySecs.map(sec => (
-                <SectionCard key={`print-${sec.id}`} sec={sec} onClick={() => setSelectedSecId(sec.id)} summary={sectionSummaries?.[sec.id]} />
+          {/* محتوى البنود الخاصة للطباعة فقط — يُركَّب بين beforeprint وafterprint
+              (أو من زر «تصدير PDF»)، ومخفي على الشاشة دائماً */}
+          {printAll && specialItems.length > 0 && (
+            <div ref={printAllRef} className="hidden print:block mt-8">
+              {specialItems.map(item => (
+                <section key={item.key} className="print-card mt-6">
+                  <h2 className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">{item.title}</h2>
+                  {renderSpecial(item.open.kind as SpecialKey, true)}
+                </section>
               ))}
             </div>
           )}
-
-          {/* بطاقتا الاستراتيجيات ومراعاة الفروق الفردية — متجاورتان جنباً إلى
-              جنب على الشاشات الواسعة (sm+)، تكديس عمودي طبيعي على الجوال. لا
-              تغيير على منطق أي منهما؛ mt-8 انتقل من بطاقة الاستراتيجيات نفسها
-              إلى الحاوية حتى يتساوى الهامش العلوي للبطاقتين ضمن صف الـgrid.
-              items-start إلزامي: افتراضي CSS Grid هو align-items:stretch،
-              فتمدّد حاوية البطاقة المغلقة لارتفاع الصف عند فتح المجاورة —
-              مساحة فارغة تحتها تبدو "مفتوحة" رغم أن stratCollapsed/
-              indivDiffCollapsed الداخليين لم يتغيّرا. */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 items-start">
-          {/* بطاقة استراتيجيات التدريس — مستقلة كلياً عن نظام النسب أعلاه، بدون أي رقم نسبة.
-              مطوية بالكامل افتراضياً؛ نسخة الطباعة (print:) تُجبَر دائماً على الفتح الكامل
-              بصرف النظر عن حالة الطي على الشاشة، حفاظاً على سلوك تصدير PDF السابق. */}
-          {stratSection && (
-            <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--gold)]/20 shadow-lg p-6 sm:p-8">
-              <div
-                className="flex items-center justify-between gap-3 cursor-pointer select-none print:pointer-events-none"
-                onClick={() => setStratCollapsed(v => !v)}
-              >
-                <div className="flex items-center gap-2">
-                  <i className="ti ti-bulb text-[var(--gold)] text-[20px]"></i>
-                  <h2 className="text-[18px] font-black text-white">استراتيجيات التدريس المتنوعة</h2>
-                </div>
-                <div className="flex items-center gap-2.5 print:hidden">
-                  {stratGroups.length > 0 && (
-                    <span className="text-[11px] font-black text-[#241a05] bg-[var(--gold)] px-2.5 py-1 rounded-full whitespace-nowrap">
-                      {stratGroups.length} استراتيجيات
-                    </span>
-                  )}
-                  <i className={`ti ti-chevron-down text-[var(--text3)] text-[18px] transition-transform duration-300 ${stratCollapsed ? '' : 'rotate-180'}`}></i>
-                </div>
-              </div>
-
-              <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 print:!mt-6 ${stratCollapsed ? 'max-h-0 opacity-0' : 'max-h-[10000px] opacity-100 mt-6'}`}>
-                {stratGroups.length === 0 && otherStratEvs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
-                      <i className="ti ti-bulb-off"></i>
-                    </div>
-                    <p className="text-[var(--text3)] text-[13.5px]">لا توجد استراتيجيات موثّقة بدليل بعد</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-5">
-                    {stratGroups.map(group => {
-                      const rowOpen = !closedStrats.has(group.id);
-                      return (
-                        <div key={group.id} className="bg-white/5 rounded-2xl p-4 border border-[var(--gold)]/10">
-                          <div
-                            className="flex items-center gap-2 mb-3 cursor-pointer select-none print:pointer-events-none"
-                            onClick={ev => { ev.stopPropagation(); toggleStratRow(group.id); }}
-                          >
-                            <div className="w-2 h-2 rounded-full bg-[var(--gold)] shrink-0"></div>
-                            <span className="text-[14px] font-bold text-white flex-1">{group.name}</span>
-                            <span className="text-[11px] font-black text-[var(--gold)] bg-[var(--gold)]/10 px-2 py-0.5 rounded-md">{group.evidence.length} شواهد</span>
-                            <i className={`ti ti-chevron-down text-[var(--text4)] text-[13px] transition-transform duration-300 print:hidden ${rowOpen ? 'rotate-180' : ''}`}></i>
-                          </div>
-                          <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 ${rowOpen ? 'max-h-[4000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                              {group.evidence.map(e => (
-                                <div key={e.id}>
-                                  <EvidenceThumb e={toPublicRow(e)} onClick={setViewerItem} />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {otherStratEvs.length > 0 && (
-                      <IndicatorGroups groups={[{ key: 'other', label: 'شواهد أخرى', evs: otherStratEvs }]} onPreview={setViewerItem} />
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* بطاقة مستقلة لـ"مراعاة الفروق الفردية بين المتعلمين" — عرض مبسّط
-              (بلا أزرار تعديل)، بنفس مبدأ بطاقة الاستراتيجيات أعلاه لكن بدون
-              رقم نسبة/عدّاد، فقط حالة موثّق/غير موثّق قابلة للفتح. */}
-          {stratSection && indivDiffSub && (
-            <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--em7)]/20 shadow-lg p-6 sm:p-8">
-              <div
-                className="flex items-center justify-between gap-3 cursor-pointer select-none print:pointer-events-none"
-                onClick={() => setIndivDiffCollapsed(v => !v)}
-              >
-                <div className="flex items-center gap-2">
-                  <i className="ti ti-users text-[var(--em8)] text-[20px]"></i>
-                  <h2 className="text-[18px] font-black text-white">{indivDiffSub}</h2>
-                </div>
-                <div className="flex items-center gap-2.5 print:hidden">
-                  <span className={`text-[11px] font-black px-2.5 py-1 rounded-full whitespace-nowrap ${indivDiffEvs.length > 0 ? 'text-[#0a1f13] bg-[var(--em7)]' : 'text-[var(--text4)] bg-white/5 border border-[var(--line2)]'}`}>
-                    {indivDiffEvs.length > 0 ? `موثّق ✓ (${indivDiffEvs.length})` : 'غير موثّق بعد'}
-                  </span>
-                  <i className={`ti ti-chevron-down text-[var(--text3)] text-[18px] transition-transform duration-300 ${indivDiffCollapsed ? '' : 'rotate-180'}`}></i>
-                </div>
-              </div>
-
-              <div className={`overflow-hidden transition-all duration-300 ease-out print:!max-h-none print:!opacity-100 print:!mt-6 ${indivDiffCollapsed ? 'max-h-0 opacity-0' : 'max-h-[10000px] opacity-100 mt-6'}`}>
-                {indivDiffEvs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
-                      <i className="ti ti-ghost"></i>
-                    </div>
-                    <p className="text-[var(--text3)] text-[13.5px]">لا توجد شواهد موثّقة بعد لهذا المؤشر</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {indivDiffEvs.map(e => (
-                      <div key={e.id}>
-                        <EvidenceThumb e={e} onClick={setViewerItem} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          </div>
-
-          {/* بطاقتا بند 10 (تحليل) وبند 5 (تحسين) — متجاورتان جنباً إلى جنب على
-              الشاشات الواسعة (نفس نمط grid sm:grid-cols-2 items-start المستخدَم
-              بلوحة التحكم لهذا الزوج ولزوج الاستراتيجيات/الفروق الفردية أعلاه).
-              items-start إلزامي هنا للسبب نفسه دائماً: بند 10 غالباً أطول محتوى
-              من بند 5 (عناصر المقارنة قد تضيف صفوفاً)، فبلا items-start يمدّد
-              افتراضي CSS Grid (align-items:stretch) بطاقة بند 5 لنفس ارتفاع
-              بند 10 فارغاً من تحت. mt-8 انتقل من كل بطاقة على حدة إلى الحاوية،
-              نفس تقنية زوج الاستراتيجيات/الفروق الفردية. ترتيب العرض: التحليل
-              أولاً ثم التحسين — نفس ترتيب لوحة التحكم. */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 items-start">
-          {/* البطاقة تظهر إن جُلبت التحليلات، أو إن فشل جلبها وفي البند شواهد
-              (فتُعرض الشواهد وحدها). الشواهد تحت التحليلات، ولا رسالة فارغة لها. */}
-          {analysisSection && (resultsAnalysis || analysisGroups.length > 0) && (
-            <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8" style={{ borderRight: '4px solid var(--violet)' }}>
-              <div className="flex items-center justify-between gap-3 mb-6">
-                <div className="flex items-center gap-2">
-                  <i className={`ti ${analysisSection.icon} text-[var(--violet2)] text-[20px]`}></i>
-                  <h2 className="text-[18px] font-black text-white">{analysisSection.ttl}</h2>
-                </div>
-                {resultsAnalysis && resultsAnalysis.length > 0 && (
-                  <span className="text-[11px] font-black text-[var(--violet2)] bg-[var(--violet)]/10 px-2.5 py-1 rounded-full whitespace-nowrap">
-                    {resultsAnalysis.length} تحليل
-                  </span>
-                )}
-              </div>
-
-              {resultsAnalysis && (resultsAnalysis.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
-                    <i className="ti ti-ghost"></i>
-                  </div>
-                  <p className="text-[var(--text3)] text-[13.5px]">لا توجد تحليلات نتائج موثّقة بعد لهذا البند</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {resultsAnalysis.map(row => (
-                    <ResultRangeRow key={row.id} row={row} />
-                  ))}
-                  {resultsComparisons.map(c => (
-                    <ResultComparisonMini key={c.subject} subject={c.subject} series={c.series} />
-                  ))}
-                </div>
-              ))}
-
-              {analysisGroups.length > 0 && (
-                <div className={resultsAnalysis ? 'mt-5' : ''}>
-                  <IndicatorGroups groups={analysisGroups} onPreview={setViewerItem} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* بطاقة بند 5 "تحسين نتائج المتعلمين" — عرض قراءة فقط لكل شواهد البند
-              مجمّعة حسب المؤشر (improvementGroups)، بلا أي تنبيهات خام إطلاقاً
-              (تلك أداة تخطيط داخلية للمعلم وحده). رسالة الفراغ فقط إن لم يكن في
-              البند أي شاهد. شريط اللون البنفسجي (--violet) يطابق بطاقتَي
-              التحليل/التحسين في Dashboard.tsx. */}
-          {improvementSection && (
-            <div className="print-card bg-gradient-to-br from-[var(--surf1)] to-[var(--surf2)] rounded-3xl border border-[var(--line2)] shadow-lg p-6 sm:p-8" style={{ borderRight: '4px solid var(--violet)' }}>
-              <div className="flex items-center gap-2 mb-6">
-                <i className={`ti ${improvementSection.icon} text-[var(--em8)] text-[20px]`}></i>
-                <h2 className="text-[18px] font-black text-white">{improvementSection.ttl}</h2>
-              </div>
-              {improvementGroups.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-[22px] text-[var(--text4)] mb-3">
-                    <i className="ti ti-ghost"></i>
-                  </div>
-                  <p className="text-[var(--text3)] text-[13.5px]">لا توجد شواهد موثّقة بعد لهذا البند</p>
-                </div>
-              ) : (
-                <IndicatorGroups groups={improvementGroups} onPreview={setViewerItem} />
-              )}
-            </div>
-          )}
-          </div>
 
           <footer className="mt-12 pt-6 border-t border-[var(--line)] text-center">
             <p className="text-[12px] font-normal text-[var(--text4)]">
@@ -1091,95 +616,10 @@ export default function Public({ state, sections: allSections, continuity, evide
         </div>
       )}
 
-      {selectedSecId && selectedSecData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedSecId(null)}></div>
-          <div className="relative bg-[var(--surf1)] w-full max-w-3xl rounded-[24px] border border-[var(--line)] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden" style={{ animation: 'jumpIn .4s var(--sp) both' }}>
-            <div className="flex items-center justify-between py-4 px-6 border-b border-[var(--line)] bg-[var(--surf0)]">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[var(--em7)]/10 text-[var(--em8)] flex items-center justify-center text-[20px]">
-                  <i className={`ti ${selectedSecData.icon}`}></i>
-                </div>
-                <div>
-                  <h3 className="text-[16px] font-black text-white">{selectedSecData.fullName}</h3>
-                  <p className="text-[12px] text-[var(--text3)] mt-0.5">الأدلة والشواهد الموثقة</p>
-                </div>
-              </div>
-              <button
-                className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[var(--text3)] hover:bg-white/10 hover:text-white transition-colors"
-                onClick={() => setSelectedSecId(null)}
-              >
-                <i className="ti ti-x text-[16px]"></i>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6" dir="rtl">
-              {/* قسم الاستراتيجيات (isStrat) مُستبعد أصلاً من sectionsWithPct
-                  (تستبعد isStrat وisResultsSection) — selectedSecData لا يمكن أن
-                  يطابق قسم 4 إطلاقاً، فلا فرع خاص به هنا (له بطاقته المستقلة
-                  أعلى الصفحة، انظر stratGroups). */}
-              <>
-                {/* ملخص القسم — الجملة كاملة، قبل عرض أي أدلة */}
-                {sectionSummaries?.[selectedSecData.id] && (
-                  <div className="mb-5 flex items-start gap-2.5 bg-[var(--em7)]/5 border border-[var(--em7)]/15 rounded-2xl py-3.5 px-4">
-                    <i className="ti ti-sparkles text-[var(--em7)] text-[16px] mt-0.5 shrink-0" />
-                    <p className="text-[13px] text-[var(--text2)] leading-relaxed">{sectionSummaries[selectedSecData.id]}</p>
-                  </div>
-                )}
-                {!showEmptyMessage ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {selectedSecData.evs.map(e => {
-                      const t = EVT_CONFIG[e.kind];
-                      // الرابط يُفتح في تبويب جديد مباشرة، إلا يوتيوب فيُعاين بالمشغّل
-                      // المضمّن؛ الملاحظة تُعاين نصاً بلا رابط
-                      const isLink = e.kind === 'link' && !!e.url && !extractYouTubeId(e.url);
-                      const clickable = isLink || e.kind === 'note' || !!e.url;
-                      return (
-                        <div
-                          key={e.id}
-                          className={`flex items-center gap-3 py-3 px-4 bg-[var(--surf2)] rounded-xl border border-[var(--line)] transition-all duration-200 ${clickable ? 'cursor-pointer hover:border-[var(--em7)]/40 hover:bg-[var(--surf3)] hover:-translate-y-0.5' : ''}`}
-                          onClick={() => {
-                            if (isLink) window.open(e.url, '_blank', 'noopener,noreferrer');
-                            else if (clickable) setViewerItem({ ...e, meta: `${e.sub} · ${e.date}` });
-                          }}
-                          title={isLink ? 'انقر لفتح الرابط' : clickable ? 'انقر لمعاينة الدليل فوراً' : ''}
-                        >
-                          <div className={`w-[40px] h-[40px] rounded-lg text-[20px] flex items-center justify-center shrink-0 ${t.cls}`}>
-                            <i className={`ti ${t.icon}`}></i>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[13.5px] font-bold text-white truncate group-hover:text-[var(--em8)] transition-colors">{e.name}</div>
-                            <div className="text-[11px] text-[var(--text4)] mt-1 truncate">
-                              {e.sub} · {e.date}
-                              {isLink
-                                ? <span className="text-[var(--em8)] mr-1.5 font-bold"><i className="ti ti-external-link"></i> فتح الرابط</span>
-                                : clickable && <span className="text-[var(--em8)] mr-1.5 font-bold"><i className="ti ti-eye"></i> معاينة</span>}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-[24px] text-[var(--text4)] mb-3">
-                      <i className="ti ti-folder-open"></i>
-                    </div>
-                    <p className="text-[var(--text3)] text-[14px]">لا توجد أدلة موثقة في هذا القسم</p>
-                  </div>
-                )}
-              </>
-            </div>
-            <div className="p-4 border-t border-[var(--line)] bg-[var(--surf0)] flex justify-end">
-              <button
-                className="py-2 px-6 rounded-xl bg-white/5 border border-[var(--line2)] text-[13px] font-bold text-white hover:bg-white/10 transition-colors"
-                onClick={() => setSelectedSecId(null)}
-              >
-                إغلاق
-              </button>
-            </div>
-          </div>
-        </div>
+      {sheet && (
+        <SectionSheet icon={sheet.icon} title={sheet.title} onClose={closeSection} returnFocusTo={openerEl} viewerOpenRef={viewerOpenRef}>
+          {sheet.body}
+        </SectionSheet>
       )}
 
       <EvidenceViewer item={viewerItem} onClose={() => setViewerItem(null)} />

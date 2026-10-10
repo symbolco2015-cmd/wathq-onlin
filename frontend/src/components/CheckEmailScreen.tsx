@@ -110,23 +110,24 @@ export default function CheckEmailScreen({ email, variant, emailRedirectTo, onCh
       {result && (
         <div
           role="status"
-          className={`mt-3 text-[length:var(--fs-sm)] ${result.ok ? 'text-[var(--accent)]' : 'text-[var(--danger)]'}`}
+          className={`mt-3 flex items-start gap-2 text-[length:var(--fs-sm)] ${result.ok ? 'text-[var(--accent)]' : 'text-[var(--danger)]'}`}
         >
-          {result.msg}
+          {!result.ok && <i className="ti ti-alert-circle text-[20px] shrink-0" aria-hidden="true"></i>}
+          <span>{result.msg}</span>
         </div>
       )}
 
       <div className="mt-6 flex flex-col items-center gap-3">
         <button
           type="button"
-          className="bg-transparent border-none p-0 cursor-pointer text-[length:var(--fs-sm)] text-[var(--t2)] hover:text-[var(--t1)]"
+          className="h-11 bg-transparent border-none px-2 cursor-pointer text-[length:var(--fs-sm)] text-[var(--t2)] hover:underline"
           onClick={onChangeEmail}
         >
           تغيير البريد
         </button>
         <button
           type="button"
-          className="bg-transparent border-none p-0 cursor-pointer text-[length:var(--fs-sm)] text-[var(--t2)] hover:text-[var(--t1)]"
+          className="h-11 bg-transparent border-none px-2 cursor-pointer text-[length:var(--fs-sm)] text-[var(--t2)] hover:underline"
           onClick={onGoLogin}
         >
           لديّ حساب مؤكد؟ تسجيل الدخول

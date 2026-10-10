@@ -37,15 +37,10 @@ import { usePublicCustomIndicators } from './hooks/usePublicCustomIndicators';
 import type { PublicCustomIndicator } from './hooks/usePublicCustomIndicators';
 import { useCustomIndicators } from './hooks/useCustomIndicators';
 import type { IndicatorResult } from './hooks/useCustomIndicators';
-import type { ToastAction } from './components/UI';
+import type { ToastAction, ToastKind } from './components/UI';
 import { BTN_DNG } from './components/SectionView';
-
-// حقول نافذتي «إعدادات الحساب» و«إضافة استراتيجية» — DESIGN.md
-const FIELD = 'w-full h-11 px-3 bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-sm)] text-[length:var(--fs-sm)] text-[var(--t1)] placeholder:text-[var(--t3)] outline-none transition-colors duration-150 focus:border-[var(--accent)]';
-const LABEL = 'text-[length:var(--fs-xs)] font-bold text-[var(--t2)] mb-2 flex items-center gap-2';
-const HINT = 'text-[length:var(--fs-xs)] text-[var(--t3)] mt-1';
-const SECTION_TITLE = 'flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--t2)] mb-3';
-const BTN_2ND = 'h-11 px-4 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border bg-transparent text-[length:var(--fs-sm)] font-bold whitespace-nowrap transition-colors duration-150';
+// حقول نافذتي «إعدادات الحساب» و«إضافة استراتيجية» — مشتركة مع صفحة الدخول
+import { FIELD, LABEL, HINT, SECTION_TITLE, BTN_2ND, toggleBtn } from './components/formStyles';
 
 /** مهلة «تراجع» بعد حذف مؤشر مخصص — لا شيء يصل إلى القاعدة قبل انتهائها */
 const INDICATOR_UNDO_MS = 6000;
@@ -67,7 +62,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>(
     shareUserId || reportId ? 'public' : 'dashboard'
   );
-  const [toastData, setToastData] = useState<{ msg: string; icon: string; show: boolean; action?: ToastAction }>({ msg: '', icon: '✓', show: false });
+  const [toastData, setToastData] = useState<{ msg: string; icon: string; show: boolean; action?: ToastAction; kind?: ToastKind }>({ msg: '', icon: '✓', show: false });
   const { 
     state,
     user,
@@ -324,8 +319,8 @@ export default function App() {
   // مؤقّت واحد للرسالة: رسالة جديدة تلغي مؤقّت السابقة فلا تُخفيها مبكراً.
   // الرسالة التي فيها زر (مثل «تراجع») تبقى مدة أطول.
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showToast = useCallback((msg: string, icon = '✓', action?: ToastAction, durationMs?: number) => {
-    setToastData({ msg, icon, show: true, action });
+  const showToast = useCallback((msg: string, icon = '✓', action?: ToastAction, durationMs?: number, kind?: ToastKind) => {
+    setToastData({ msg, icon, show: true, action, kind });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(
       () => setToastData(prev => ({ ...prev, show: false })),
@@ -483,10 +478,7 @@ export default function App() {
       const [localSelectedId, setLocalSelectedId] = useState('');
 
       // التبديل بين الوضعين محايد: الأخضر محجوز لزر «حفظ»
-      const toggleCls = (active: boolean) =>
-        `flex-1 h-11 rounded-[var(--r-sm)] border text-[length:var(--fs-sm)] font-bold cursor-pointer transition-colors duration-150 ${active
-          ? 'bg-[var(--s2)] border-[var(--bd2)] text-[var(--t1)]'
-          : 'bg-transparent border-[var(--bd)] text-[var(--t3)] hover:text-[var(--t2)]'}`;
+      const toggleCls = toggleBtn;
 
       return (
         <div className="flex flex-col gap-4">
@@ -1088,7 +1080,7 @@ export default function App() {
         {currentPage === 'auth' && (
           <Auth
             onLoginSuccess={() => setCurrentPage('dashboard')}
-            onToast={showToast}
+            onToast={(msg, kind) => showToast(msg, '', undefined, undefined, kind)}
             recovery={passwordRecovery}
             onRecoveryComplete={() => {
               clearPasswordRecovery();

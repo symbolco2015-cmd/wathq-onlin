@@ -121,3 +121,11 @@ body{
     display: none !important;
   }
 }
+
+/* Chrome يلوّن الحقول المملوءة تلقائياً بالأزرق الفاتح — نعيدها إلى ألوان الحقل */
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus, textarea:-webkit-autofill, select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--s2) inset;
+  -webkit-text-fill-color: var(--t1);
+  caret-color: var(--t1);
+  transition: background-color 9999s ease-out 0s;
+}

@@ -57,16 +57,16 @@ export default function BottomSheet({ isOpen, onClose, children }: BottomSheetPr
 
   return (
     <div
-      className="fixed inset-0 z-[500] flex items-end justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[500] flex items-end justify-center bg-black/60"
       style={{ opacity: visible ? 1 : 0, transition: 'opacity .25s ease' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative overflow-hidden w-full max-w-2xl flex flex-col rounded-t-3xl border-t border-x border-[var(--bd2)] max-h-[88vh]"
+        className="relative overflow-hidden w-full max-w-2xl flex flex-col rounded-t-[var(--r-lg)] border-t border-x border-[var(--bd2)] max-h-[88vh]"
         style={{
           background: 'var(--s1)',
           transform: `translateY(${visible ? `${dragY}px` : '100%'})`,
-          transition: draggingRef.current ? 'none' : 'transform .32s var(--sp)',
+          transition: draggingRef.current ? 'none' : 'transform .35s var(--sp)',
         }}
       >
         {/* مقبض السحب */}

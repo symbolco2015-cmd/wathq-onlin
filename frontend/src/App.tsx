@@ -17,6 +17,7 @@ import Nav from './components/Nav';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import Public from './components/Public';
+import { PublicTopBar, PublicUnavailable } from './components/PublicChrome';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import Onboarding from './components/Onboarding';
 import SplashScreen from './components/SplashScreen';
@@ -998,21 +999,7 @@ export default function App() {
 
   // Show error screen if shared profile not found
   if (shareUserId && !sharedLoading && (sharedError || !sharedState)) {
-    return (
-      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
-        <Background />
-        <div className="relative z-10 text-center flex flex-col items-center px-6" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
-          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-red-900/60 to-red-700/40 text-[40px] text-red-400 flex items-center justify-center shadow-[0_0_0_1px_rgba(239,68,68,.3),0_16px_48px_rgba(239,68,68,.2)] mb-6">
-            <i className="ti ti-mood-sad"></i>
-          </div>
-          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">لم يُعثر على الملف</div>
-          <div className="text-[14px] text-[var(--text4)] max-w-sm">{sharedError || 'الرابط غير صحيح أو لم يعد متاحاً.'}</div>
-          <a href="/" className="mt-8 py-3 px-8 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white text-[14px] font-bold no-underline hover:opacity-90 transition-opacity">
-            <i className="ti ti-home ml-2"></i>العودة للرئيسية
-          </a>
-        </div>
-      </div>
-    );
+    return <PublicUnavailable kind="profile" />;
   }
 
   // Show loading screen for a harvest report (?report=)
@@ -1022,21 +1009,7 @@ export default function App() {
 
   // Show error screen if the harvest report was not found
   if (reportId && !harvestReportLoading && (harvestReportError || !harvestReport)) {
-    return (
-      <div className="min-h-screen bg-[#060f0a] flex flex-col items-center justify-center relative overflow-hidden">
-        <Background />
-        <div className="relative z-10 text-center flex flex-col items-center px-6" style={{ animation: 'scaleIn .6s var(--sp) both' }}>
-          <div className="w-[84px] h-[84px] rounded-[24px] bg-gradient-to-br from-red-900/60 to-red-700/40 text-[40px] text-red-400 flex items-center justify-center shadow-[0_0_0_1px_rgba(239,68,68,.3),0_16px_48px_rgba(239,68,68,.2)] mb-6">
-            <i className="ti ti-mood-sad"></i>
-          </div>
-          <div className="text-[20px] font-black text-white mb-2 font-[var(--font)]">لم يُعثر على التقرير</div>
-          <div className="text-[14px] text-[var(--text4)] max-w-sm">{harvestReportError || 'الرابط غير صحيح أو لم يعد متاحاً.'}</div>
-          <a href="/" className="mt-8 py-3 px-8 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white text-[14px] font-bold no-underline hover:opacity-90 transition-opacity">
-            <i className="ti ti-home ml-2"></i>العودة للرئيسية
-          </a>
-        </div>
-      </div>
-    );
+    return <PublicUnavailable kind="report" />;
   }
 
   if (loading) {
@@ -1047,23 +1020,7 @@ export default function App() {
   if (shareUserId && sharedState) {
     return (
       <>
-        <Background />
-        {/* Minimal nav for shared view — no nav items, just logo */}
-        <nav className="sticky top-0 z-[300] h-[72px] bg-[#060f0a]/85 backdrop-blur-[28px] border-b border-[var(--line)] flex items-center justify-between px-4 sm:px-9">
-          <a href="/" className="flex items-center gap-3.5 no-underline">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] flex items-center justify-center text-[22px] text-white shadow-[0_0_0_1px_rgba(82,196,120,.3),0_8px_24px_rgba(42,122,68,.5)]">
-              <i className="ti ti-certificate"></i>
-            </div>
-            <div className="hidden sm:block">
-              <div className="text-[22px] font-black tracking-tight text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em8),var(--gold3))]">وثّق</div>
-              <div className="text-[11px] text-[var(--text4)] tracking-wide mt-px">ملف الإنجاز الرقمي</div>
-            </div>
-          </a>
-          <div className="flex items-center gap-2 py-1.5 px-3 rounded-xl bg-[var(--em7)]/10 border border-[var(--em7)]/20">
-            <i className="ti ti-eye text-[var(--em8)] text-[16px]"></i>
-            <span className="text-[13px] font-bold text-[var(--em8)] hidden sm:inline">عرض عام</span>
-          </div>
-        </nav>
+        <PublicTopBar />
         <main>
           <Public state={sharedState} sections={sections} continuity={sharedContinuity} evidence={sharedEvidence} resultsAnalysis={sharedResultsAnalysis} sectionSummaries={sharedSectionSummaries} strategyNames={sharedStrategyNames} customIndicators={sharedCustomIndicators} />
         </main>
@@ -1076,23 +1033,7 @@ export default function App() {
     const snapshot = harvestReport.snapshot;
     return (
       <>
-        <Background />
-        {/* شريط تنقل مصغّر مطابق لمسار ?share= — فقط شارة "عرض عام" تصبح "تقرير حصاد" */}
-        <nav className="sticky top-0 z-[300] h-[72px] bg-[#060f0a]/85 backdrop-blur-[28px] border-b border-[var(--line)] flex items-center justify-between px-4 sm:px-9">
-          <a href="/" className="flex items-center gap-3.5 no-underline">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] flex items-center justify-center text-[22px] text-white shadow-[0_0_0_1px_rgba(82,196,120,.3),0_8px_24px_rgba(42,122,68,.5)]">
-              <i className="ti ti-certificate"></i>
-            </div>
-            <div className="hidden sm:block">
-              <div className="text-[22px] font-black tracking-tight text-transparent bg-clip-text bg-[linear-gradient(135deg,var(--em8),var(--gold3))]">وثّق</div>
-              <div className="text-[11px] text-[var(--text4)] tracking-wide mt-px">ملف الإنجاز الرقمي</div>
-            </div>
-          </a>
-          <div className="flex items-center gap-2 py-1.5 px-3 rounded-xl bg-[var(--gold)]/10 border border-[var(--gold)]/20">
-            <i className="ti ti-file-report text-[var(--gold3)] text-[16px]"></i>
-            <span className="text-[13px] font-bold text-[var(--gold3)] hidden sm:inline">تقرير حصاد فصلي</span>
-          </div>
-        </nav>
+        <PublicTopBar />
         <main>
           <Public
             state={snapshot.state}

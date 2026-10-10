@@ -3,9 +3,9 @@ import { useState } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 
 /** سطح المكتب يعرض 5، والجوال يُخفي الخامس بـ CSS (4) */
-export const GALLERY_MAX = 5;
+const GALLERY_MAX = 5;
 /** أقل من هذا العدد لا يظهر المعرض كله */
-export const GALLERY_MIN = 3;
+const GALLERY_MIN = 3;
 const PER_SECTION = 2;
 
 const newestFirst = (a: SupabaseEvidence, b: SupabaseEvidence) => b.created_at.localeCompare(a.created_at);

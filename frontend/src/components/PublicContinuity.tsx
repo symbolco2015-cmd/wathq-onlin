@@ -51,11 +51,11 @@ export default function PublicContinuity({ continuity, referenceDate = new Date(
 
   return (
     <section className="print-card" aria-labelledby="continuity-title">
-      <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] font-bold text-[var(--brand-gold)]">
+      <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] font-bold text-[var(--brand-gold)] print:break-after-avoid">
         <i className="ti ti-calendar-stats text-[16px]"></i>
         الاستمرارية
       </div>
-      <h2 id="continuity-title" className="mt-1 text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">الاستمرارية عبر العام الدراسي</h2>
+      <h2 id="continuity-title" className="mt-1 text-[length:var(--fs-lg)] font-bold text-[var(--t1)] print:break-after-avoid">الاستمرارية عبر العام الدراسي</h2>
       <div className="mt-3 grid grid-cols-6 lg:grid-cols-12 gap-2">
         {cells.map(c => (
           <div

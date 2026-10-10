@@ -22,17 +22,16 @@ interface PdfPreviewProps {
   className?: string;
 }
 
-/** بطاقة فشل المعاينة — نفس تصميم previewFile.type === 'doc' في Public.tsx حرفياً،
- * بنص مختلف فقط (فشل عام بدل "مستند ميكروسوفت" تحديداً). مُصدَّرة لإعادة
- * استخدامها في Public.tsx كرجعة عامة (شاهد نوعه 'file' بامتداد غير معروف). */
+/** بطاقة فشل المعاينة — مُصدَّرة لإعادة استخدامها في EvidenceViewer كرجعة عامة
+ * (شاهد نوعه 'file' بامتداد غير معروف). */
 export function PdfPreviewFallback({ url, name }: { url: string; name: string }) {
   return (
-    <div className="text-center p-8 max-w-md bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md shadow-2xl">
-      <div className="w-16 h-16 rounded-2xl bg-[#c4b5fd]/15 text-[#c4b5fd] flex items-center justify-center text-[34px] mx-auto mb-5 border border-[#c4b5fd]/20 animate-pulse">
+    <div className="text-center p-6 max-w-md rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--bd)]">
+      <div className="w-16 h-16 rounded-[var(--r-md)] bg-[var(--s2)] text-[var(--t2)] flex items-center justify-center text-[32px] mx-auto mb-4">
         <i className="ti ti-file-text"></i>
       </div>
-      <h4 className="text-[17px] font-black text-white mb-2.5">تعذّرت معاينة هذا الملف</h4>
-      <p className="text-[13px] text-[var(--text4)] leading-relaxed mb-6">
+      <h4 className="text-[length:var(--fs-md)] font-bold text-[var(--t1)] mb-2">تعذّرت معاينة هذا الملف</h4>
+      <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-[1.8] mb-6">
         يمكنك تحميل الملف مباشرة لاستعراض محتواه على جهازك.
       </p>
       <a
@@ -40,9 +39,9 @@ export function PdfPreviewFallback({ url, name }: { url: string; name: string })
         download={name}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-2 py-3.5 px-7 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em6)] text-white text-[14px] font-black transition-all duration-300 hover:-translate-y-[3px] hover:shadow-[0_6px_20px_rgba(42,122,68,.5)] no-underline cursor-pointer border-none"
+        className="h-11 px-4 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--accent)] text-[length:var(--fs-sm)] font-bold text-[var(--bg)] no-underline cursor-pointer"
       >
-        <i className="ti ti-download text-[18px]"></i>
+        <i className="ti ti-download text-[20px]"></i>
         تحميل مستند الشاهد
       </a>
     </div>
@@ -148,32 +147,34 @@ export default function PdfPreview({ url, name, className }: PdfPreviewProps) {
     <div className={`${className ?? ''} flex flex-col items-center gap-3 overflow-hidden`}>
       {status === 'loading' && (
         <div className="flex-1 flex items-center justify-center">
-          <i className="ti ti-loader animate-spin text-[32px] text-[var(--em8)]" />
+          <i className="ti ti-loader animate-spin motion-reduce:animate-none text-[32px] text-[var(--t2)]" />
         </div>
       )}
 
       <div className={`flex-1 min-h-0 w-full overflow-auto flex items-start justify-center ${status === 'loading' ? 'hidden' : ''}`}>
-        <canvas ref={canvasRef} className="max-w-full rounded-2xl shadow-2xl" />
+        <canvas ref={canvasRef} className="max-w-full rounded-[var(--r-md)]" />
       </div>
 
       {status === 'ready' && numPages > 1 && (
-        <div className="shrink-0 flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl py-1.5 px-3">
+        <div className="shrink-0 flex items-center gap-3 bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-sm)] p-1">
           <button
             type="button"
             onClick={() => setPageNum(p => Math.max(1, p - 1))}
             disabled={pageNum <= 1}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text3)] hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            aria-label="الصفحة السابقة"
+            className="w-11 h-11 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[var(--t1)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
-            <i className="ti ti-chevron-right"></i>
+            <i className="ti ti-chevron-right text-[20px]"></i>
           </button>
-          <span className="text-[12px] font-bold text-[var(--text3)]">صفحة {pageNum} من {numPages}</span>
+          <span className="text-[length:var(--fs-xs)] font-bold text-[var(--t2)]">صفحة {pageNum} من {numPages}</span>
           <button
             type="button"
             onClick={() => setPageNum(p => Math.min(numPages, p + 1))}
             disabled={pageNum >= numPages}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text3)] hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            aria-label="الصفحة التالية"
+            className="w-11 h-11 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[var(--t1)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
-            <i className="ti ti-chevron-left"></i>
+            <i className="ti ti-chevron-left text-[20px]"></i>
           </button>
         </div>
       )}

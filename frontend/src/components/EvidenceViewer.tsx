@@ -39,7 +39,7 @@ export function extractYouTubeId(url: string): string | null {
 
 /** امتدادات مستندات Office — تميّزها عن PDF ضمن شواهد النوع 'file' (كلاهما
  * kind 'pdf')، فالتمييز الفعلي بالامتداد الحقيقي في الرابط عبر extensionFromUrl. */
-export const OFFICE_EXTENSIONS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+const OFFICE_EXTENSIONS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
 
 /** عنصر عرض واحد. url غائب للملاحظة فقط. meta: سطر «البند · التاريخ» تحت المحتوى. */
 export type ViewerItem = { kind: PublicKind; name: string; url?: string; description?: string | null; meta?: string };

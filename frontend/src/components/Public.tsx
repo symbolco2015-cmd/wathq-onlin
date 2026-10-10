@@ -146,7 +146,11 @@ export default function Public({ state, sections: allSections, continuity, evide
   const [printAll, setPrintAll] = useState(false);
   const printAllRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const before = () => flushSync(() => setPrintAll(true));
+    // تاريخ الطباعة لتذييل الطباعة — هنا أيضاً لأن Ctrl+P لا يمر بزر «تصدير PDF»
+    const before = () => flushSync(() => {
+      setPrintDate(formatDate(new Date(), 'long'));
+      setPrintAll(true);
+    });
     const after = () => setPrintAll(false);
     window.addEventListener('beforeprint', before);
     window.addEventListener('afterprint', after);
@@ -256,7 +260,7 @@ export default function Public({ state, sections: allSections, continuity, evide
   }, [frozenResultsComparisons, sortedAnalysis]);
 
   // "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي بالقسم الهجين،
-  // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط أدلة
+  // منفصل كلياً عن الاستراتيجيات. بطاقة الاستراتيجيات أدناه تعرض فقط شواهد
   // strategy_id غير الفارغ (stratGroups)، فهذا المؤشر لا يظهر هناك رغم كونه
   // جزءاً طبيعياً من subs — عرض مبسّط مستقل له (بلا أزرار تعديل، مطابق لباقي
   // شواهد صفحة المشاركة).
@@ -271,7 +275,7 @@ export default function Public({ state, sections: allSections, continuity, evide
     ? (evidence ?? []).filter(e => e.indicator_id === indivDiffIndicator.id && !e.strategy_id).map(toPublicRow)
     : [];
 
-  // بطاقة الاستراتيجيات — مُشتقّة من evidenceBySection[stratSection.id] (أدلة
+  // بطاقة الاستراتيجيات — مُشتقّة من evidenceBySection[stratSection.id] (شواهد
   // جدول evidence الحقيقية ذات strategy_id غير فارغ)، مجمَّعة حسب strategy_id
   // واسمها محلول عبر strategyNames (بند 9 بـApp.tsx) — لا state.strats بعد الآن.
   const stratGroups = useMemo(() => {
@@ -472,7 +476,7 @@ export default function Public({ state, sections: allSections, continuity, evide
 
   return (
     <div>
-      <div id="public-portfolio-content" className="bg-[#060f0a] min-h-screen">
+      <div id="public-portfolio-content" className="bg-[var(--bg)] min-h-screen">
         {/* ترويسة خاصة بوضع الطباعة فقط — مخفية دائماً على الشاشة (انظر Public.print.css) */}
         <div className="print-header-block">
           <div className="print-header-row">
@@ -481,6 +485,7 @@ export default function Public({ state, sections: allSections, continuity, evide
               <div className="print-header-meta">{state.profile.role} — {state.profile.school}</div>
             </div>
             <div className="print-header-brand">
+              <img src="/brand/logo-horizontal.svg" alt="وثّق" className="print-header-logo" />
               <div className="print-header-title">
                 {reportMeta ? `وثّق — ${reportMeta.periodLabel}` : 'وثّق — ملف الإنجاز الرقمي'}
               </div>
@@ -509,7 +514,7 @@ export default function Public({ state, sections: allSections, continuity, evide
 
         {/* «أبرز إنجاز» ثم «لمحات» — بعد الرأس مباشرة كما في النموذج، وبعرضه (1100px) */}
         {(topEvidence || (ownerPreview && !reportMeta)) && (
-          <div className="max-w-[1100px] mx-auto px-4 lg:px-8 pt-6">
+          <div className="max-w-[1100px] mx-auto px-4 lg:px-8 pt-6 print:pt-4">
             {topEvidence ? (
               <TopAchievementCard
                 evidence={topEvidence}
@@ -529,7 +534,7 @@ export default function Public({ state, sections: allSections, continuity, evide
           </div>
         )}
 
-        <div className="max-w-[1100px] mx-auto px-4 lg:px-8 py-8">
+        <div className="max-w-[1100px] mx-auto px-4 lg:px-8 py-8 print:pt-4">
           <SectionsList
             core={coreItems}
             special={specialItems}
@@ -549,44 +554,60 @@ export default function Public({ state, sections: allSections, continuity, evide
           {printAll && specialItems.length > 0 && (
             <div ref={printAllRef} className="hidden print:block mt-8">
               {specialItems.map(item => (
-                <section key={item.key} className="print-card mt-6">
-                  <h2 className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">{item.title}</h2>
+                <section key={item.key} className="mt-6">
+                  <h2 className="text-[length:var(--fs-md)] font-bold text-[var(--t1)] print:break-after-avoid">{item.title}</h2>
                   {renderSpecial(item.open.kind as SpecialKey, true)}
                 </section>
               ))}
             </div>
           )}
 
-          <footer className="mt-12 pt-6 border-t border-[var(--line)] text-center">
-            <p className="text-[12px] font-normal text-[var(--text4)]">
-              جميع الحقوق محفوظة لدى <span className="text-[var(--gold3)]">وثق</span> © {new Date().getFullYear()}
+          {/* التذييل — .pfoot في النموذج */}
+          <footer className="mt-12 pt-6 pb-8 border-t border-[var(--bd)] text-center print:hidden">
+            <img src="/brand/logo-horizontal-dark.svg" alt="وثّق" className="w-[170px] h-auto mx-auto" />
+            <p className="mt-3 text-[length:var(--fs-xs)] text-[var(--t3)]">
+              ملف إنجاز مهني ·{' '}
+              <a
+                href="https://wathq.online"
+                target="_blank"
+                rel="noopener noreferrer"
+                dir="ltr"
+                className="relative text-[var(--t2)] no-underline after:absolute after:-inset-y-3 after:inset-x-0"
+              >
+                wathq.online
+              </a>
             </p>
           </footer>
+          <div className="print-footer hidden print:block">wathq.online · {printDate}</div>
         </div>
       </div>
 
       {showShare && (
         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowShare(false)}></div>
-          <div className="relative bg-[var(--surf1)] w-full max-w-sm rounded-[24px] border border-[var(--line)] shadow-2xl flex flex-col overflow-hidden" style={{ animation: 'jumpIn .4s var(--sp) both' }}>
-            <div className="flex items-center justify-between py-4 px-6 border-b border-[var(--line)] bg-[var(--surf0)]">
-              <h3 className="text-[16px] font-black text-white flex items-center gap-2">
-                <i className="ti ti-share text-[var(--em8)]"></i> مشاركة الملف
+          <div className="absolute inset-0 bg-black/55" onClick={() => setShowShare(false)} aria-hidden="true"></div>
+          <div role="dialog" aria-modal="true" aria-labelledby="share-title" className="relative w-full max-w-sm flex flex-col overflow-hidden rounded-[var(--r-lg)] bg-[var(--s1)] border border-[var(--bd2)]">
+            <div className="flex items-center justify-between gap-3 py-3 px-4 border-b border-[var(--bd)]">
+              <h3 id="share-title" className="flex items-center gap-2 text-[length:var(--fs-md)] font-bold text-[var(--t1)]">
+                <i className="ti ti-share text-[20px] text-[var(--t2)]"></i> مشاركة الملف
               </h3>
               <button
-                className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[var(--text3)] hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+                type="button"
+                aria-label="إغلاق"
+                className="w-11 h-11 shrink-0 flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--bd2)] text-[var(--t2)] cursor-pointer"
                 onClick={() => setShowShare(false)}
               >
-                <i className="ti ti-x text-[16px]"></i>
+                <i className="ti ti-x text-[20px]"></i>
               </button>
             </div>
 
             <div className="p-6 flex flex-col items-center">
-              <div className="bg-white p-4 rounded-2xl mb-5 shadow-[0_8px_30px_rgba(0,0,0,.3)]">
+              {/* خلفية بيضاء وهامش 16px حول الرمز (منطقة هادئة) حتى يُمسح */}
+              <div className="bg-white p-4 rounded-[var(--r-md)] mb-4">
                 <QRCodeSVG
                   value={shareUrl}
                   size={180}
                   level="H"
+                  bgColor="#ffffff"
                   fgColor="#000000"
                   imageSettings={state.profile.avatar ? {
                     src: state.profile.avatar,
@@ -598,17 +619,19 @@ export default function Public({ state, sections: allSections, continuity, evide
                   } : undefined}
                 />
               </div>
-              <p className="text-[13px] text-[var(--text3)] text-center mb-5">امسح الرمز أو انسخ الرابط المباشر لمشاركة ملف الإنجاز — <strong className="text-[var(--em8)]">لا يحتاج تسجيل دخول</strong></p>
+              <p className="text-[length:var(--fs-sm)] leading-[1.8] text-[var(--t2)] text-center mb-4">امسح الرمز أو انسخ الرابط المباشر لمشاركة ملف الإنجاز — <strong className="font-bold text-[var(--t1)]">لا يحتاج تسجيل دخول</strong></p>
 
-              <div className="flex w-full overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surf0)]">
+              <div className="flex w-full items-center gap-2">
                 <button
+                  type="button"
                   onClick={copyLink}
-                  className="bg-[var(--em7)]/20 hover:bg-[var(--em7)]/30 text-[var(--em8)] px-4 py-3 font-bold text-[13px] transition-colors whitespace-nowrap border-l border-[var(--line)] cursor-pointer"
+                  aria-label={copied ? 'نُسخ الرابط' : 'نسخ الرابط'}
+                  className="w-11 h-11 shrink-0 flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--bd2)] text-[var(--t1)] cursor-pointer"
                 >
-                  {copied ? <i className="ti ti-check text-[16px]"></i> : <i className="ti ti-copy text-[16px]"></i>}
+                  {copied ? <i className="ti ti-check text-[20px]"></i> : <i className="ti ti-copy text-[20px]"></i>}
                 </button>
-                <div className="flex-1 px-4 py-3 text-[12px] text-[var(--text4)] overflow-hidden text-ellipsis whitespace-nowrap bg-[var(--surf0)] text-left" dir="ltr">
-                  {shareUrl}
+                <div className="flex-1 min-w-0 h-11 px-3 flex items-center rounded-[var(--r-sm)] border border-[var(--bd)] bg-[var(--s2)] text-[length:var(--fs-xs)] text-[var(--t2)]" dir="ltr">
+                  <span className="truncate">{shareUrl}</span>
                 </div>
               </div>
             </div>

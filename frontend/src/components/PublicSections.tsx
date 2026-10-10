@@ -52,9 +52,9 @@ const KIND_ICON: Record<PublicKind, string> = {
   audio: 'ti-microphone', link: 'ti-link', note: 'ti-notes',
 };
 
-const EYEBROW = 'flex items-center gap-1.5 text-[length:var(--fs-xs)] font-bold text-[var(--brand-gold)]';
+const EYEBROW = 'flex items-center gap-1.5 text-[length:var(--fs-xs)] font-bold text-[var(--brand-gold)] print:break-after-avoid';
 const PILL = 'inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] print:bg-transparent print:border px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap';
-const PANEL = 'rounded-[var(--r-md)] bg-[var(--s2)] print:bg-transparent border border-[var(--bd)] p-4';
+const PANEL = 'rounded-[var(--r-md)] bg-[var(--s2)] print:bg-transparent print:break-inside-avoid border border-[var(--bd)] p-4';
 
 /** اسم الدومين فقط (بدون www.) لعرضه بجانب أيقونة رابط عام غير معروف */
 function getDomain(url: string): string {
@@ -81,7 +81,7 @@ function AreaRow({ item, onOpen }: { item: AreaItem; onOpen: (open: OpenSec, el:
     <button
       type="button"
       onClick={ev => onOpen(item.open, ev.currentTarget)}
-      className="print-card flex flex-col gap-3 p-4 rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--bd)] text-right cursor-pointer transition-colors duration-150 hover:border-[color-mix(in_srgb,var(--brand-gold)_35%,transparent)]"
+      className="print-card flex flex-col gap-3 p-4 rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--bd)] text-right cursor-pointer transition-colors duration-150 motion-reduce:transition-none hover:border-[color-mix(in_srgb,var(--brand-gold)_35%,transparent)]"
     >
       <span className="flex items-center gap-3 w-full">
         <BrandTile icon={item.icon} />
@@ -115,7 +115,7 @@ export function SectionsList({ core, special, coveredCount, totalSections, onOpe
         <i className="ti ti-layout-grid text-[16px]"></i>
         المجالات الموثّقة
       </div>
-      <h2 id="areas-title" className="mt-1 text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">ممارسات موثّقة بالشواهد</h2>
+      <h2 id="areas-title" className="mt-1 text-[length:var(--fs-lg)] font-bold text-[var(--t1)] print:break-after-avoid">ممارسات موثّقة بالشواهد</h2>
       <p className="mt-1 text-[length:var(--fs-sm)] text-[var(--t3)]">{coveredCount} من {totalSections} مجالات للأداء المهني</p>
       {core.length > 0 ? (
         <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-2">
@@ -185,7 +185,7 @@ export function SectionSheet({ icon, title, onClose, returnFocusTo, viewerOpenRe
             type="button"
             onClick={onClose}
             aria-label="إغلاق"
-            className="w-9 h-9 shrink-0 flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--bd2)] text-[var(--t2)] text-[16px] cursor-pointer"
+            className="relative w-9 h-9 shrink-0 flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--bd2)] text-[var(--t2)] text-[16px] cursor-pointer after:absolute after:-inset-1"
           >
             <i className="ti ti-x"></i>
           </button>
@@ -372,7 +372,7 @@ export function StrategiesContent({ groups, otherEvs, onPreview, forceOpen, eage
   });
 
   if (groups.length === 0 && otherEvs.length === 0) {
-    return <EmptyNote icon="ti-bulb-off" text="لا توجد استراتيجيات موثّقة بدليل بعد" />;
+    return <EmptyNote icon="ti-bulb-off" text="لا توجد استراتيجيات موثّقة بشاهد بعد" />;
   }
   return (
     <div className="flex flex-col gap-3 mt-2">
@@ -384,11 +384,11 @@ export function StrategiesContent({ groups, otherEvs, onPreview, forceOpen, eage
               type="button"
               aria-expanded={open}
               onClick={() => toggle(group.id)}
-              className="w-full flex items-center gap-2 text-right cursor-pointer"
+              className="relative w-full flex items-center gap-2 text-right cursor-pointer after:absolute after:-inset-y-2.5 after:inset-x-0"
             >
               <span className="flex-1 text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{group.name}</span>
               <span className={PILL}>{nEv(group.evidence.length)}</span>
-              <i className={`ti ti-chevron-down text-[16px] text-[var(--t3)] transition-transform duration-250 print:hidden ${open ? 'rotate-180' : ''}`}></i>
+              <i className={`ti ti-chevron-down text-[16px] text-[var(--t3)] transition-transform duration-250 motion-reduce:transition-none print:hidden ${open ? 'rotate-180' : ''}`}></i>
             </button>
             {open && (
               <div className={`${THUMB_GRID} mt-3`}>

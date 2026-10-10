@@ -96,7 +96,7 @@ function ReadinessRing({ pct }: { pct: number }) {
 function StatTile({ value, suffix, label }: { value: number; suffix?: string; label: string }) {
   return (
     // rgba(0,0,0,.2) من النموذج — لا رمز مقابل في DESIGN.md
-    <div className="text-center py-2 px-1 rounded-[var(--r-sm)] bg-[rgba(0,0,0,.2)]">
+    <div className="text-center py-2 px-1 rounded-[var(--r-sm)] bg-[rgba(0,0,0,.2)] print:bg-white print:border">
       <b className="block text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">
         {value}
         {suffix && <small className="text-[length:var(--fs-xs)] font-normal text-[var(--t3)]">{suffix}</small>}
@@ -106,7 +106,9 @@ function StatTile({ value, suffix, label }: { value: number; suffix?: string; la
   );
 }
 
-const CONTACT_BOX = 'w-10 h-10 rounded-[var(--r-sm)] bg-[var(--s2)] border border-[var(--bd2)] flex items-center justify-center text-[20px] text-[var(--t1)] no-underline transition-colors duration-150 hover:border-[var(--t3)]';
+// مربعات التواصل 40px. after: مساحة ضغط 44px دون تغيير الشكل (2px من كل جهة)،
+// والمسافة بينها gap-2 = 8px فيبقى 4px بين كل مربعين في الاتجاهين.
+const CONTACT_BOX = 'w-10 h-10 rounded-[var(--r-sm)] bg-[var(--s2)] border border-[var(--bd2)] flex items-center justify-center text-[20px] text-[var(--t1)] no-underline transition-colors duration-150 motion-reduce:transition-none hover:border-[var(--t3)] relative after:absolute after:-inset-0.5';
 
 function ContactLinks({ profile }: { profile: PublicPortfolioState['profile'] }) {
   const email = profile.email?.trim();
@@ -185,7 +187,10 @@ function ReportPeriodBanner({ periodLabel, generatedAt }: { periodLabel: string;
   );
 }
 
-export interface PublicHeroProps {
+// زرا الرأس 36px: مساحة ضغط عمودية فقط إلى 44px، فلا تتداخل مع الزر المجاور
+const HERO_BTN = `${BTN_SM} relative after:absolute after:-inset-y-1 after:inset-x-0`;
+
+interface PublicHeroProps {
   profile: PublicPortfolioState['profile'];
   /** get_portfolio_completion عبر get_shared_portfolio، أو لقطة التقرير */
   completion?: PublicPortfolioState['completion'];
@@ -219,10 +224,10 @@ export default function PublicHero({ profile, completion, aiSummary, totalEvs, c
 
       <div className="relative max-w-[1100px] mx-auto">
         <div id="pdf-action-buttons" className="flex justify-end gap-2 mb-4 print:hidden">
-          <button type="button" onClick={onExportPdf} className={BTN_SM}>
+          <button type="button" onClick={onExportPdf} className={HERO_BTN}>
             <i className="ti ti-download text-[16px]" />تصدير PDF
           </button>
-          <button type="button" onClick={onShare} className={BTN_SM}>
+          <button type="button" onClick={onShare} className={HERO_BTN}>
             <i className="ti ti-share text-[16px]" />مشاركة
           </button>
         </div>

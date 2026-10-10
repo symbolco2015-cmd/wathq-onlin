@@ -76,7 +76,7 @@ export default function TopAchievementCard({ evidence, source, sectionName, indi
 
   return (
     <section aria-labelledby="top-achievement-label">
-      <div id="top-achievement-label" className="flex items-center gap-1.5 text-[length:var(--fs-xs)] font-bold text-[var(--brand-gold)]">
+      <div id="top-achievement-label" className="flex items-center gap-1.5 text-[length:var(--fs-xs)] font-bold text-[var(--brand-gold)] print:break-after-avoid">
         <i className="ti ti-star text-[16px]"></i>
         أبرز إنجاز
       </div>

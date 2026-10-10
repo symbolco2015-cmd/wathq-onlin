@@ -9,7 +9,6 @@ const MICROSOFT_AUTH_ENABLED = false;
 interface AuthProps {
   onLoginSuccess: () => void;
   onToast: (msg: string, icon?: string) => void;
-  spawnParticles: (rect: DOMRect) => void;
   // True when the user arrived through a password-recovery email link
   recovery?: boolean;
   // Called after the new password has been saved successfully
@@ -43,7 +42,7 @@ function mapAuthError(err: any, fallback: string): string {
   return fallback;
 }
 
-export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery, onRecoveryComplete }: AuthProps) {
+export default function Auth({ onLoginSuccess, onToast, recovery, onRecoveryComplete }: AuthProps) {
   const [mode, setMode] = useState<AuthMode>(recovery ? 'update' : 'login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -82,9 +81,7 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
     }
 
     const btn = e.currentTarget;
-    const rect = btn.getBoundingClientRect();
-    spawnParticles(rect);
-    
+
     // Simulate button ripple/scale
     btn.style.transform = 'scale(.96)';
     setTimeout(() => {
@@ -171,8 +168,6 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       return;
     }
 
-    const btn = e.currentTarget;
-    spawnParticles(btn.getBoundingClientRect());
     setLoading(true);
 
     try {
@@ -216,8 +211,6 @@ export default function Auth({ onLoginSuccess, onToast, spawnParticles, recovery
       return;
     }
 
-    const btn = e.currentTarget;
-    spawnParticles(btn.getBoundingClientRect());
     setLoading(true);
 
     try {

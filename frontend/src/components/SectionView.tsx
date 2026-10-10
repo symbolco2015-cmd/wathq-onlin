@@ -13,16 +13,16 @@ import {
 
 export type Level = 'n' | 'p' | 'g' | 'x';
 
-export const LEVEL_LABEL: Record<Level, string> = { n: 'لم يبدأ', p: 'جارٍ', g: 'أساسي', x: 'متجاوز' };
+export const LEVEL_LABEL: Record<Level, string> = { n: 'لم يبدأ', p: 'قيد التقدم', g: 'أساسي', x: 'متجاوز' };
 export const LEVEL_COLOR: Record<Level, string> = { n: 'var(--t3)', p: 'var(--prog)', g: 'var(--accent)', x: 'var(--st-gold)' };
 // نقطة الحالة — .navs .dt في النموذج: «لم يبدأ» بـ --idle، لا بلون نص الشارة --t3
 export const DOT_COLOR: Record<Level, string> = { ...LEVEL_COLOR, n: 'var(--idle)' };
 
-/** شارة المستوى — رأس شاشة القسم وصف القسم في الرئيسية */
+/** شارة المستوى — رأس شاشة القسم وصف القسم في الرئيسية، وقائمة البنود في الصفحة العامة */
 export function LevelBadge({ level }: { level: Level }) {
   return (
     <span
-      className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap"
+      className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] print:bg-transparent print:border px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap"
       style={{ color: LEVEL_COLOR[level] }}
     >
       {LEVEL_LABEL[level]}

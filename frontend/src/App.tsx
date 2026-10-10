@@ -38,6 +38,14 @@ import type { PublicCustomIndicator } from './hooks/usePublicCustomIndicators';
 import { useCustomIndicators } from './hooks/useCustomIndicators';
 import type { IndicatorResult } from './hooks/useCustomIndicators';
 import type { ToastAction } from './components/UI';
+import { BTN_DNG } from './components/SectionView';
+
+// حقول نافذتي «إعدادات الحساب» و«إضافة استراتيجية» — DESIGN.md
+const FIELD = 'w-full h-11 px-3 bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-sm)] text-[length:var(--fs-sm)] text-[var(--t1)] placeholder:text-[var(--t3)] outline-none transition-colors duration-150 focus:border-[var(--accent)]';
+const LABEL = 'text-[length:var(--fs-xs)] font-bold text-[var(--t2)] mb-2 flex items-center gap-2';
+const HINT = 'text-[length:var(--fs-xs)] text-[var(--t3)] mt-1';
+const SECTION_TITLE = 'flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--t2)] mb-3';
+const BTN_2ND = 'h-11 px-4 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border bg-transparent text-[length:var(--fs-sm)] font-bold whitespace-nowrap transition-colors duration-150';
 
 /** مهلة «تراجع» بعد حذف مؤشر مخصص — لا شيء يصل إلى القاعدة قبل انتهائها */
 const INDICATOR_UNDO_MS = 6000;
@@ -450,26 +458,6 @@ export default function App() {
       .map(ind => ({ id: ind.id, section_id: s.id, name_ar: ind.name_ar }))
   ), [viewSections, viewEvidence]);
 
-  const spawnParticles = useCallback((rect: DOMRect) => {
-    const colors = ['var(--em7)', 'var(--gold)', 'var(--em8)', '#fff'];
-    for (let i = 0; i < 14; i++) {
-      const p = document.createElement('div');
-      p.className = 'particle';
-      p.style.cssText = `
-        left: ${rect.left + Math.random() * rect.width}px;
-        top: ${rect.top + Math.random() * rect.height}px;
-        background: ${colors[Math.floor(Math.random() * colors.length)]};
-        --px: ${(Math.random() - 0.5) * 80}px;
-        animation-delay: ${Math.random() * 0.3}s;
-        animation-duration: ${0.6 + Math.random() * 0.4}s;
-        width: ${4 + Math.random() * 5}px;
-        height: ${4 + Math.random() * 5}px;
-      `;
-      document.body.appendChild(p);
-      p.addEventListener('animationend', () => p.remove());
-    }
-  }, []);
-
   const closeModal = () => setModalConfig(prev => ({ ...prev, isOpen: false }));
 
   const openAddEvModal = (sid: number, sub: string, strategyId?: string, indicatorId?: string) => {
@@ -494,47 +482,53 @@ export default function App() {
       const [localMode, setLocalMode] = useState(mode);
       const [localSelectedId, setLocalSelectedId] = useState('');
 
-      const inputCls = 'w-full py-3.5 px-4 bg-white/5 border-[1.5px] border-[var(--line2)] rounded-xl text-[15px] font-[var(--font)] text-white outline-none transition-all duration-250 placeholder-[var(--text4)] focus:bg-[var(--em7)]/5 focus:border-[var(--em7)]/40 focus:shadow-[0_0_0_4px_rgba(42,122,68,.15)]';
+      // التبديل بين الوضعين محايد: الأخضر محجوز لزر «حفظ»
+      const toggleCls = (active: boolean) =>
+        `flex-1 h-11 rounded-[var(--r-sm)] border text-[length:var(--fs-sm)] font-bold cursor-pointer transition-colors duration-150 ${active
+          ? 'bg-[var(--s2)] border-[var(--bd2)] text-[var(--t1)]'
+          : 'bg-transparent border-[var(--bd)] text-[var(--t3)] hover:text-[var(--t2)]'}`;
 
       return (
-        <div className="mb-5 space-y-3.5">
+        <div className="flex flex-col gap-4">
           {teachingStrategies.strategies.length > 0 && (
             <div className="flex gap-2">
               <button
                 type="button"
+                aria-pressed={localMode === 'pick'}
                 onClick={() => { mode = 'pick'; setLocalMode('pick'); }}
-                className={`flex-1 py-2 rounded-lg text-[12.5px] font-bold cursor-pointer border ${localMode === 'pick' ? 'bg-[var(--em6)]/20 border-[var(--em6)]/40 text-[var(--em8)]' : 'border-[var(--line2)] text-[var(--text4)]'}`}
+                className={toggleCls(localMode === 'pick')}
               >من الكتالوج</button>
               <button
                 type="button"
+                aria-pressed={localMode === 'new'}
                 onClick={() => { mode = 'new'; setLocalMode('new'); }}
-                className={`flex-1 py-2 rounded-lg text-[12.5px] font-bold cursor-pointer border ${localMode === 'new' ? 'bg-[var(--em6)]/20 border-[var(--em6)]/40 text-[var(--em8)]' : 'border-[var(--line2)] text-[var(--text4)]'}`}
+                className={toggleCls(localMode === 'new')}
               >+ استراتيجية جديدة</button>
             </div>
           )}
 
           {localMode === 'pick' ? (
             <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2.5 flex items-center gap-2 tracking-wide uppercase">
-                <i className="ti ti-bulb text-[16px] text-[var(--em7)]"></i> اختر استراتيجية
+              <div className={LABEL}>
+                <i className="ti ti-bulb text-[16px] text-[var(--t3)]"></i> اختر استراتيجية
               </div>
               <SelectDropdown
                 options={teachingStrategies.strategies.map(s => ({ value: s.id, label: s.name_ar }))}
                 value={localSelectedId}
                 onChange={v => { selectedId = v; setLocalSelectedId(v); }}
                 placeholder="— اختر —"
-                triggerClassName={inputCls + ' cursor-pointer'}
+                triggerClassName={FIELD + ' cursor-pointer'}
               />
             </div>
           ) : (
             <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2.5 flex items-center gap-2 tracking-wide uppercase">
-                <i className="ti ti-bulb text-[16px] text-[var(--em7)]"></i> اسم الاستراتيجية الجديدة
+              <div className={LABEL}>
+                <i className="ti ti-bulb text-[16px] text-[var(--t3)]"></i> اسم الاستراتيجية الجديدة
               </div>
               <input
                 type="text"
                 autoFocus
-                className={inputCls}
+                className={FIELD}
                 placeholder="مثال: التعلم بالاستقصاء"
                 onChange={e => { newName = e.target.value; }}
               />
@@ -753,137 +747,145 @@ export default function App() {
       };
 
       return (
-        <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto pr-2 hide-scrollbar pb-4">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="w-[64px] h-[64px] rounded-full shrink-0 bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white flex items-center justify-center text-[22px] font-black shadow-[0_0_0_2px_rgba(82,196,120,.25),0_4px_14px_rgba(42,122,68,.4)] bg-cover bg-center overflow-hidden" style={localP.avatar ? { backgroundImage: `url(${localP.avatar})` } : {}}>
-              {!localP.avatar && localP.name.substring(0, 2)}
-            </div>
-            <div className="flex flex-col items-start gap-2">
-              <div className="flex flex-wrap gap-2">
-                <label className={`py-2 px-4 rounded-xl border border-[var(--line2)] text-[13px] font-bold text-white transition-all ${isProcessing ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:bg-white/5'}`}>
-                  <i className="ti ti-upload ml-2"></i>رفع صورة
-                  <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isProcessing} />
-                </label>
-                {localP.avatar && (
-                  <button className="py-2 px-4 rounded-xl border border-[#f87171]/30 text-[13px] font-bold text-[#f87171] cursor-pointer hover:bg-[#f87171]/10 transition-all bg-transparent" onClick={handleDeleteAvatar}>
-                    حذف
-                  </button>
-                )}
-                {originalAvatar && !isProcessing && (
-                  <button className="py-2 px-4 rounded-xl border border-[var(--gold)]/30 text-[13px] font-bold text-[var(--gold)] cursor-pointer hover:bg-[var(--gold)]/10 transition-all bg-transparent" onClick={handleUndo}>
-                    <i className="ti ti-arrow-back-up ml-1"></i>تراجع عن التفريغ
-                  </button>
-                )}
-              </div>
-              {isProcessing && (
-                <div className="text-[12px] text-[var(--em8)] font-bold flex items-center gap-1.5 animate-pulse mt-1">
-                  <i className="ti ti-loader animate-spin"></i> جاري معالجة الصورة وتفريغ الخلفية...
+        <div className="flex flex-col gap-6 max-h-[min(60vh,calc(100dvh-17rem))] overflow-y-auto">
+          <section>
+            <div className={SECTION_TITLE}><i className="ti ti-user text-[16px] text-[var(--t3)]"></i> الملف الشخصي</div>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-4">
+                <div className={`w-16 h-16 rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[length:var(--fs-md)] font-bold text-[var(--t1)] bg-cover bg-center overflow-hidden ${localP.avatar ? '' : 'bg-[var(--s2)] border border-[var(--bd2)]'}`} style={localP.avatar ? { backgroundImage: `url(${localP.avatar})` } : {}}>
+                  {!localP.avatar && localP.name.substring(0, 2)}
                 </div>
-              )}
-            </div>
-          </div>
+                <div className="flex flex-col items-start gap-2 min-w-0">
+                  <div className="flex flex-wrap gap-2">
+                    <label className={`${BTN_2ND} border-[var(--bd2)] text-[var(--t2)] ${isProcessing ? 'opacity-40 cursor-wait' : 'cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]'}`}>
+                      <i className="ti ti-upload text-[16px]"></i>رفع صورة
+                      <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isProcessing} />
+                    </label>
+                    {localP.avatar && (
+                      <button type="button" className={`${BTN_2ND} border-[var(--danger)]/35 text-[var(--danger)] cursor-pointer hover:bg-[var(--s2)]`} onClick={handleDeleteAvatar}>
+                        حذف
+                      </button>
+                    )}
+                    {originalAvatar && !isProcessing && (
+                      <button type="button" className={`${BTN_2ND} border-[var(--bd2)] text-[var(--t2)] cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]`} onClick={handleUndo}>
+                        <i className="ti ti-arrow-back-up text-[16px]"></i>تراجع عن التفريغ
+                      </button>
+                    )}
+                  </div>
+                  {isProcessing && (
+                    <div className="text-[length:var(--fs-xs)] text-[var(--t3)] flex items-center gap-2">
+                      <i className="ti ti-loader animate-spin"></i> جاري معالجة الصورة وتفريغ الخلفية...
+                    </div>
+                  )}
+                </div>
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">الاسم الكامل</div>
-              <input type="text" value={localP.name} onChange={e => handleUpdate('name', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className={LABEL}>الاسم الكامل</div>
+                  <input type="text" value={localP.name} onChange={e => handleUpdate('name', e.target.value)} className={FIELD} />
+                </div>
+                <div>
+                  <div className={LABEL}>المسمى الوظيفي</div>
+                  <input type="text" value={localP.role} onChange={e => handleUpdate('role', e.target.value)} className={FIELD} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className={LABEL}>جهة العمل (المدرسة)</div>
+                  <input type="text" value={localP.school} onChange={e => handleUpdate('school', e.target.value)} className={FIELD} />
+                </div>
+                <div>
+                  <div className={LABEL}>سنوات الخبرة</div>
+                  <input type="number" value={localP.yearsOfExperience} onChange={e => handleUpdate('yearsOfExperience', parseInt(e.target.value) || 0)} className={FIELD} />
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">المسمى الوظيفي</div>
-              <input type="text" value={localP.role} onChange={e => handleUpdate('role', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">جهة العمل (المدرسة)</div>
-              <input type="text" value={localP.school} onChange={e => handleUpdate('school', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" />
-            </div>
-            <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">سنوات الخبرة</div>
-              <input type="number" value={localP.yearsOfExperience} onChange={e => handleUpdate('yearsOfExperience', parseInt(e.target.value) || 0)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">رقم الجوال</div>
-              <input type="text" value={localP.phone} onChange={e => handleUpdate('phone', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="05XXXXXXXX" />
-              <div className="text-[12px] text-[var(--text4)] mt-1.5">يظهر في صفحتك العامة عند تفعيل المشاركة</div>
-            </div>
-            <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">البريد الإلكتروني</div>
-              <input type="email" value={localP.email} onChange={e => handleUpdate('email', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="email@example.com" />
-              <div className="text-[12px] text-[var(--text4)] mt-1.5">يظهر في صفحتك العامة عند تفعيل المشاركة</div>
-            </div>
-          </div>
-          <div className="text-[12.5px] font-bold text-[var(--em8)] mt-2 border-b border-[var(--line2)] pb-2 mb-1">حسابات التواصل الاجتماعي</div>
-          <div>
-            <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">حساب X (تويتر)</div>
-            <input type="text" value={localP.twitter} onChange={e => handleUpdate('twitter', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="https://x.com/..." />
-          </div>
-          <div>
-            <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">حساب LinkedIn</div>
-            <input type="text" value={localP.linkedin} onChange={e => handleUpdate('linkedin', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="https://linkedin.com/in/..." />
-          </div>
-          <div>
-            <div className="text-[12px] font-bold text-[var(--text3)] mb-2 flex items-center gap-2">قناة YouTube</div>
-            <input type="text" value={localP.youtube} onChange={e => handleUpdate('youtube', e.target.value)} className="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40" placeholder="https://youtube.com/@..." />
-          </div>
+          </section>
 
-          <div className="border-t border-[var(--line2)] pt-5 mt-2">
-            <div className="text-[12.5px] font-bold text-[var(--em8)] mb-3 flex items-center gap-2">
-              <i className="ti ti-share text-[15px]" /> مشاركة الملف العام
+          <section className="border-t border-[var(--bd)] pt-6">
+            <div className={SECTION_TITLE}><i className="ti ti-address-book text-[16px] text-[var(--t3)]"></i> التواصل</div>
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className={LABEL}>رقم الجوال</div>
+                  <input type="text" value={localP.phone} onChange={e => handleUpdate('phone', e.target.value)} className={FIELD} placeholder="05XXXXXXXX" />
+                  <div className={HINT}>يظهر في صفحتك العامة عند تفعيل المشاركة</div>
+                </div>
+                <div>
+                  <div className={LABEL}>البريد الإلكتروني</div>
+                  <input type="email" value={localP.email} onChange={e => handleUpdate('email', e.target.value)} className={FIELD} placeholder="email@example.com" />
+                  <div className={HINT}>يظهر في صفحتك العامة عند تفعيل المشاركة</div>
+                </div>
+              </div>
+              <div>
+                <div className={LABEL}>حساب X (تويتر)</div>
+                <input type="text" value={localP.twitter} onChange={e => handleUpdate('twitter', e.target.value)} className={FIELD} placeholder="https://x.com/..." />
+              </div>
+              <div>
+                <div className={LABEL}>حساب LinkedIn</div>
+                <input type="text" value={localP.linkedin} onChange={e => handleUpdate('linkedin', e.target.value)} className={FIELD} placeholder="https://linkedin.com/in/..." />
+              </div>
+              <div>
+                <div className={LABEL}>قناة YouTube</div>
+                <input type="text" value={localP.youtube} onChange={e => handleUpdate('youtube', e.target.value)} className={FIELD} placeholder="https://youtube.com/@..." />
+              </div>
             </div>
-            <div className="flex items-center justify-between gap-4 bg-white/5 border border-[var(--line2)] rounded-xl py-3.5 px-4">
+          </section>
+
+          <section className="border-t border-[var(--bd)] pt-6">
+            <div className={SECTION_TITLE}><i className="ti ti-share text-[16px] text-[var(--t3)]"></i> المشاركة</div>
+            <div className="flex items-center justify-between gap-3 bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-sm)] p-3">
               <div className="min-w-0">
-                <div className="text-[13.5px] font-bold text-white">مشاركة ملفي علناً</div>
-                <div className="text-[11.5px] text-[var(--text4)] mt-1 leading-relaxed">
+                <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">مشاركة ملفي علناً</div>
+                <div className={`${HINT} leading-relaxed`}>
                   عند التفعيل، يستطيع أي شخص يملك رابط المشاركة عرض ملف إنجازك دون تسجيل دخول. الوضع الافتراضي معطّل.
                 </div>
               </div>
+              {/* مساحة الضغط 44px، والمسار 44×24 داخلها */}
               <button
                 type="button"
                 role="switch"
                 aria-checked={localShareEnabled}
+                aria-label="مشاركة ملفي علناً"
                 disabled={shareToggleBusy}
                 onClick={handleShareToggle}
-                className={`relative shrink-0 w-[46px] h-[26px] rounded-full border transition-colors duration-200 cursor-pointer ${shareToggleBusy ? 'opacity-60 cursor-wait' : ''} ${localShareEnabled ? 'bg-[var(--em6)] border-[var(--em7)]/60' : 'bg-white/10 border-[var(--line2)]'}`}
+                className={`shrink-0 w-11 h-11 flex items-center justify-center bg-transparent border-none p-0 ${shareToggleBusy ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
               >
-                <span
-                  className={`absolute top-[3px] w-[20px] h-[20px] rounded-full bg-white shadow-md transition-[left] duration-200 ${localShareEnabled ? 'left-[23px]' : 'left-[3px]'}`}
-                />
+                <span className={`relative block w-11 h-6 rounded-[var(--r-full)] border transition-colors duration-[250ms] motion-reduce:transition-none ${localShareEnabled ? 'bg-[var(--accent)] border-[var(--accent)]' : 'bg-[var(--s3)] border-[var(--bd2)]'}`}>
+                  <span className={`absolute top-px w-5 h-5 rounded-[var(--r-full)] bg-[var(--t1)] transition-[left] duration-[250ms] motion-reduce:transition-none ${localShareEnabled ? 'left-[21px]' : 'left-px'}`} />
+                </span>
               </button>
             </div>
-          </div>
+          </section>
 
-          <div className="border-t border-[var(--line2)] pt-5 mt-2">
-            <div className="text-[12.5px] font-bold text-[var(--em8)] mb-3 flex items-center gap-2">
-              <i className="ti ti-calendar-stats text-[15px]" /> إعدادات السنة الدراسية
-            </div>
+          <section className="border-t border-[var(--bd)] pt-6">
+            <div className={SECTION_TITLE}><i className="ti ti-calendar-stats text-[16px] text-[var(--t3)]"></i> السنة الدراسية</div>
             <div>
-              <div className="text-[12px] font-bold text-[var(--text3)] mb-2">شهر بداية السنة الدراسية</div>
+              <div className={LABEL}>شهر بداية السنة الدراسية</div>
               <SelectDropdown
                 options={ARABIC_MONTHS_LIST.map(m => ({ value: String(m.v), label: m.l }))}
                 value={String(localYearStart)}
                 onChange={v => { const n = Number(v); setLocalYearStart(n); yearStart = n; }}
                 placeholder="اختر الشهر"
-                triggerClassName="w-full py-3 px-4 bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer"
+                triggerClassName={FIELD + ' cursor-pointer'}
               />
-              <div className="text-[11px] text-[var(--text4)] mt-1.5">يُستخدم لحساب المعدل الشهري ونسب الإنجاز السنوي</div>
+              <div className={HINT}>يُستخدم لحساب المعدل الشهري ونسب الإنجاز السنوي</div>
             </div>
-          </div>
+          </section>
 
           {user && (
-            <div className="border-t border-red-500/20 pt-5 mt-4">
-              <button 
+            <div className="border-t border-[var(--bd)] pt-6">
+              <button
                 type="button"
-                className="w-full py-3.5 px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-[14px] font-bold text-red-400 cursor-pointer transition-all duration-300 flex items-center justify-center gap-2 border-none"
+                className={`${BTN_DNG} w-full transition-colors duration-150 hover:bg-[var(--s2)]`}
                 onClick={async () => {
                   closeModal();
                   await signOut();
                   showToast('تم تسجيل الخروج بنجاح 👋', '👋');
                 }}
               >
-                <i className="ti ti-logout text-[18px]"></i>
+                <i className="ti ti-logout text-[20px]"></i>
                 تسجيل الخروج من الحساب
               </button>
             </div>
@@ -1087,7 +1089,6 @@ export default function App() {
           <Auth
             onLoginSuccess={() => setCurrentPage('dashboard')}
             onToast={showToast}
-            spawnParticles={spawnParticles}
             recovery={passwordRecovery}
             onRecoveryComplete={() => {
               clearPasswordRecovery();

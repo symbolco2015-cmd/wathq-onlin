@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { toEvRow } from '../indicators';
 import { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from './EvidenceViewer';
-import { LEVEL_COLOR, LEVEL_LABEL, nEv, type Level } from './SectionView';
+import { LevelBadge, nEv, type Level } from './SectionView';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
 import { comparisonDelta } from './ResultsAnalysis/logic';
@@ -30,21 +30,6 @@ export interface AreaItem {
   count: string;
   level?: Level;
   summary?: string | null;
-}
-
-// «جارٍ» يتشوّه تنوينه في الخط الصغير، فتُكتب «قيد التقدم» في الصفحة العامة فقط
-const PUBLIC_LEVEL_LABEL: Record<Level, string> = { ...LEVEL_LABEL, p: 'قيد التقدم' };
-
-/** شارة المستوى في الصفحة العامة — LevelBadge في SectionView.tsx بنص PUBLIC_LEVEL_LABEL */
-function PublicLevelBadge({ level }: { level: Level }) {
-  return (
-    <span
-      className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] print:bg-transparent print:border px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap"
-      style={{ color: LEVEL_COLOR[level] }}
-    >
-      {PUBLIC_LEVEL_LABEL[level]}
-    </span>
-  );
 }
 
 const KIND_ICON: Record<PublicKind, string> = {
@@ -95,7 +80,7 @@ function AreaRow({ item, onOpen }: { item: AreaItem; onOpen: (open: OpenSec, el:
       )}
       <span className="flex items-center gap-2 text-[length:var(--fs-xs)] text-[var(--t3)]">
         <span>{item.count}</span>
-        {item.level && <PublicLevelBadge level={item.level} />}
+        {item.level && <LevelBadge level={item.level} />}
       </span>
     </button>
   );

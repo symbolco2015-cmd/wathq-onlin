@@ -18,12 +18,10 @@
      هامش الطباعة الافتراضي (margin:0) المُعرَّف هناك يبقى كما هو لكل الصفحات. */
 
   /* إخفاء الشريط العلوي (شريط لوحة التحكم في معاينة المالك، أو PublicTopBar في
-     ?share=/?report=) وشريط الجوال السفلي، والخلفية الزخرفية (Background، في
-     معاينة المالك فقط) — فقط إذا كانت الصفحة العامة هي المعروضة حالياً. */
+     ?share=/?report=) وشريط الجوال السفلي — فقط إذا كانت الصفحة العامة هي
+     المعروضة حالياً. */
   body:has(#public-portfolio-content) nav,
-  body:has(#public-portfolio-content) nav + div,
-  body:has(#public-portfolio-content) #bg-canvas,
-  body:has(#public-portfolio-content) .orb {
+  body:has(#public-portfolio-content) nav + div {
     display: none !important;
   }
 

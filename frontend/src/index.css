@@ -48,7 +48,7 @@
 html{scroll-behavior:smooth}
 body{
   font-family:var(--font);direction:rtl;
-  background:var(--surf0);color:var(--text);
+  background:var(--bg);color:var(--text);
   font-size:15px;overflow-x:hidden;min-height:100vh;
 }
 /* Backstop for mobile-only horizontal overflow (e.g. wide tables/tab bars) —
@@ -78,8 +78,6 @@ body{
 @keyframes splashFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes skShimmer{0%{background-position:120% 0}100%{background-position:-120% 0}}
 @keyframes ripple{0%{transform:scale(0);opacity:.4}100%{transform:scale(4);opacity:0}}
-@keyframes orbMove{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(80px,-60px) scale(1.1)}66%{transform:translate(-40px,50px) scale(.9)}}
-@keyframes orbMove2{0%,100%{transform:translate(0,0)}50%{transform:translate(-70px,40px)}}
 @keyframes navIn{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}
 @keyframes scanLine{
   0%{transform:translateY(-100%)}

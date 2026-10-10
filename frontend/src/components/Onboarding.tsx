@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { UserProfile } from '../types';
+import { BTN_PRI } from './SectionView';
+import { FIELD, LABEL, HINT } from './formStyles';
 
 const UNSET_PLACEHOLDER = 'غير محدد';
 
@@ -33,61 +35,55 @@ export default function Onboarding({ profile, onComplete }: OnboardingProps) {
     });
   };
 
+  // حدّ الحقل ولون رسالته --danger عند الخطأ، فوق ألوان FIELD وHINT
   const fieldCls = (valid: boolean) =>
-    `w-full py-3 px-4 bg-white/5 border rounded-lg text-white outline-none transition-colors ${
-      touched && !valid ? 'border-red-500/60' : 'border-[var(--line2)] focus:border-[var(--em7)]/40'
-    }`;
+    `${FIELD} ${touched && !valid ? 'border-[var(--danger)]! focus:border-[var(--danger)]!' : ''}`;
+  const ERROR = `${HINT} text-[var(--danger)]!`;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/85 backdrop-blur-md z-[700] flex items-center justify-center p-5"
-      style={{ animation: 'fadeIn .2s both' }}
-    >
+    // مصمتة: الإعداد الأول يحجب الواجهة كلها، فلا شيء خلفها يُرى
+    <div className="fixed inset-0 z-[700] bg-[var(--bg)] overflow-y-auto flex items-start sm:items-center justify-center px-4 py-6">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-[480px] bg-[#0b1810] border border-[var(--line2)] rounded-2xl p-7 shadow-[0_24px_64px_rgba(0,0,0,.5)]"
-        style={{ animation: 'scaleIn .3s var(--sp) both' }}
+        className="w-full max-w-[480px] bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-lg)] p-4 sm:p-6 motion-safe:animate-[splashFade_250ms_ease]"
       >
-        <div className="flex items-center gap-3 mb-1.5">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] flex items-center justify-center text-[20px] text-white shrink-0">
-            <i className="ti ti-user-check"></i>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-11 h-11 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[24px] text-[var(--t2)] shrink-0">
+            <i className="ti ti-user-check" aria-hidden="true"></i>
           </div>
           <div>
-            <div className="text-[18px] font-black text-white">أكمل ملفك الشخصي</div>
-            <div className="text-[12px] text-[var(--text4)]">خطوة أخيرة قبل البدء — هذه البيانات إلزامية</div>
+            <h1 className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">أكمل ملفك الشخصي</h1>
+            <div className="text-[length:var(--fs-xs)] text-[var(--t3)]">خطوة أخيرة قبل البدء — هذه البيانات إلزامية</div>
           </div>
         </div>
-        <div className="text-[12.5px] text-[var(--text3)] leading-relaxed mb-5 border-b border-[var(--line2)] pb-4">
+        <div className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-[1.8] mb-4 border-b border-[var(--bd)] pb-4">
           نحتاج هذه البيانات لتصنيف ملفك بدقة ولن تتمكن من الوصول إلى لوحة التحكم قبل تعبئتها.
         </div>
 
         <div className="flex flex-col gap-4">
           <div>
-            <div className="text-[12px] font-bold text-[var(--text3)] mb-2">الاسم الكامل</div>
-            <input type="text" autoFocus value={name} onChange={e => setName(e.target.value)} className={fieldCls(nameValid)} placeholder="مثال: محمد أحمد العتيبي" />
-            {touched && !nameValid && <div className="text-[11px] text-red-400 mt-1">هذا الحقل مطلوب</div>}
+            <label htmlFor="ob-name" className={LABEL}>الاسم الكامل</label>
+            <input id="ob-name" type="text" autoFocus value={name} onChange={e => setName(e.target.value)} className={fieldCls(nameValid)} placeholder="مثال: محمد أحمد العتيبي" />
+            {touched && !nameValid && <div className={ERROR}>هذا الحقل مطلوب</div>}
           </div>
           <div>
-            <div className="text-[12px] font-bold text-[var(--text3)] mb-2">التخصص / المسمى الوظيفي</div>
-            <input type="text" value={role} onChange={e => setRole(e.target.value)} className={fieldCls(roleValid)} placeholder="مثال: معلم رياضيات" />
-            {touched && !roleValid && <div className="text-[11px] text-red-400 mt-1">هذا الحقل مطلوب</div>}
+            <label htmlFor="ob-role" className={LABEL}>التخصص / المسمى الوظيفي</label>
+            <input id="ob-role" type="text" value={role} onChange={e => setRole(e.target.value)} className={fieldCls(roleValid)} placeholder="مثال: معلم رياضيات" />
+            {touched && !roleValid && <div className={ERROR}>هذا الحقل مطلوب</div>}
           </div>
           <div>
-            <div className="text-[12px] font-bold text-[var(--text3)] mb-2">جهة العمل (المدرسة)</div>
-            <input type="text" value={school} onChange={e => setSchool(e.target.value)} className={fieldCls(schoolValid)} placeholder="مثال: متوسطة الفيصل، جدة" />
-            {touched && !schoolValid && <div className="text-[11px] text-red-400 mt-1">هذا الحقل مطلوب</div>}
+            <label htmlFor="ob-school" className={LABEL}>جهة العمل (المدرسة)</label>
+            <input id="ob-school" type="text" value={school} onChange={e => setSchool(e.target.value)} className={fieldCls(schoolValid)} placeholder="مثال: متوسطة الفيصل، جدة" />
+            {touched && !schoolValid && <div className={ERROR}>هذا الحقل مطلوب</div>}
           </div>
           <div>
-            <div className="text-[12px] font-bold text-[var(--text3)] mb-2">سنوات الخبرة</div>
-            <input type="number" min={0} value={yearsOfExperience} onChange={e => setYearsOfExperience(e.target.value)} className={fieldCls(yearsValid)} placeholder="مثال: 5" />
-            {touched && !yearsValid && <div className="text-[11px] text-red-400 mt-1">أدخل عدد سنوات صحيح (0 أو أكثر)</div>}
+            <label htmlFor="ob-years" className={LABEL}>سنوات الخبرة</label>
+            <input id="ob-years" type="number" min={0} value={yearsOfExperience} onChange={e => setYearsOfExperience(e.target.value)} className={fieldCls(yearsValid)} placeholder="مثال: 5" />
+            {touched && !yearsValid && <div className={ERROR}>أدخل عدد سنوات صحيح (0 أو أكثر)</div>}
           </div>
         </div>
 
-        <button
-          type="submit"
-          className="w-full mt-6 py-3.5 rounded-xl bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white font-black text-[14.5px] cursor-pointer transition-opacity hover:opacity-90"
-        >
+        <button type="submit" className={`${BTN_PRI} w-full mt-6`}>
           حفظ والمتابعة إلى لوحة التحكم
         </button>
       </form>

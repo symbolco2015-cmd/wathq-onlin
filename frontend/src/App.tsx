@@ -12,7 +12,6 @@ import { useHarvestReport } from './hooks/useHarvestReport';
 import { useResultsAnalysis } from './components/ResultsAnalysis/useResultsAnalysis';
 import { toPublicResultsAnalysisRow } from './components/ResultsAnalysis/logic';
 
-import Background from './components/Background';
 import Nav from './components/Nav';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
@@ -1055,12 +1054,11 @@ export default function App() {
   if (user && !passwordRecovery && currentPage !== 'auth' && isProfileIncomplete(state.profile)) {
     return (
       <>
-        <Background />
         <Onboarding
           profile={state.profile}
           onComplete={(update) => {
             updateProfile(update);
-            showToast('تم حفظ بياناتك بنجاح ✓', '✓');
+            showToast('تم حفظ بياناتك بنجاح', '', undefined, undefined, 'success');
           }}
         />
         <Toast {...toastData} />
@@ -1070,7 +1068,6 @@ export default function App() {
 
   return (
     <>
-      <Background />
       {/* Hide the navigation bar on the login page — only show it after the user signs in */}
       {user && currentPage !== 'auth' && (
         <Nav currentPage={currentPage} setPage={setCurrentPage} profile={state.profile} onOpenProfileSettings={openProfileSettings} isAdmin={isAdmin} isLoggedIn={!!user} />

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
+import type { ToastKind } from '../components/UI';
 
 const MAX_FILES = 30;
 // نفس إعدادات ضغط الصور المستخدمة في useQuickCapture.ts/EvidenceForm.tsx
@@ -13,7 +14,7 @@ export interface BulkImportProgress {
 
 interface UseBulkImportOptions {
   userId: string | undefined;
-  onToast: (msg: string, icon?: string) => void;
+  onToast: (msg: string, kind: ToastKind) => void;
   /** يُستدعى بعد اكتمال استدعاء process-bulk-queue بالخلفية (نجاحاً أو فشلاً) — اختياري */
   onClassificationSettled?: () => void;
 }
@@ -35,12 +36,12 @@ export function useBulkImport({ userId, onToast, onClassificationSettled }: UseB
     if (uploading || files.length === 0) return;
 
     if (files.length > MAX_FILES) {
-      onToast(`الحد الأقصى ${MAX_FILES} صورة بالدفعة الواحدة، يرجى إنقاص العدد`, '⚠️');
+      onToast(`الحد الأقصى ${MAX_FILES} صورة بالدفعة الواحدة، يرجى إنقاص العدد`, 'error');
       return;
     }
 
     if (!userId || !supabase) {
-      onToast('غير متاح حالياً، يرجى المحاولة مجدداً', '❌');
+      onToast('غير متاح حالياً، يرجى المحاولة مجدداً', 'error');
       return;
     }
 
@@ -49,7 +50,7 @@ export function useBulkImport({ userId, onToast, onClassificationSettled }: UseB
     const rejectedCount = files.length - imageFiles.length;
 
     if (imageFiles.length === 0) {
-      onToast('يرجى اختيار صور فقط، هذا الإصدار لا يدعم الفيديو أو PDF بعد ⚠️', '⚠️');
+      onToast('يرجى اختيار صور فقط، هذا الإصدار لا يدعم الفيديو أو PDF بعد', 'error');
       return;
     }
 
@@ -96,7 +97,7 @@ export function useBulkImport({ userId, onToast, onClassificationSettled }: UseB
     setUploading(false);
 
     if (uploadedCount === 0) {
-      onToast('تعذّر رفع أي صورة، يرجى المحاولة مجدداً ❌', '❌');
+      onToast('تعذّر رفع أي صورة، يرجى المحاولة مجدداً', 'error');
       return;
     }
 
@@ -122,7 +123,7 @@ export function useBulkImport({ userId, onToast, onClassificationSettled }: UseB
     const parts: string[] = [`تم رفع ${uploadedCount} صورة، جارٍ التصنيف بالخلفية...`];
     if (rejectedCount > 0) parts.push(`تم تجاهل ${rejectedCount} ملف غير مدعوم (صور فقط في هذا الإصدار)`);
     if (failedCount > 0) parts.push(`تعذّر رفع ${failedCount} صورة`);
-    onToast(parts.join(' — '), '📋');
+    onToast(parts.join(' — '), 'info');
   };
 
   return { uploadBulkImport, uploading, progress };

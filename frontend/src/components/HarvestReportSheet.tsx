@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import BottomSheet from './BottomSheet';
+import { BTN_PRI, BTN_GH_SM } from './SectionView';
+import { FIELD, LABEL } from './formStyles';
+import type { ToastKind } from './UI';
 import { supabase } from '../supabaseClient';
 import { calculatePointsLevelFromTotal, formatDate } from '../utils';
 import type { AcademicDate, AppState, HarvestSnapshot, SectionData } from '../types';
@@ -14,7 +17,7 @@ interface HarvestReportSheetProps {
   state: Pick<AppState, 'profile' | 'yearStartMonth'>;
   sections: SectionData[];
   academicDates?: AcademicDate[];
-  onToast?: (msg: string, icon?: string) => void;
+  onToast?: (msg: string, kind: ToastKind) => void;
 }
 
 interface SemesterOption {
@@ -299,127 +302,114 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
       // "/" ثابت — وليس window.location.pathname، بنفس إصلاح رابط ?share= السابق
       // (يمنع روابط مكسورة إن كان المعلم على مسار فرعي عند توليد التقرير).
       setResultUrl(`${window.location.origin}/?report=${inserted.id}`);
-      onToast?.('تم توليد التقرير بنجاح ✓', '✓');
+      onToast?.('تم توليد التقرير بنجاح', 'success');
     } catch (e) {
       console.error('[HarvestReportSheet] generate error:', e);
-      onToast?.('فشل توليد التقرير، حاول مرة أخرى ❌', '❌');
+      onToast?.('فشل توليد التقرير، حاول مرة أخرى', 'error');
     } finally {
       setGenerating(false);
     }
   };
 
+  const periodBtn = (active: boolean) =>
+    `w-full min-h-11 py-2 px-3 flex items-center justify-between gap-3 text-right rounded-[var(--r-sm)] border cursor-pointer transition-colors duration-150 ${active
+      ? 'bg-[var(--s2)] border-[var(--bd2)]'
+      : 'bg-transparent border-[var(--bd)] hover:bg-[var(--s2)]'}`;
+
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--gold)]/25 to-[var(--gold2)]/15 text-[var(--gold3)] flex items-center justify-center text-[18px] border border-[var(--gold)]/25 shadow-[0_4px_14px_rgba(201,162,39,.25)]">
+      <div className="flex items-center justify-between gap-2 px-4 pb-3 border-b border-[var(--bd)] shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-[var(--r-sm)] shrink-0 flex items-center justify-center bg-[var(--s2)] border border-[var(--bd)] text-[var(--t2)] text-[length:var(--fs-lg)]">
             <i className="ti ti-chart-bar-popular" />
           </div>
-          <div className="text-[16px] font-black text-white">تقرير حصاد فصلي</div>
+          <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">تقرير حصاد فصلي</div>
         </div>
-        <button
-          onClick={onClose}
-          className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px]"
-        >
-          <i className="ti ti-x" />
+        <button type="button" onClick={onClose} aria-label="إغلاق" className={`${BTN_GH_SM} w-11 h-11 px-0`}>
+          <i className="ti ti-x text-[length:var(--fs-lg)]" />
         </button>
       </div>
 
-      <div className="overflow-y-auto flex-1 p-5 space-y-5">
+      <div className="overflow-y-auto flex-1 p-4 space-y-4">
         {resultUrl ? (
           <div className="flex flex-col items-center text-center gap-4 py-2">
-            <div className="w-14 h-14 rounded-full bg-[var(--em7)]/15 border border-[var(--em7)]/30 flex items-center justify-center text-[26px] text-[var(--em8)]">
+            <div className="w-14 h-14 rounded-[var(--r-full)] bg-[var(--s2)] border border-[var(--bd)] flex items-center justify-center text-[length:var(--fs-xl)] text-[var(--accent)]">
               <i className="ti ti-circle-check" />
             </div>
             <div>
-              <div className="text-[15px] font-black text-white mb-1">تم توليد التقرير بنجاح</div>
-              <p className="text-[12.5px] text-[var(--text3)] leading-relaxed">
+              <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)] mb-1">تم توليد التقرير بنجاح</div>
+              <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">
                 هذا الرابط ثابت — لن يتغيّر بأي تعديل لاحق على شواهدك، وهو ما تراه أي جهة تفتحه لاحقاً.
               </p>
             </div>
-            <div className="flex w-full overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surf0)]">
+            <div className="flex items-center w-full overflow-hidden rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]">
               <button
+                type="button"
                 onClick={handleCopy}
-                className="bg-[var(--em7)]/20 hover:bg-[var(--em7)]/30 text-[var(--em8)] px-4 py-3 font-bold text-[13px] transition-colors whitespace-nowrap border-l border-[var(--line)] cursor-pointer"
+                aria-label="نسخ الرابط"
+                className="w-11 h-11 shrink-0 flex items-center justify-center text-[var(--t2)] hover:text-[var(--t1)] border-l border-[var(--bd)] transition-colors duration-150 cursor-pointer"
               >
-                {copied ? <i className="ti ti-check text-[16px]" /> : <i className="ti ti-copy text-[16px]" />}
+                {copied ? <i className="ti ti-check text-[length:var(--fs-md)]" /> : <i className="ti ti-copy text-[length:var(--fs-md)]" />}
               </button>
-              <div className="flex-1 px-4 py-3 text-[12px] text-[var(--text4)] overflow-hidden text-ellipsis whitespace-nowrap bg-[var(--surf0)] text-left" dir="ltr">
+              <div className="flex-1 min-w-0 px-3 text-[length:var(--fs-xs)] text-[var(--t2)] overflow-hidden text-ellipsis whitespace-nowrap text-left" dir="ltr">
                 {resultUrl}
               </div>
             </div>
-            <button
-              onClick={() => setResultUrl(null)}
-              className="text-[12.5px] font-bold text-[var(--text3)] hover:text-white transition-colors cursor-pointer"
-            >
+            <button type="button" onClick={() => setResultUrl(null)} className={BTN_GH_SM}>
               توليد تقرير آخر لمدى مختلف
             </button>
           </div>
         ) : (
           <>
-            <p className="text-[12.5px] text-[var(--text3)] leading-relaxed">
+            <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">
               اختر فصلاً دراسياً معتمداً أو مدى تواريخ مخصصاً — سيُبنى تقرير ثابت من شواهدك الموثّقة ضمن هذه الفترة فقط، برابط عام قابل للمشاركة لا يتأثر بأي تعديل لاحق على ملفك.
             </p>
 
             {semesterOptions.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-[12px] font-bold text-[var(--text3)] tracking-wide uppercase">الفصول المتاحة</div>
+              <div>
+                <div className={LABEL}>الفصول المتاحة</div>
                 <div className="flex flex-col gap-2">
                   {semesterOptions.map(opt => (
                     <button
                       key={opt.key}
                       type="button"
                       onClick={() => setSelectedKey(opt.key)}
-                      className={`text-right py-3 px-4 rounded-xl border transition-all cursor-pointer ${
-                        selectedKey === opt.key
-                          ? 'border-[var(--gold)]/50 bg-[var(--gold)]/10'
-                          : 'border-[var(--line2)] bg-white/5 hover:bg-white/10'
-                      }`}
+                      className={periodBtn(selectedKey === opt.key)}
                     >
-                      <div className={`text-[13.5px] font-bold ${selectedKey === opt.key ? 'text-[var(--gold3)]' : 'text-white'}`}>{opt.label}</div>
-                      <div className="text-[11.5px] text-[var(--text4)] mt-0.5">{formatArabicDate(opt.from)} – {formatArabicDate(opt.to)}</div>
+                      <div className="min-w-0">
+                        <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{opt.label}</div>
+                        <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">{formatArabicDate(opt.from)} – {formatArabicDate(opt.to)}</div>
+                      </div>
+                      {selectedKey === opt.key && <i className="ti ti-check text-[length:var(--fs-lg)] text-[var(--t1)] shrink-0" />}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => setSelectedKey('custom')}
-                className={`w-full text-right py-3 px-4 rounded-xl border transition-all cursor-pointer ${
-                  isCustom ? 'border-[var(--gold)]/50 bg-[var(--gold)]/10' : 'border-[var(--line2)] bg-white/5 hover:bg-white/10'
-                }`}
-              >
-                <div className={`text-[13.5px] font-bold ${isCustom ? 'text-[var(--gold3)]' : 'text-white'}`}>مدى مخصص</div>
-                <div className="text-[11.5px] text-[var(--text4)] mt-0.5">حدّد تاريخي البداية والنهاية يدوياً</div>
+            <div className="space-y-3">
+              <button type="button" onClick={() => setSelectedKey('custom')} className={periodBtn(isCustom)}>
+                <div className="min-w-0">
+                  <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">مدى مخصص</div>
+                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">حدّد تاريخي البداية والنهاية يدوياً</div>
+                </div>
+                {isCustom && <i className="ti ti-check text-[length:var(--fs-lg)] text-[var(--t1)] shrink-0" />}
               </button>
 
               {isCustom && (
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <div className="text-[11.5px] font-bold text-[var(--text3)] mb-1.5">من تاريخ</div>
-                    <input
-                      type="date"
-                      value={customFrom}
-                      onChange={e => setCustomFrom(e.target.value)}
-                      className="w-full py-2.5 px-3 bg-white/5 border border-[var(--line2)] rounded-lg text-white text-[13px] outline-none focus:border-[var(--em7)]/40"
-                    />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="min-w-0">
+                    <div className={LABEL}>من تاريخ</div>
+                    <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className={FIELD} />
                   </div>
-                  <div>
-                    <div className="text-[11.5px] font-bold text-[var(--text3)] mb-1.5">إلى تاريخ</div>
-                    <input
-                      type="date"
-                      value={customTo}
-                      onChange={e => setCustomTo(e.target.value)}
-                      className="w-full py-2.5 px-3 bg-white/5 border border-[var(--line2)] rounded-lg text-white text-[13px] outline-none focus:border-[var(--em7)]/40"
-                    />
+                  <div className="min-w-0">
+                    <div className={LABEL}>إلى تاريخ</div>
+                    <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className={FIELD} />
                   </div>
                 </div>
               )}
               {isCustom && customFrom && customTo && !customRangeValid && (
-                <div className="text-[11.5px] font-bold text-red-400">تاريخ البداية يجب أن يسبق تاريخ النهاية</div>
+                <div className="text-[length:var(--fs-xs)] font-bold text-[var(--danger)]">تاريخ البداية يجب أن يسبق تاريخ النهاية</div>
               )}
             </div>
           </>
@@ -427,16 +417,17 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
       </div>
 
       {!resultUrl && (
-        <div className="p-4 border-t border-[var(--line)] bg-[var(--surf0)] shrink-0">
+        <div className="p-4 border-t border-[var(--bd)] bg-[var(--s1)] shrink-0">
           <button
+            type="button"
             onClick={handleGenerate}
             disabled={!canGenerate || generating}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-[14px] font-black bg-gradient-to-br from-[var(--gold)] to-[var(--gold2)] text-[var(--em0)] border border-[var(--gold)]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(201,162,39,.35)] transition-all duration-250 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
+            className={`${BTN_PRI} w-full disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             {generating ? (
-              <><i className="ti ti-loader animate-spin text-[16px]" /> جاري توليد التقرير...</>
+              <><i className="ti ti-loader animate-spin text-[length:var(--fs-md)]" /> جاري توليد التقرير...</>
             ) : (
-              <><i className="ti ti-file-report text-[16px]" /> توليد التقرير</>
+              <><i className="ti ti-file-report text-[length:var(--fs-md)]" /> توليد التقرير</>
             )}
           </button>
         </div>

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import BottomSheet from './BottomSheet';
 import { useBulkImport } from '../hooks/useBulkImport';
+import { BTN_PRI, BTN_GH_SM } from './SectionView';
+import type { ToastKind } from './UI';
 
 const MAX_FILES = 30;
 
@@ -8,7 +10,7 @@ interface BulkImportPickerProps {
   isOpen: boolean;
   onClose: () => void;
   userId?: string;
-  onToast: (msg: string, icon?: string) => void;
+  onToast: (msg: string, kind: ToastKind) => void;
   onClassificationSettled?: () => void;
 }
 
@@ -82,23 +84,25 @@ export default function BulkImportPicker({ isOpen, onClose, userId, onToast, onC
 
   return (
     <BottomSheet isOpen={isOpen} onClose={handleClose}>
-      <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--em3)] to-[var(--em5)] text-[var(--em8)] flex items-center justify-center text-[18px] border border-[var(--em7)]/20 shadow-[0_4px_14px_rgba(42,122,68,.3)]">
+      <div className="flex items-center justify-between gap-2 px-4 pb-3 border-b border-[var(--bd)] shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-[var(--r-sm)] shrink-0 flex items-center justify-center bg-[var(--s2)] border border-[var(--bd)] text-[var(--t2)] text-[length:var(--fs-lg)]">
             <i className="ti ti-photo-up" />
           </div>
-          <div className="text-[16px] font-black text-white">استيراد جماعي</div>
+          <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">استيراد جماعي</div>
         </div>
         <button
+          type="button"
           onClick={handleClose}
           disabled={uploading}
-          className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px] disabled:opacity-40 disabled:cursor-wait"
+          aria-label="إغلاق"
+          className={`${BTN_GH_SM} w-11 h-11 px-0 disabled:cursor-wait`}
         >
-          <i className="ti ti-x" />
+          <i className="ti ti-x text-[length:var(--fs-lg)]" />
         </button>
       </div>
 
-      <div className="overflow-y-auto flex-1 p-5 space-y-4">
+      <div className="overflow-y-auto flex-1 p-4 space-y-4">
         <input
           type="file"
           accept="image/*"
@@ -112,39 +116,42 @@ export default function BulkImportPicker({ isOpen, onClose, userId, onToast, onC
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl border-[1.5px] border-dashed border-[var(--line2)] hover:border-[var(--em7)]/40 hover:bg-[var(--em7)]/5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-wait text-[13.5px] font-bold text-[var(--text2)]"
+          className="w-full h-11 flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-dashed border-[var(--bd2)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] hover:bg-[var(--s2)] transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-wait"
         >
-          <i className="ti ti-photo-plus text-[18px] text-[var(--em7)]" />
+          <i className="ti ti-photo-plus text-[length:var(--fs-lg)] text-[var(--t2)]" />
           {pending.length === 0 ? 'اختر الصور' : 'إضافة المزيد من الصور'}
         </button>
 
         {pending.length > 0 && (
           <>
             <div className="flex items-center justify-between">
-              <span className={`text-[13px] font-bold ${isOverLimit ? 'text-red-400' : 'text-[var(--text3)]'}`}>
+              <span className={`text-[length:var(--fs-sm)] font-bold ${isOverLimit ? 'text-[var(--danger)]' : 'text-[var(--t2)]'}`}>
                 {pending.length} من {MAX_FILES}
               </span>
             </div>
 
             {isOverLimit && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-[12.5px] font-bold text-red-400 flex items-center gap-2">
-                <i className="ti ti-alert-triangle text-[15px] shrink-0" />
+              <div className="rounded-[var(--r-sm)] border border-[var(--danger)]/35 bg-[var(--s2)] px-3 py-2 text-[length:var(--fs-xs)] font-bold text-[var(--danger)] flex items-center gap-2">
+                <i className="ti ti-alert-triangle text-[length:var(--fs-md)] shrink-0" />
                 تجاوزت الحد الأقصى ({MAX_FILES} صورة) — أزل {pending.length - MAX_FILES} صورة على الأقل للمتابعة
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-3 gap-2">
               {pending.map((p, idx) => (
-                <div key={p.previewUrl} className="relative aspect-square rounded-xl overflow-hidden border border-[var(--line)]">
+                <div key={p.previewUrl} className="relative min-w-0 aspect-square rounded-[var(--r-sm)] overflow-hidden border border-[var(--bd)] bg-[var(--s2)]">
                   <img src={p.previewUrl} alt="" className="w-full h-full object-cover" />
                   {!uploading && (
                     <button
                       type="button"
                       onClick={() => removeAt(idx)}
                       title="إزالة"
-                      className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/65 text-white flex items-center justify-center text-[12px] cursor-pointer hover:bg-black/85 transition-colors"
+                      aria-label="إزالة"
+                      className="absolute top-0 left-0 w-11 h-11 flex items-start justify-start p-1 cursor-pointer"
                     >
-                      <i className="ti ti-x" />
+                      <span className="w-7 h-7 rounded-[var(--r-full)] bg-[var(--s1)] border border-[var(--bd2)] text-[var(--t1)] flex items-center justify-center text-[length:var(--fs-sm)]">
+                        <i className="ti ti-x" />
+                      </span>
                     </button>
                   )}
                 </div>
@@ -152,36 +159,37 @@ export default function BulkImportPicker({ isOpen, onClose, userId, onToast, onC
             </div>
           </>
         )}
+      </div>
 
-        {uploading && (
-          <div className="space-y-2">
-            <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-[var(--em4)] to-[var(--em7)] rounded-full transition-all duration-300"
-                style={{ width: `${progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%` }}
-              />
+      {pending.length > 0 && (
+        <div className="p-4 border-t border-[var(--bd)] bg-[var(--s1)] shrink-0 space-y-3">
+          {uploading && (
+            <div className="space-y-2">
+              <div className="h-2 w-full bg-[var(--s2)] rounded-[var(--r-full)] overflow-hidden">
+                <div
+                  className="h-full bg-[var(--accent)] rounded-[var(--r-full)] transition-[width] duration-[250ms]"
+                  style={{ width: `${progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="text-[length:var(--fs-xs)] text-[var(--t2)] text-center font-bold">
+                جارٍ الرفع {progress.done} من {progress.total}...
+              </p>
             </div>
-            <p className="text-[12px] text-[var(--text4)] text-center font-bold">
-              جارٍ الرفع {progress.done} من {progress.total}...
-            </p>
-          </div>
-        )}
-
-        {pending.length > 0 && (
+          )}
           <button
             type="button"
             disabled={isOverLimit || uploading}
             onClick={handleStart}
-            className="w-full py-3.5 rounded-xl text-[14px] font-bold bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white disabled:opacity-40 disabled:cursor-wait cursor-pointer flex items-center justify-center gap-2"
+            className={`${BTN_PRI} w-full disabled:opacity-40 disabled:cursor-wait`}
           >
             {uploading ? (
-              <><i className="ti ti-loader animate-spin" /> جارٍ الاستيراد...</>
+              <><i className="ti ti-loader animate-spin text-[length:var(--fs-md)]" /> جارٍ الاستيراد...</>
             ) : (
-              <><i className="ti ti-upload" /> بدء الاستيراد</>
+              <><i className="ti ti-upload text-[length:var(--fs-md)]" /> بدء الاستيراد</>
             )}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </BottomSheet>
   );
 }

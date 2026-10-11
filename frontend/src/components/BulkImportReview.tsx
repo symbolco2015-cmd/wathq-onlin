@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import BottomSheet from './BottomSheet';
 import { SectionReclassifyDropdown } from './Dashboard';
 import { SelectDropdown } from './UI';
+import type { ToastKind } from './UI';
+import { BTN_PRI, BTN_SM, BTN_GH_SM } from './SectionView';
+import { FIELD, LABEL } from './formStyles';
 import { supabase } from '../supabaseClient';
 import { useSaveEvidence } from '../hooks/useSaveEvidence';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
@@ -43,7 +46,7 @@ interface BulkImportReviewProps {
   stratSectionId?: number;
   supabaseEv?: SupabaseEvidenceHook;
   onEvidenceSaved?: OnEvidenceSavedFn;
-  onToast?: (msg: string, icon?: string) => void;
+  onToast?: (msg: string, kind: ToastKind) => void;
 }
 
 const publicUrlFor = (filePath: string): string =>
@@ -189,15 +192,15 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
       }
 
       if (succeededIds.length === targetRows.length) {
-        onToast?.(`تم اعتماد ${succeededIds.length} ${succeededIds.length === 1 ? 'شاهد' : 'شواهد'} بنجاح ✅`, '✅');
+        onToast?.(`تم اعتماد ${succeededIds.length} ${succeededIds.length === 1 ? 'شاهد' : 'شواهد'} بنجاح`, 'success');
       } else if (succeededIds.length > 0) {
-        onToast?.(`تم اعتماد ${succeededIds.length} من ${targetRows.length}، تعذّر حفظ الباقي ❌`, '⚠️');
+        onToast?.(`تم اعتماد ${succeededIds.length} من ${targetRows.length}، تعذّر حفظ الباقي`, 'error');
       } else {
-        onToast?.('تعذّر حفظ الشواهد، حاول مرة أخرى ❌', '❌');
+        onToast?.('تعذّر حفظ الشواهد، حاول مرة أخرى', 'error');
       }
     } catch (err) {
       console.error('[BulkImportReview] فشل اعتماد الشواهد:', err);
-      onToast?.('تعذّر حفظ الشواهد، حاول مرة أخرى ❌', '❌');
+      onToast?.('تعذّر حفظ الشواهد، حاول مرة أخرى', 'error');
     } finally {
       setConfirmingKey(null);
     }
@@ -216,134 +219,153 @@ export default function BulkImportReview({ isOpen, onClose, userId, sections, st
   };
   const allRowsReady = acceptableRows.length > 0 && acceptableRows.every(isRowReady);
 
+  // أيقونة حالة الصف مشتقة من الحالة الموجودة فقط: صورة معطوبة، أو جاهز، أو ينقصه قسم/مؤشر
+  const rowStatus = (row: ClassifiedRow): { icon: string; color: string; label: string } =>
+    brokenImageIds[row.id]
+      ? { icon: 'ti-photo-off', color: 'text-[var(--danger)]', label: 'تعذّر تحميل الصورة' }
+      : isRowReady(row)
+        ? { icon: 'ti-circle-check', color: 'text-[var(--accent)]', label: 'جاهز' }
+        : { icon: 'ti-alert-circle', color: 'text-[var(--warn)]', label: 'يحتاج مراجعة' };
+
   return (
     <BottomSheet isOpen={isOpen} onClose={isBusy ? () => {} : onClose}>
-      <div className="flex items-center justify-between px-6 pt-1 pb-4 border-b border-[var(--line)] shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--gold)]/10 border border-[var(--gold)]/20 flex items-center justify-center text-[18px] text-[var(--gold3)]">
+      <div className="flex items-center justify-between gap-2 px-4 pb-3 border-b border-[var(--bd)] shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-[var(--r-sm)] shrink-0 flex items-center justify-center bg-[var(--s2)] border border-[var(--bd)] text-[var(--t2)] text-[length:var(--fs-lg)]">
             <i className="ti ti-photo-check" />
           </div>
-          <div className="text-[16px] font-black text-white">مراجعة الاستيراد الجماعي</div>
+          <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">مراجعة الاستيراد الجماعي</div>
         </div>
         <button
+          type="button"
           onClick={isBusy ? undefined : onClose}
           disabled={isBusy}
-          className="w-9 h-9 rounded-xl bg-white/5 border border-[var(--line)] text-[var(--text4)] hover:text-white hover:bg-white/10 transition-all flex items-center justify-center text-[18px] disabled:opacity-40 disabled:cursor-wait"
+          aria-label="إغلاق"
+          className={`${BTN_GH_SM} w-11 h-11 px-0 disabled:cursor-wait`}
         >
-          <i className="ti ti-x" />
+          <i className="ti ti-x text-[length:var(--fs-lg)]" />
         </button>
       </div>
 
-      <div className="overflow-y-auto flex-1 p-5 space-y-3">
+      <div className="overflow-y-auto flex-1 p-4 space-y-3">
         {loading ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <i className="ti ti-loader animate-spin text-[28px] text-[var(--em8)]" />
-            <p className="text-[13px] text-[var(--text4)] font-semibold">جارٍ التحميل...</p>
+            <i className="ti ti-loader animate-spin text-[length:var(--fs-xl)] text-[var(--t2)]" />
+            <p className="text-[length:var(--fs-sm)] text-[var(--t2)]">جارٍ التحميل...</p>
           </div>
         ) : rows.length === 0 ? (
-          <p className="text-[13px] text-[var(--text4)] text-center py-6">لا توجد شواهد جاهزة للمراجعة حالياً</p>
+          <p className="text-[length:var(--fs-sm)] text-[var(--t2)] text-center py-6">لا توجد شواهد جاهزة للمراجعة حالياً</p>
         ) : (
-          <>
-            <button
-              type="button"
-              disabled={isBusy || !allRowsReady}
-              onClick={acceptAll}
-              title={!allRowsReady ? 'أكمل اختيار القسم والمؤشر لكل الصفوف أولاً' : undefined}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[13.5px] font-bold bg-gradient-to-br from-[var(--em4)] to-[var(--em7)] text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            >
-              {confirmingKey === 'all' ? (
-                <><i className="ti ti-loader animate-spin" /> جارٍ الاعتماد...</>
-              ) : (
-                <><i className="ti ti-checks" /> قبول الكل ({acceptableRows.length})</>
-              )}
-            </button>
-
-            <div className="space-y-2.5">
-              {rows.map(row => {
-                const edit = getEdit(row);
-                const sectionLabel = edit.sectionId != null ? sections.find(s => s.id === edit.sectionId)?.ttl : null;
-                const rowBusy = isBusy; // isBusy = confirmingKey !== null — يعطّل كل الأزرار أثناء أي اعتماد جارٍ، لا الصف المحدد فقط
-                return (
-                  <div key={row.id} className="flex flex-col gap-2.5 p-3.5 bg-white/[0.03] rounded-xl border border-[var(--line)]">
-                    <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 rounded-lg shrink-0 overflow-hidden border border-[var(--gold)]/20 bg-[var(--gold)]/10 flex items-center justify-center">
-                        {brokenImageIds[row.id] ? (
-                          <span className="text-[12px] text-[var(--text4)] text-center leading-tight px-1">تعذّر تحميل الصورة</span>
-                        ) : (
-                          <img
-                            src={publicUrlFor(row.file_path)}
-                            alt=""
-                            className="w-full h-full object-cover"
-                            onError={() => setBrokenImageIds(prev => ({ ...prev, [row.id]: true }))}
-                          />
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        value={edit.title}
-                        disabled={rowBusy}
-                        onChange={e => setEdits(prev => ({ ...prev, [row.id]: { ...edit, title: e.target.value } }))}
-                        placeholder="عنوان الشاهد"
-                        className="flex-1 min-w-0 py-2 px-3 text-[12.5px] font-bold text-white bg-white/5 border border-[var(--line2)] rounded-lg outline-none focus:border-[var(--em7)]/40 disabled:opacity-50"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[11.5px] text-[var(--text4)] font-bold shrink-0">القسم:</span>
-                        <span className="text-[12px] font-bold text-[var(--text2)] truncate">{sectionLabel ?? 'بلا قسم — اختر قسماً'}</span>
-                      </div>
-                      <SectionReclassifyDropdown
-                        sections={sections}
-                        isOpen={openDropdownId === row.id}
-                        isBusy={rowBusy}
-                        onOpen={() => setOpenDropdownId(row.id)}
-                        onClose={() => setOpenDropdownId(null)}
-                        selectedLabel={sectionLabel ?? undefined}
-                        onSelect={(sectionId) => {
-                          setOpenDropdownId(null);
-                          const numericId = Number(sectionId);
-                          // تصفير المؤشر عند تغيير القسم — مؤشرات القسم الجديد مختلفة تماماً
-                          setEdits(prev => ({ ...prev, [row.id]: { ...edit, sectionId: numericId, indicatorId: null } }));
-                          ensureIndicatorsLoaded(numericId);
-                        }}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11.5px] text-[var(--text4)] font-bold shrink-0">المؤشر الفرعي:</span>
-                      {edit.sectionId == null ? (
-                        <span className="text-[11.5px] text-[var(--text4)] italic">اختر قسماً أولاً</span>
+          <div className="space-y-3">
+            {rows.map(row => {
+              const edit = getEdit(row);
+              const sectionLabel = edit.sectionId != null ? sections.find(s => s.id === edit.sectionId)?.ttl : null;
+              const rowBusy = isBusy; // isBusy = confirmingKey !== null — يعطّل كل الأزرار أثناء أي اعتماد جارٍ، لا الصف المحدد فقط
+              const status = rowStatus(row);
+              return (
+                <div key={row.id} className="flex flex-col gap-3 p-3 bg-[var(--s2)] rounded-[var(--r-md)] border border-[var(--bd)]">
+                  <div className="flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-[var(--r-sm)] shrink-0 overflow-hidden border border-[var(--bd)] bg-[var(--s3)] flex items-center justify-center">
+                      {brokenImageIds[row.id] ? (
+                        <span className="text-[length:var(--fs-xs)] text-[var(--t3)] text-center leading-tight px-1">تعذّر تحميل الصورة</span>
                       ) : (
-                        <SelectDropdown
-                          options={(indicatorsBySection[edit.sectionId] ?? []).map(i => ({ value: i.id, label: i.name_ar }))}
-                          value={edit.indicatorId ?? ''}
-                          onChange={v => setEdits(prev => ({ ...prev, [row.id]: { ...edit, indicatorId: v || null } }))}
-                          placeholder="— اختر المؤشر —"
-                          triggerClassName="py-2 px-3 text-[12px] font-bold bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer min-w-[160px]"
-                          allowClear
+                        <img
+                          src={publicUrlFor(row.file_path)}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={() => setBrokenImageIds(prev => ({ ...prev, [row.id]: true }))}
                         />
                       )}
                     </div>
-
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        disabled={rowBusy || !isRowReady(row)}
-                        onClick={() => acceptOne(row)}
-                        title={brokenImageIds[row.id] ? 'تعذّر تحميل الصورة' : !isRowReady(row) ? 'اختر القسم والمؤشر الفرعي أولاً' : undefined}
-                        className="py-2 px-3.5 text-[12px] font-bold rounded-lg bg-[var(--em7)]/15 text-[var(--em8)] border border-[var(--em7)]/25 hover:bg-[var(--em7)]/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
-                      >
-                        {rowBusy ? <i className="ti ti-loader animate-spin text-[13px]" /> : <><i className="ti ti-check text-[13px]" /> قبول</>}
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      value={edit.title}
+                      disabled={rowBusy}
+                      onChange={e => setEdits(prev => ({ ...prev, [row.id]: { ...edit, title: e.target.value } }))}
+                      placeholder="عنوان الشاهد"
+                      className={`${FIELD} flex-1 min-w-0 disabled:opacity-50`}
+                    />
+                    <i
+                      role="img"
+                      aria-label={status.label}
+                      title={status.label}
+                      className={`ti ${status.icon} ${status.color} text-[length:var(--fs-lg)] shrink-0`}
+                    />
                   </div>
-                );
-              })}
-            </div>
-          </>
+
+                  <div>
+                    <div className={LABEL}>
+                      القسم:
+                      <span className="min-w-0 font-normal text-[length:var(--fs-sm)] text-[var(--t2)] truncate">{sectionLabel ?? 'بلا قسم — اختر قسماً'}</span>
+                    </div>
+                    <SectionReclassifyDropdown
+                      sections={sections}
+                      isOpen={openDropdownId === row.id}
+                      isBusy={rowBusy}
+                      onOpen={() => setOpenDropdownId(row.id)}
+                      onClose={() => setOpenDropdownId(null)}
+                      selectedLabel={sectionLabel ?? undefined}
+                      onSelect={(sectionId) => {
+                        setOpenDropdownId(null);
+                        const numericId = Number(sectionId);
+                        // تصفير المؤشر عند تغيير القسم — مؤشرات القسم الجديد مختلفة تماماً
+                        setEdits(prev => ({ ...prev, [row.id]: { ...edit, sectionId: numericId, indicatorId: null } }));
+                        ensureIndicatorsLoaded(numericId);
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className={LABEL}>المؤشر الفرعي:</div>
+                    {edit.sectionId == null ? (
+                      <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">اختر قسماً أولاً</span>
+                    ) : (
+                      <SelectDropdown
+                        options={(indicatorsBySection[edit.sectionId] ?? []).map(i => ({ value: i.id, label: i.name_ar }))}
+                        value={edit.indicatorId ?? ''}
+                        onChange={v => setEdits(prev => ({ ...prev, [row.id]: { ...edit, indicatorId: v || null } }))}
+                        placeholder="— اختر المؤشر —"
+                        triggerClassName={`${FIELD} cursor-pointer`}
+                        allowClear
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={rowBusy || !isRowReady(row)}
+                      onClick={() => acceptOne(row)}
+                      title={brokenImageIds[row.id] ? 'تعذّر تحميل الصورة' : !isRowReady(row) ? 'اختر القسم والمؤشر الفرعي أولاً' : undefined}
+                      className={`${BTN_SM} self-auto hover:bg-[var(--s3)] transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed`}
+                    >
+                      {rowBusy ? <i className="ti ti-loader animate-spin text-[length:var(--fs-md)]" /> : <><i className="ti ti-check text-[length:var(--fs-md)]" /> قبول</>}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
+
+      {!loading && rows.length > 0 && (
+        <div className="p-4 border-t border-[var(--bd)] bg-[var(--s1)] shrink-0">
+          <button
+            type="button"
+            disabled={isBusy || !allRowsReady}
+            onClick={acceptAll}
+            title={!allRowsReady ? 'أكمل اختيار القسم والمؤشر لكل الصفوف أولاً' : undefined}
+            className={`${BTN_PRI} w-full disabled:opacity-40 disabled:cursor-not-allowed`}
+          >
+            {confirmingKey === 'all' ? (
+              <><i className="ti ti-loader animate-spin text-[length:var(--fs-md)]" /> جارٍ الاعتماد...</>
+            ) : (
+              <><i className="ti ti-checks text-[length:var(--fs-md)]" /> قبول الكل ({acceptableRows.length})</>
+            )}
+          </button>
+        </div>
+      )}
     </BottomSheet>
   );
 }

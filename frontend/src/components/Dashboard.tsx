@@ -29,6 +29,8 @@ import NotificationsSheet, { type NotificationItem } from './NotificationsSheet'
 import WelcomeCard from './WelcomeCard';
 import Hint from './Hint';
 import { SectionPickList, IndicatorPickStep } from './SectionIndicatorPicker';
+import type { ToastAction, ToastKind } from './UI';
+import { FIELD } from './formStyles';
 
 const ARCHIVE_MONTHS_AR = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -152,7 +154,8 @@ type DashboardProps = {
   userId?: string;
   /** يسجّل الشاهد في عدّاد الشهر بعد نجاح إدراجه — انظر onEvidenceSaved في App.tsx */
   onEvidenceSaved?: OnEvidenceSavedFn;
-  onToast?: (msg: string, icon?: string) => void;
+  /** showToast من App.tsx — kind صريح يُمرَّر عبر toastKind أدناه */
+  onToast?: (msg: string, icon?: string, action?: ToastAction, durationMs?: number, kind?: ToastKind) => void;
   aiConsentGiven?: boolean;
   onGiveAiConsent?: () => void;
   /** «أبرز إنجاز» و«اللمحات» في قائمة ⋯ للشاهد — المنفّذ في App.tsx */
@@ -188,7 +191,7 @@ export function SectionReclassifyDropdown({
   sections, isOpen, isBusy, onOpen, onClose, onSelect, selectedLabel,
 }: SectionReclassifyDropdownProps) {
   const btnRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; openUpward: boolean }>({ top: 0, left: 0, openUpward: false });
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; openUpward: boolean }>({ top: 0, left: 0, width: 0, openUpward: false });
 
   useLayoutEffect(() => {
     if (!isOpen || !btnRef.current) return;
@@ -200,6 +203,7 @@ export function SectionReclassifyDropdown({
       setPos({
         top: openUpward ? rect.top - 6 : rect.bottom + 6,
         left: rect.left,
+        width: rect.width,
         openUpward,
       });
     };
@@ -216,44 +220,49 @@ export function SectionReclassifyDropdown({
   }, [isOpen, onClose]);
 
   return (
-    <div className="relative shrink-0">
+    <div className="relative w-full">
       <button
         ref={btnRef}
         type="button"
         disabled={isBusy}
         onClick={() => (isOpen ? onClose() : onOpen())}
-        className="py-2 px-3 text-[12px] font-bold bg-white/5 border border-[var(--line2)] rounded-lg text-white outline-none focus:border-[var(--em7)]/40 cursor-pointer disabled:opacity-50 disabled:cursor-wait flex items-center gap-1.5"
+        className={`${FIELD} flex items-center justify-between gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-wait`}
       >
-        {selectedLabel ?? 'اختر القسم'}
-        <i className={`ti ti-chevron-down text-[11px] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <span className={`truncate ${selectedLabel ? 'text-[var(--t1)]' : 'text-[var(--t3)]'}`}>{selectedLabel ?? 'اختر القسم'}</span>
+        {isBusy
+          ? <i className="ti ti-loader animate-spin text-[length:var(--fs-md)] text-[var(--t2)] shrink-0" />
+          : <i className={`ti ti-chevron-down text-[length:var(--fs-md)] text-[var(--t3)] transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />}
       </button>
-
-      {isBusy && (
-        <i className="ti ti-loader animate-spin text-[13px] text-[var(--em8)] absolute -left-6 top-1/2 -translate-y-1/2" />
-      )}
 
       {isOpen && createPortal(
         <>
           <div className="fixed inset-0 z-[600]" onClick={onClose} />
           <div
-            className="fixed z-[601] min-w-[190px] max-h-[240px] overflow-y-auto rounded-xl border border-[var(--line2)] bg-[var(--surf2)] shadow-[0_12px_32px_rgba(0,0,0,.45)] py-1.5"
+            className="fixed z-[601] max-h-[240px] overflow-y-auto rounded-[var(--r-md)] border border-[var(--bd2)] bg-[var(--s1)] py-1"
             style={{
               top: pos.openUpward ? undefined : pos.top,
               bottom: pos.openUpward ? window.innerHeight - pos.top : undefined,
               left: pos.left,
+              width: pos.width,
               animation: 'scaleIn .15s var(--sp) both',
             }}
           >
-            {sections.map(sec => (
-              <button
-                key={sec.id}
-                type="button"
-                onClick={() => onSelect(String(sec.id))}
-                className="w-full text-right px-3.5 py-2.5 text-[12.5px] font-bold text-white hover:bg-[var(--gold)]/10 hover:text-[var(--gold3)] transition-colors cursor-pointer"
-              >
-                {sec.ttl}
-              </button>
-            ))}
+            {sections.map(sec => {
+              const selected = sec.ttl === selectedLabel;
+              return (
+                <button
+                  key={sec.id}
+                  type="button"
+                  onClick={() => onSelect(String(sec.id))}
+                  className={`w-full h-11 px-3 flex items-center justify-between gap-2 text-right text-[length:var(--fs-sm)] transition-colors duration-150 cursor-pointer ${selected
+                    ? 'bg-[var(--s2)] font-bold text-[var(--t1)]'
+                    : 'text-[var(--t2)] hover:bg-[var(--s2)] hover:text-[var(--t1)]'}`}
+                >
+                  <span className="truncate">{sec.ttl}</span>
+                  {selected && <i className="ti ti-check text-[length:var(--fs-md)] text-[var(--t1)] shrink-0" />}
+                </button>
+              );
+            })}
           </div>
         </>,
         document.body
@@ -427,6 +436,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   // الاستيراد الجماعي — مصدر البيانات bulk_import_queue وليس evidence
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImportReviewOpen, setIsBulkImportReviewOpen] = useState(false);
+  // تنبيه بنوع صريح للوحات الاستيراد الجماعي وتقرير الحصاد
+  const toastKind = useCallback((msg: string, kind: ToastKind) => onToast?.(msg, '', undefined, undefined, kind), [onToast]);
   const [bulkImportReadyCount, setBulkImportReadyCount] = useState(0);
 
   // تقرير حصاد فصلي — مستقل تماماً عن الاستيراد الجماعي أعلاه (مصدر البيانات:
@@ -1616,7 +1627,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         isOpen={isBulkImportOpen}
         onClose={() => setIsBulkImportOpen(false)}
         userId={userId}
-        onToast={onToast ?? (() => {})}
+        onToast={toastKind}
         onClassificationSettled={refetchBulkImportReadyCount}
       />
       <BulkImportReview
@@ -1627,7 +1638,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         stratSectionId={stratSection?.id}
         supabaseEv={supabaseEv}
         onEvidenceSaved={onEvidenceSaved}
-        onToast={onToast}
+        onToast={toastKind}
       />
 
       <HarvestReportSheet
@@ -1637,7 +1648,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         state={state}
         sections={sections}
         academicDates={academicDates}
-        onToast={onToast}
+        onToast={toastKind}
       />
 
       {/* قائمة «أدوات» — تُفتح من زر الشريط العلوي (OPEN_TOOLS_EVENT) */}

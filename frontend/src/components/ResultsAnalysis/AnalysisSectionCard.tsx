@@ -10,6 +10,7 @@ import { buildComparisonSeries, computeScoreGap, groupAnalysesBySubject, groupRe
 import type { AnalysisSummary, GradeBand, ResultsAnalysisRow } from './types';
 import type { SectionData } from '../../types';
 import { formatDate } from '../../utils';
+import type { ToastKind } from '../UI';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -21,7 +22,7 @@ interface AnalysisSectionBodyProps {
   analyses: ResultsAnalysisRow[];
   saveAnalysis: (subject: string, classSection: string | null, summary: AnalysisSummary) => Promise<ResultsAnalysisRow | null>;
   onEvidenceSaved?: EvidenceFormProps['onEvidenceSaved'];
-  onToast?: (msg: string, icon?: string) => void;
+  onToast?: (msg: string, kind: ToastKind) => void;
   /** معرّف تحليل يجب فتح تبويبه مباشرة — يصل من بطاقة "تحسين نتائج المتعلمين"
    *  عبر زر "اعرض السياق الكامل". يُستهلك مرة واحدة ثم يُعاد تصفيره بالمستدعي. */
   focusAnalysisId: string | null;

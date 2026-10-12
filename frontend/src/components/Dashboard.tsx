@@ -448,7 +448,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     userId,
     supabaseEv,
     onEvidenceSaved: onEvidenceSaved ?? (() => {}),
-    onToast: onToast ?? (() => {}),
+    onToast: toastKind,
     sections,
     aiConsentGiven,
     onGiveAiConsent,
@@ -694,7 +694,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       if (!accessToken) {
-        onToast?.('يجب تسجيل الدخول أولاً', '⚠️');
+        toastKind('يجب تسجيل الدخول أولاً', 'error');
         return;
       }
       const { data, error } = await supabase.functions.invoke('generate-portfolio-summaries', {
@@ -702,22 +702,22 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (error) {
-        onToast?.('تعذّر تحديث الملخص، حاول مجدداً', '❌');
+        toastKind('تعذّر تحديث الملخص، حاول مجدداً', 'error');
         return;
       }
       if (data?.updated && data?.summarized) {
-        onToast?.('تم تحديث الملخص بنجاح', '✅');
+        toastKind('تم تحديث الملخص بنجاح', 'success');
       } else if (data?.reason === 'sharing_disabled') {
-        onToast?.('فعّل المشاركة العامة أولاً من إعدادات الملف الشخصي', 'ℹ️');
+        toastKind('فعّل المشاركة العامة أولاً من إعدادات الملف الشخصي', 'info');
       } else if (data?.reason === 'no_evidence') {
-        onToast?.('لا توجد شواهد مصنَّفة كافية لإنشاء ملخص بعد', 'ℹ️');
+        toastKind('لا توجد شواهد مصنَّفة كافية لإنشاء ملخص بعد', 'info');
       } else {
-        onToast?.('الملخص غير مؤهل للتحديث حالياً', 'ℹ️');
+        toastKind('الملخص غير مؤهل للتحديث حالياً', 'info');
       }
       refetchSummaryStatus();
     } catch (err) {
       console.error('[Dashboard] فشل تحديث الملخص:', err);
-      onToast?.('تعذّر تحديث الملخص، حاول مجدداً', '❌');
+      toastKind('تعذّر تحديث الملخص، حاول مجدداً', 'error');
     } finally {
       setSummaryRefreshBusy(false);
     }
@@ -758,7 +758,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     if (error) {
       console.warn('[Dashboard] تعذّر تحديث إخفاء الملخص:', error.message);
       setSectionSummaries(prev => (prev[sectionId] ? { ...prev, [sectionId]: { ...prev[sectionId], hidden: current.hidden } } : prev));
-      onToast?.('تعذّر تحديث الملخص، حاول مجدداً', '❌');
+      toastKind('تعذّر تحديث الملخص، حاول مجدداً', 'error');
     }
   };
 
@@ -1269,7 +1269,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               analyses={resultsAnalysis.analyses}
               saveAnalysis={resultsAnalysis.saveAnalysis}
               onEvidenceSaved={onEvidenceSaved}
-              onToast={onToast}
+              onToast={toastKind}
               focusAnalysisId={focusAnalysisId}
               onFocusHandled={() => setFocusAnalysisId(null)}
             />
@@ -1296,7 +1296,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               analyses={resultsAnalysis.analyses}
               runSmartCheck={resultsAnalysis.runSmartCheck}
               onEvidenceSaved={onEvidenceSaved}
-              onToast={onToast}
+              onToast={toastKind}
               onViewInAnalysis={handleViewInAnalysis}
             />
           </ImprovementView>
@@ -1692,7 +1692,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
             userId={userId}
             supabaseEv={supabaseEv}
             onEvidenceSaved={onEvidenceSaved ?? (() => {})}
-            onToast={onToast ?? (() => {})}
+            onToast={toastKind}
             aiConsentGiven={aiConsentGiven}
             onGiveAiConsent={onGiveAiConsent}
           />
@@ -1709,7 +1709,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
           userId={userId}
           supabaseEv={supabaseEv}
           onEvidenceSaved={onEvidenceSaved ?? (() => {})}
-          onToast={onToast ?? (() => {})}
+          onToast={toastKind}
           createdAt={archiveCreatedAt}
           aiConsentGiven={aiConsentGiven}
           onGiveAiConsent={onGiveAiConsent}

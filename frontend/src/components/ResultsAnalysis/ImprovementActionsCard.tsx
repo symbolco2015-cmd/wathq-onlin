@@ -6,6 +6,7 @@ import { groupRemedialStudents } from './logic';
 import type { SmartCheckResult } from './useResultsAnalysis';
 import type { GradeBand, ResultsAnalysisRow } from './types';
 import type { SectionData } from '../../types';
+import type { ToastKind } from '../UI';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -47,7 +48,7 @@ interface ImprovementActionsBodyProps {
   analyses: ResultsAnalysisRow[];
   runSmartCheck: (analysis: ResultsAnalysisRow, kind: 'remedial' | 'honor') => Promise<SmartCheckResult>;
   onEvidenceSaved?: EvidenceFormProps['onEvidenceSaved'];
-  onToast?: (msg: string, icon?: string) => void;
+  onToast?: (msg: string, kind: ToastKind) => void;
   /** يفتح شاشة بند 10 على تبويب التحليل المصدر ("اعرض السياق الكامل") */
   onViewInAnalysis: (analysisId: string) => void;
 }

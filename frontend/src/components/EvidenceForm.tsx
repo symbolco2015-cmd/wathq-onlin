@@ -7,6 +7,7 @@ import { useSaveEvidence } from '../hooks/useSaveEvidence';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
 import { AI_CONSENT_TEXT, formatDate } from '../utils';
 import { SelectDropdown } from './UI';
+import type { ToastKind } from './UI';
 import { LESSON_PLAN_SECTION_ID, SECS } from '../data';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../hooks/useSupabaseEvidence').useSupabaseEvidence>;
@@ -47,7 +48,7 @@ export interface EvidenceFormProps {
   supabaseEv: SupabaseEvidenceHook;
   /** يسجّل الشاهد في عدّاد الشهر (monthly_progress) بعد نجاح إدراجه */
   onEvidenceSaved: OnEvidenceSavedFn;
-  onToast: (msg: string, icon?: string) => void;
+  onToast: (msg: string, kind: ToastKind) => void;
   /** يُمرَّر فقط عند الإضافة لبند 4 (استراتيجيات التدريس) — معرّف الاستراتيجية
    *  المختارة/المُنشأة حديثاً (teaching_strategies.id)، و`sub` حينها اسمها.
    *  وجوده يُشدّد شرط تفعيل زر الحفظ (لا يُفعَّل قبل إرفاق ملف/رابط فعلي). */
@@ -571,7 +572,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       });
       if (error) throw error;
       if (data?.error === 'daily_limit_reached') {
-        onToast('الخدمة مشغولة حالياً، حاول لاحقاً', '');
+        onToast('الخدمة مشغولة حالياً، حاول لاحقاً', 'info');
         return;
       }
       if (data?.error) throw new Error(data.error);
@@ -592,7 +593,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       setAiSuggestionAttempted(true);
     } catch (err) {
       console.warn('[EvidenceForm] تعذّر توليد الاقتراح:', err);
-      onToast('تعذّر توليد اقتراح الآن، يمكنك المتابعة بالكتابة يدوياً.', '');
+      onToast('تعذّر توليد اقتراح الآن، يمكنك المتابعة بالكتابة يدوياً.', 'error');
     } finally {
       setAiLoading(false);
     }
@@ -639,7 +640,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       });
       if (error) throw error;
       if (data?.error === 'daily_limit_reached') {
-        onToast('الخدمة مشغولة حالياً، حاول لاحقاً', '');
+        onToast('الخدمة مشغولة حالياً، حاول لاحقاً', 'info');
         return;
       }
       if (data?.error) throw new Error(data.error);
@@ -647,7 +648,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       setVoiceSuggestedDesc((data?.description as string) || '');
     } catch (err) {
       console.warn('[EvidenceForm] تعذّر تفريغ التسجيل الصوتي:', err);
-      onToast('تعذّر تفريغ التسجيل الصوتي الآن، يمكنك المتابعة بالكتابة يدوياً.', '');
+      onToast('تعذّر تفريغ التسجيل الصوتي الآن، يمكنك المتابعة بالكتابة يدوياً.', 'error');
     } finally {
       setVoiceLoading(false);
     }
@@ -793,7 +794,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       if (/size/i.test(message)) {
         setErrors(prev => ({ ...prev, file: `حجم الملف يتجاوز ${maxSizeMB}MB` }));
       } else {
-        onToast('تعذّر رفع الملف، يرجى المحاولة مجدداً.', '');
+        onToast('تعذّر رفع الملف، يرجى المحاولة مجدداً.', 'error');
       }
       setFileName(''); setFileSize(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -818,7 +819,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
         return;
       }
       if (data?.error) {
-        onToast(data.message, '');
+        onToast(data.message, 'error');
         return;
       }
 
@@ -839,7 +840,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       }
     } catch (err) {
       console.warn('[EvidenceForm] تعذّر الاستيراد من الرابط:', err);
-      if (seq === sessionSeqRef.current) onToast('تعذّر الاستيراد، حاول مجدداً', '');
+      if (seq === sessionSeqRef.current) onToast('تعذّر الاستيراد، حاول مجدداً', 'error');
     } finally {
       if (seq === sessionSeqRef.current) setLinkImportLoading(false);
     }
@@ -886,10 +887,10 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
           frequency:       isDistributionIndicator ? (frequency || null) : null,
         });
         if (ok) {
-          onToast('حُفظت التعديلات');
+          onToast('حُفظت التعديلات', 'success');
           onClose();
         } else {
-          onToast('تعذّر حفظ التعديلات، حاول مجدداً', '');
+          onToast('تعذّر حفظ التعديلات، حاول مجدداً', 'error');
         }
       } finally {
         setSaving(false);
@@ -924,7 +925,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
         currentUploadRef.current = null;
         setView('success');
       } else {
-        onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', '');
+        onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', 'error');
       }
     } finally {
       setSaving(false);

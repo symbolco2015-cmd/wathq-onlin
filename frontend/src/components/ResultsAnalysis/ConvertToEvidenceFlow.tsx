@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { toBlob } from 'html-to-image';
 import { SelectDropdown } from '../UI';
+import type { ToastKind } from '../UI';
 import { BTN_GH, BTN_PRI } from '../SectionView';
 import EvidenceModal from '../EvidenceModal';
 import type { EvidenceFormProps } from '../EvidenceForm';
@@ -24,7 +25,7 @@ interface ConvertToEvidenceFlowProps {
   userId: string | undefined;
   supabaseEv: SupabaseEvidenceHook;
   onEvidenceSaved: EvidenceFormProps['onEvidenceSaved'];
-  onToast: (msg: string, icon?: string) => void;
+  onToast: (msg: string, kind: ToastKind) => void;
   onClose: () => void;
 }
 
@@ -56,7 +57,7 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
 
   const handleConvert = async () => {
     if (converting) return;
-    if (!sectionId) { onToast('يرجى اختيار القسم أولاً', '⚠️'); return; }
+    if (!sectionId) { onToast('يرجى اختيار القسم أولاً', 'error'); return; }
     if (!captureRef.current || !supabase || !userId) return;
     setConverting(true);
     try {
@@ -77,7 +78,7 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
       });
     } catch (err) {
       console.error('[ConvertToEvidenceFlow] تعذّر تحويل الرسم لشاهد:', err);
-      onToast('تعذّر تحويل الرسم إلى شاهد، حاول مجدداً', '❌');
+      onToast('تعذّر تحويل الرسم إلى شاهد، حاول مجدداً', 'error');
     } finally {
       setConverting(false);
     }

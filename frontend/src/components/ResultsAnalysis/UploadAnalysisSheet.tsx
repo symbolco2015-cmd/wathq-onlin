@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SelectDropdown } from '../UI';
+import type { ToastKind } from '../UI';
 import { BTN_GH, BTN_PRI, BTN_SM } from '../SectionView';
 import ResultsBarChart from './ResultsBarChart';
 import { parseFile } from './parseFile';
@@ -11,7 +12,7 @@ interface UploadAnalysisSheetProps {
   bands: GradeBand[];
   saveAnalysis: (subject: string, classSection: string | null, summary: AnalysisSummary) => Promise<ResultsAnalysisRow | null>;
   onSaved: (row: ResultsAnalysisRow) => void;
-  onToast: (msg: string, icon?: string) => void;
+  onToast: (msg: string, kind: ToastKind) => void;
 }
 
 // نفس ثوابت الحقول في EvidenceForm.tsx (نص مكرر، بلا استيراد منه)
@@ -45,7 +46,7 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
     const file = e.target.files?.[0];
     if (!file) return;
     if (!/\.(csv|xlsx)$/i.test(file.name)) {
-      onToast('يُقبل فقط ملفات CSV أو Excel (xlsx)', '⚠️');
+      onToast('يُقبل فقط ملفات CSV أو Excel (xlsx)', 'error');
       return;
     }
     setFileName(file.name);
@@ -54,7 +55,7 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
     try {
       const result = await parseFile(file);
       if (result.rows.length === 0) {
-        onToast('الملف فارغ أو لا يحوي صفوف بيانات', '⚠️');
+        onToast('الملف فارغ أو لا يحوي صفوف بيانات', 'error');
         return;
       }
       const det = detectColumns(result.headers);
@@ -67,7 +68,7 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
       setSubject(deriveUniformSubject(result, det.subjectCol));
     } catch (err) {
       console.error('[UploadAnalysisSheet] تعذّر قراءة الملف:', err);
-      onToast('تعذّر قراءة الملف، تأكد من صيغته وحاول مجدداً', '❌');
+      onToast('تعذّر قراءة الملف، تأكد من صيغته وحاول مجدداً', 'error');
     } finally {
       setParsing(false);
     }
@@ -85,22 +86,22 @@ export default function UploadAnalysisSheet({ onClose, bands, saveAnalysis, onSa
       sectionCol: sectionCol || null,
     });
     if (result.totalStudents === 0) {
-      onToast('لم يُعثر على أي درجة صالحة (0-100) في العمود المحدَّد', '⚠️');
+      onToast('لم يُعثر على أي درجة صالحة (0-100) في العمود المحدَّد', 'error');
       return;
     }
     setSummary(result);
   };
 
   const handleSave = async () => {
-    if (!summary || !subject.trim()) { onToast('يرجى إدخال المادة الدراسية', '⚠️'); return; }
+    if (!summary || !subject.trim()) { onToast('يرجى إدخال المادة الدراسية', 'error'); return; }
     setSaving(true);
     try {
       const row = await saveAnalysis(subject.trim(), deriveUniformClassSection(summary), summary);
       if (row) {
-        onToast('تم حفظ التحليل بنجاح ✅', '✅');
+        onToast('تم حفظ التحليل بنجاح', 'success');
         onSaved(row);
       } else {
-        onToast('تعذّر حفظ التحليل، حاول مجدداً', '❌');
+        onToast('تعذّر حفظ التحليل، حاول مجدداً', 'error');
       }
     } finally {
       setSaving(false);

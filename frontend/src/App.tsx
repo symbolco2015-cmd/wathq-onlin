@@ -260,7 +260,7 @@ export default function App() {
       } else {
         if (currentPage === 'dashboard') {
           setCurrentPage('auth');
-          showToast('انتهت جلستك، يرجى تسجيل الدخول مجدداً 🔒', '🔒');
+          toastKind('انتهت جلستك، يرجى تسجيل الدخول مجدداً', 'info');
         }
       }
     }
@@ -326,6 +326,8 @@ export default function App() {
       durationMs ?? (action ? INDICATOR_UNDO_MS : 3200),
     );
   }, []);
+  // كل تنبيه يحدّد نوعه صراحةً؛ وسيط icon في showToast لم يعد يُقرأ
+  const toastKind = useCallback((msg: string, kind: ToastKind) => showToast(msg, '', undefined, undefined, kind), [showToast]);
   const hideToast = useCallback(() => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastData(prev => ({ ...prev, show: false }));
@@ -336,15 +338,15 @@ export default function App() {
 
   const handleAddIndicator = async (sectionId: number, name: string): Promise<IndicatorResult> => {
     const r = await customIndicators.addIndicator(sectionId, name);
-    if (r.ok) { await refreshSections(); showToast('أُضيف المؤشر المخصص'); }
-    else if (r.toast) showToast(r.toast, '⚠️');
+    if (r.ok) { await refreshSections(); toastKind('أُضيف المؤشر المخصص', 'success'); }
+    else if (r.toast) toastKind(r.toast, 'error');
     return r;
   };
 
   const handleRenameIndicator = async (indicatorId: string, name: string): Promise<IndicatorResult> => {
     const r = await customIndicators.renameIndicator(indicatorId, name);
-    if (r.ok) { await refreshSections(); showToast('حُفظ المؤشر'); }
-    else if (r.toast) showToast(r.toast, '⚠️');
+    if (r.ok) { await refreshSections(); toastKind('حُفظ المؤشر', 'success'); }
+    else if (r.toast) toastKind(r.toast, 'error');
     return r;
   };
 
@@ -365,26 +367,26 @@ export default function App() {
     try {
       if (op.mode === 'move' && op.toId) {
         const moved = await ev.moveIndicatorEvidence(op.indicatorId, op.toId);
-        if (!moved) { showToast('تعذّر نقل الشواهد، ولم يُحذف المؤشر', '⚠️'); return; }
+        if (!moved) { toastKind('تعذّر نقل الشواهد، ولم يُحذف المؤشر', 'error'); return; }
         // إن فشل الحذف هنا فالشواهد في مكانها الجديد والمؤشر فارغ — لا ضرر
         const deleted = await customIndicators.deleteIndicator(op.indicatorId);
-        if (!deleted) showToast('نُقلت الشواهد، وتعذّر حذف المؤشر', '⚠️');
+        if (!deleted) toastKind('نُقلت الشواهد، وتعذّر حذف المؤشر', 'error');
       } else {
         const ids = ev.evidence.filter(e => e.indicator_id === op.indicatorId).map(e => e.id);
         // deleteEvidence تحذف الملف من Storage وتُنقص عدّاد الشهر، وترمي عند الفشل
         for (const id of ids) await ev.deleteEvidence(id);
         const deleted = await customIndicators.deleteIndicator(op.indicatorId);
-        if (!deleted) showToast('حُذفت الشواهد، وتعذّر حذف المؤشر', '⚠️');
+        if (!deleted) toastKind('حُذفت الشواهد، وتعذّر حذف المؤشر', 'error');
       }
     } catch (err) {
       console.error('[commitIndicatorOp]', err);
-      showToast('تعذّر حذف المؤشر، حاول مجدداً', '⚠️');
+      toastKind('تعذّر حذف المؤشر، حاول مجدداً', 'error');
     } finally {
       // نجح أو فشل: العرض يعود إلى ما في القاعدة فعلاً
       await Promise.all([refreshSections(), supabaseEvRef.current.refetch()]);
       setIndicatorOps(list => list.filter(o => o !== op));
     }
-  }, [customIndicators, refreshSections, showToast]);
+  }, [customIndicators, refreshSections, toastKind]);
 
   const undoIndicatorOp = useCallback((op: PendingIndicatorOp) => {
     if (pendingOpRef.current !== op) return; // بدأ التنفيذ فعلاً
@@ -414,7 +416,7 @@ export default function App() {
 
     const msg = mode === 'move' ? 'حُذف المؤشر ونُقلت شواهده'
       : evidenceCount > 0 ? 'حُذف المؤشر وشواهده' : 'حُذف المؤشر';
-    showToast(msg, '🗑️', { label: 'تراجع', onClick: () => undoIndicatorOp(op) });
+    showToast(msg, '', { label: 'تراجع', onClick: () => undoIndicatorOp(op) }, undefined, 'info');
   }, [commitIndicatorOp, undoIndicatorOp, showToast]);
 
   // إغلاق الصفحة أثناء المهلة: لا يُنفَّذ شيء، والمعلّق يسقط (الاتجاه الآمن)
@@ -538,18 +540,18 @@ export default function App() {
       onConfirm: async () => {
         if (mode === 'pick') {
           const s = teachingStrategies.strategies.find(x => x.id === selectedId);
-          if (!s) { showToast('يرجى اختيار استراتيجية', '⚠️'); return; }
+          if (!s) { toastKind('يرجى اختيار استراتيجية', 'error'); return; }
           closeModal();
           openAddEvModal(4, s.name_ar, s.id);
           return;
         }
         const name = newName.trim();
-        if (!name) { showToast('يرجى كتابة اسم الاستراتيجية', '⚠️'); return; }
+        if (!name) { toastKind('يرجى كتابة اسم الاستراتيجية', 'error'); return; }
         const result = await teachingStrategies.addStrategy(name);
         if ('error' in result) {
-          showToast(
+          toastKind(
             result.error === 'duplicate' ? 'هذه الاستراتيجية مضافة لديك مسبقاً' : 'تعذّر إضافة الاستراتيجية، حاول مجدداً',
-            '❌'
+            'error'
           );
           return;
         }
@@ -586,10 +588,10 @@ export default function App() {
         setShareToggleBusy(false);
         if (!ok) {
           setLocalShareEnabled(!next); // تراجع عند الفشل
-          showToast('فشل تحديث إعداد المشاركة، حاول مجدداً', '⚠️');
+          toastKind('فشل تحديث إعداد المشاركة، حاول مجدداً', 'error');
           return;
         }
-        showToast(next ? 'تم تفعيل المشاركة العامة لملفك ✓' : 'تم إيقاف المشاركة العامة لملفك', next ? '✓' : '🔒');
+        toastKind(next ? 'تم تفعيل المشاركة العامة لملفك' : 'تم إيقاف المشاركة العامة لملفك', next ? 'success' : 'info');
       };
 
       const handleUpdate = (field: string, value: any) => {
@@ -658,7 +660,7 @@ export default function App() {
                         handleUpdate('avatar', `${urlData.publicUrl}?v=${Date.now()}`);
                       } catch (uploadErr) {
                         console.error('فشل رفع الصورة الشخصية إلى Storage:', uploadErr);
-                        showToast('تعذّر رفع الصورة، حاول مجدداً', '⚠️');
+                        toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
                       }
                     } else if (finalBlob) {
                       // بلا حساب Supabase — لا يوجد Storage للرفع، fallback لـ base64 محلياً كباقي التطبيق
@@ -712,7 +714,7 @@ export default function App() {
                 handleUpdate('avatar', `${urlData.publicUrl}?v=${Date.now()}`);
               } catch (uploadErr) {
                 console.error('فشل رفع صورة التراجع إلى Storage:', uploadErr);
-                showToast('تعذّر رفع الصورة، حاول مجدداً', '⚠️');
+                toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
               }
             } else if (finalBlob) {
               // بلا حساب Supabase — لا يوجد Storage للرفع، fallback لـ base64 محلياً كباقي التطبيق
@@ -873,7 +875,7 @@ export default function App() {
                 onClick={async () => {
                   closeModal();
                   await signOut();
-                  showToast('تم تسجيل الخروج بنجاح 👋', '👋');
+                  toastKind('تم تسجيل الخروج بنجاح', 'info');
                 }}
               >
                 <i className="ti ti-logout text-[20px]"></i>
@@ -903,10 +905,10 @@ export default function App() {
         };
         const saved = await saveState(combinedState);
         if (!saved) {
-          showToast('فشل الحفظ، تحقق من اتصالك وحاول مجدداً', '⚠️');
+          toastKind('فشل الحفظ، تحقق من اتصالك وحاول مجدداً', 'error');
           return; // لا نغلق المودال — يبقى تعديل المستخدم كما هو ليعيد المحاولة
         }
-        showToast('تم تحديث الحساب بنجاح ✨', '✨');
+        toastKind('تم تحديث الحساب بنجاح', 'success');
         closeModal();
       }
     });
@@ -927,21 +929,21 @@ export default function App() {
   const handleTogglePin = async (ev: SupabaseEvidence) => {
     const unpin = ev.id === effectivePinnedId;
     const ok = await setPinnedTopEvidence(unpin ? null : ev.id);
-    if (!ok) { showToast('تعذّر التثبيت، حاول مجدداً', '⚠️'); return; }
-    showToast(unpin ? 'أُلغي التثبيت' : 'ثُبّت كأبرز إنجاز', '✓');
+    if (!ok) { toastKind('تعذّر التثبيت، حاول مجدداً', 'error'); return; }
+    toastKind(unpin ? 'أُلغي التثبيت' : 'ثُبّت كأبرز إنجاز', 'success');
   };
 
   const handleToggleGallery = async (ev: SupabaseEvidence) => {
     const hide = !ev.hidden_from_gallery;
     const ok = await supabaseEv.setHiddenFromGallery(ev.id, hide);
-    if (!ok) { showToast('تعذّر الحفظ، حاول مجدداً', '⚠️'); return; }
-    showToast(hide ? 'أُخفي من اللمحات' : 'ظهر في اللمحات', '✓');
+    if (!ok) { toastKind('تعذّر الحفظ، حاول مجدداً', 'error'); return; }
+    toastKind(hide ? 'أُخفي من اللمحات' : 'ظهر في اللمحات', 'success');
   };
 
   const handleApproveTopSuggestion = async (evidenceId: string) => {
     const ok = await approveTopSuggestion(evidenceId);
-    if (!ok) { showToast('تعذّر الاعتماد، حاول مجدداً', '⚠️'); return; }
-    showToast('اعتُمد كأبرز إنجاز', '✓');
+    if (!ok) { toastKind('تعذّر الاعتماد، حاول مجدداً', 'error'); return; }
+    toastKind('اعتُمد كأبرز إنجاز', 'success');
   };
 
   const handleDeleteEv = (evidenceId: string) => {
@@ -956,10 +958,10 @@ export default function App() {
         // الحذف بمعرّف الدليل في جدول evidence فقط — رسالة النجاح بعد نجاحه فعلياً
         try {
           await supabaseEv.deleteEvidence(evidenceId);
-          showToast('حُذف الشاهد', '');
+          toastKind('حُذف الشاهد', 'success');
         } catch (err) {
           console.error('[handleDeleteEv] Supabase evidence delete failed:', err);
-          showToast('تعذّر حذف الشاهد، حاول مجدداً', '');
+          toastKind('تعذّر حذف الشاهد، حاول مجدداً', 'error');
         }
         closeModal();
       }
@@ -1058,7 +1060,7 @@ export default function App() {
           profile={state.profile}
           onComplete={(update) => {
             updateProfile(update);
-            showToast('تم حفظ بياناتك بنجاح', '', undefined, undefined, 'success');
+            toastKind('تم حفظ بياناتك بنجاح', 'success');
           }}
         />
         <Toast {...toastData} />
@@ -1077,7 +1079,7 @@ export default function App() {
         {currentPage === 'auth' && (
           <Auth
             onLoginSuccess={() => setCurrentPage('dashboard')}
-            onToast={(msg, kind) => showToast(msg, '', undefined, undefined, kind)}
+            onToast={toastKind}
             recovery={passwordRecovery}
             onRecoveryComplete={() => {
               clearPasswordRecovery();
@@ -1152,7 +1154,7 @@ export default function App() {
             onDeleteUser={deleteUserPortfolio}
             onResetUser={resetUserPortfolio}
             onExportCSV={exportCSV}
-            onToast={(msg, kind) => showToast(msg, '', undefined, undefined, kind)}
+            onToast={toastKind}
             getShareUrl={getShareUrl}
             onPublishAnnouncement={createAnnouncement}
             onUpdateAnnouncement={updateAnnouncement}
@@ -1185,7 +1187,7 @@ export default function App() {
         userId={user?.id}
         supabaseEv={supabaseEv}
         onEvidenceSaved={onEvidenceSaved}
-        onToast={showToast}
+        onToast={toastKind}
         aiConsentGiven={!!state.aiSuggestConsentAt}
         onGiveAiConsent={setAiSuggestConsent}
       />

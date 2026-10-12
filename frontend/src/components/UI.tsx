@@ -11,17 +11,13 @@ export type ToastKind = 'success' | 'error' | 'info';
 
 interface ToastProps {
   msg: string;
-  /** رمز قديم يُستنتج منه النوع حين لا يُمرَّر kind — لا يُعرض */
+  /** وسيط قديم لم يعد يُقرأ؛ النوع يأتي من kind فقط */
   icon: string;
   show: boolean;
   action?: ToastAction;
+  /** الافتراضي info */
   kind?: ToastKind;
 }
-
-// توافق مع الاستدعاءات القديمة التي تحدّد النوع برمز تعبيري؛ تُحذف بعد نقلها كلها إلى kind
-const TOAST_ERROR_MARKS = ['⚠️', '⚠', '❌'];
-const TOAST_SUCCESS_MARKS = ['✓', '✅', '🎉', '✨', '🚀'];
-const TOAST_EMOJI_RE = /[\p{Extended_Pictographic}\u{FE0F}\u{2713}]/gu;
 
 const TOAST_KIND_STYLE: Record<ToastKind, { icon: string; color: string }> = {
   success: { icon: 'ti-circle-check', color: 'text-[var(--accent)]' },
@@ -29,22 +25,14 @@ const TOAST_KIND_STYLE: Record<ToastKind, { icon: string; color: string }> = {
   info: { icon: 'ti-info-circle', color: 'text-[var(--info)]' },
 };
 
-function inferToastKind(icon: string, msg: string): ToastKind {
-  const mark = icon.trim() || msg.trim();
-  if (TOAST_ERROR_MARKS.some(m => mark.startsWith(m))) return 'error';
-  if (!icon.trim() || TOAST_SUCCESS_MARKS.some(m => mark.startsWith(m))) return 'success';
-  return 'info';
-}
-
-export function Toast({ msg, icon, show, action, kind }: ToastProps) {
+export function Toast({ msg, show, action, kind }: ToastProps) {
   // الرسالة لا تلتقط النقرات إلا وهي ظاهرة وفيها زر
   const clickable = show && !!action;
-  const style = TOAST_KIND_STYLE[kind ?? inferToastKind(icon, msg)];
-  const text = msg.replace(TOAST_EMOJI_RE, '').replace(/\s{2,}/g, ' ').trim();
+  const style = TOAST_KIND_STYLE[kind ?? 'info'];
   return (
     <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 w-max max-w-[calc(100vw-32px)] bg-[var(--s2)] text-[var(--t1)] py-3 px-4 rounded-[var(--r-md)] text-[length:var(--fs-sm)] font-bold z-[600] ${clickable ? 'pointer-events-auto' : 'pointer-events-none'} border border-[var(--bd2)] flex items-center gap-3 transition-all duration-[350ms] ease-[var(--sp)] ${show ? 'translate-y-0 opacity-100' : 'translate-y-[100px] opacity-0'}`}>
       <i className={`ti ${style.icon} ${style.color} text-[length:var(--fs-lg)] shrink-0`} style={{ animation: show ? 'pulse .4s var(--bounce)' : 'none' }}></i>
-      <span>{text}</span>
+      <span>{msg}</span>
       {action && (
         <button
           type="button"

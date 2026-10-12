@@ -4,34 +4,11 @@
   DESIGN TOKENS
 ──────────────────────────────────────────────*/
 :root{
-  /* Emerald × Gold luxury palette */
-  --em0:#030d08; --em1:#071a0f; --em2:#0c2b18; --em3:#154023;
-  --em4:#1f5c32; --em5:#2a7a44; --em6:#38a05a; --em7:#52c478;
-  --em8:#7dd99b; --em9:#b3eccc;
-  --gold:#c9a227; --gold2:#e4bc45; --gold3:#f5d878; --gold-dim:rgba(201,162,39,.15);
-  /* شريط تمييز بطاقتَي تحليل/تحسين نتائج المتعلمين — لون منفصل عن الذهبي
-     (بطاقتا الاستراتيجيات/الفروق الفردية) حتى يميّز المستخدم بصرياً بين
-     مجموعتَي البطاقات المسحوبتين من شبكة الأقسام العادية. بنفسجي (لا أزرق):
-     قريب من منطقة مكمّل الذهبي بدائرة الألوان مع تمايز واضح عنه. --violet
-     مخفَّف تشبعاً (90%→60%) عن أول محاولة (#8b5cf6) — أهدأ على الخلفية
-     الداكنة بلا فقدان التمايز عن الرمادي المحايد؛ --violet2/--violet-dim
-     (نصوص/أيقونات فقط) لم يُمسّا. */
-  --violet:#8d6cda; --violet2:#a78bfa; --violet-dim:rgba(139,92,246,.15);
-  --surf0:#060f0a; --surf1:#0a1a10; --surf2:#0e2416; --surf3:#132d1c;
-  --surf4:#182f1e; --surf5:#1e3626;
-  --glass:rgba(255,255,255,.03); --glass2:rgba(255,255,255,.06);
-  --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
-  --text:#f0f8f3; --text2:#c4dccb; --text3:#a8cdb8; --text4:#8ab199;
+  /* ── متغيرات docs/design/DESIGN.md ──
+     لا متغيرات غيرها؛ المتغيرات القديمة (--em* و--gold* و--surf*…) حُذفت في
+     الخطوة 6.7. متغير حالة «متجاوز» اسمه --st-gold مؤقتاً، ويُوحَّد إلى --gold. */
   --sp: cubic-bezier(.16,1,.3,1);
-  --ease: cubic-bezier(.4,0,.2,1);
   --bounce: cubic-bezier(.34,1.56,.64,1);
-  --font:'IBM Plex Sans Arabic', system-ui, sans-serif;
-  --font2:var(--font);
-
-  /* ── متغيرات docs/design/DESIGN.md (المرحلة 2) ──
-     تُضاف بجانب القديمة ولا تحل محلها؛ كل شاشة تنتقل إليها عند إعادة
-     تصميمها. متغير حالة «متجاوز» اسمه --st-gold مؤقتاً لتعارضه مع --gold
-     القديم، ويُوحَّد عند انتهاء الانتقال. */
   --bg:#0b0f0d;
   --s1:#121715; --s2:#181e1b; --s3:#1f2622;
   --bd:rgba(255,255,255,.08); --bd2:rgba(255,255,255,.14);
@@ -47,8 +24,8 @@
 *,*::before,*::after{box-sizing:border-box;}
 html{scroll-behavior:smooth}
 body{
-  font-family:var(--font);direction:rtl;
-  background:var(--bg);color:var(--text);
+  font-family:'IBM Plex Sans Arabic', system-ui, sans-serif;direction:rtl;
+  background:var(--bg);color:var(--t1);
   font-size:15px;overflow-x:hidden;min-height:100vh;
 }
 /* Backstop for mobile-only horizontal overflow (e.g. wide tables/tab bars) —
@@ -57,7 +34,7 @@ body{
 @media (max-width:767px){
   html{overflow-x:hidden;}
 }
-::selection{background:rgba(82,196,120,.25);color:var(--em8)}
+::selection{background:color-mix(in srgb,var(--accent) 25%,transparent);color:var(--t1)}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#374151;border-radius:3px}
@@ -110,7 +87,7 @@ body{
 @media print {
   @page { margin: 0; size: auto; }
   body {
-    background-color: #060f0a !important;
+    background-color: var(--bg) !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     color-adjust: exact !important;

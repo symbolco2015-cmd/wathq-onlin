@@ -6,6 +6,7 @@ import { useVoiceRecording } from './useVoiceRecording';
 import { useSaveEvidence } from './useSaveEvidence';
 import type { OnEvidenceSavedFn } from './useSaveEvidence';
 import { formatDate } from '../utils';
+import type { ToastKind } from '../components/UI';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('./useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -38,7 +39,7 @@ interface UseQuickCaptureOptions {
   userId: string | undefined;
   supabaseEv: SupabaseEvidenceHook | undefined;
   onEvidenceSaved: OnEvidenceSavedFn;
-  onToast: (msg: string, icon?: string) => void;
+  onToast: (msg: string, kind: ToastKind) => void;
   /** لازمة فقط لتدفّق "تسجيل صوتي سريع" — قائمة الأقسام لاقتراح القسم الأنسب ولتحديد اسم البند الفرعي عند الحفظ */
   sections?: SectionData[];
   aiConsentGiven?: boolean;
@@ -83,7 +84,7 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
     e.target.value = '';
     if (!file) return;
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      onToast(`حجم الصورة يتجاوز الحد المسموح (${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB).`, '❌');
+      onToast(`حجم الصورة يتجاوز الحد المسموح (${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB).`, 'error');
       return;
     }
     setPendingFile(file);
@@ -131,7 +132,7 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
     const sec = pendingSection;
     if (!pendingFile || saving || !sec) return;
     if (!supabaseEv) {
-      onToast('غير متاح حالياً، يرجى المحاولة مجدداً', '❌');
+      onToast('غير متاح حالياً، يرجى المحاولة مجدداً', 'error');
       return;
     }
     setSaving(true);
@@ -168,16 +169,16 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
       });
 
       if (!result) {
-        onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', '❌');
+        onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', 'error');
         setSaving(false);
         return;
       }
 
-      onToast('تم حفظ الشاهد بنجاح ✅', '✅');
+      onToast('تم حفظ الشاهد بنجاح', 'success');
       reset();
     } catch (err) {
       console.error('[QuickCapture] خطأ في الحفظ:', err);
-      onToast('تعذّر رفع الصورة، يرجى المحاولة مجدداً', '❌');
+      onToast('تعذّر رفع الصورة، يرجى المحاولة مجدداً', 'error');
       setSaving(false);
     }
   };
@@ -216,7 +217,7 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
     const audioBase64 = voiceRecording.audioBase64;
     if (!audioBase64) return;
     if (!supabaseEv || !supabase || !sections?.length) {
-      onToast('غير متاح حالياً، يرجى المحاولة مجدداً', '❌');
+      onToast('غير متاح حالياً، يرجى المحاولة مجدداً', 'error');
       setVoiceSheetOpen(false);
       return;
     }
@@ -233,7 +234,7 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
         });
         if (error) throw error;
         if (data?.error === 'daily_limit_reached') {
-          onToast('الخدمة مشغولة حالياً، حاول لاحقاً', '⏳');
+          onToast('الخدمة مشغولة حالياً، حاول لاحقاً', 'info');
           setVoiceSheetOpen(false);
           return;
         }
@@ -271,23 +272,23 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
         });
 
         if (!result) {
-          onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', '❌');
+          onToast('تعذّر الحفظ، يرجى المحاولة مجدداً', 'error');
           setVoiceSheetOpen(false);
           return;
         }
 
         if (sectionMeta) {
           onEvidenceSaved(sectionMeta.id);
-          onToast(`تم حفظ الشاهد الصوتي في "${sectionMeta.ttl}" ✅`, '✅');
+          onToast(`تم حفظ الشاهد الصوتي في "${sectionMeta.ttl}"`, 'success');
         } else {
           // لم يتمكّن الذكاء الاصطناعي من التصنيف بثقة — يُحفظ بلا قسم (section_id
           // null) دون تحديث عدّاد شهري
-          onToast('تم حفظ الشاهد، يحتاج تصنيف 📋', '📋');
+          onToast('تم حفظ الشاهد، يحتاج تصنيف', 'info');
         }
         setVoiceSheetOpen(false);
       } catch (err) {
         console.error('[QuickCapture] خطأ في حفظ الشاهد الصوتي:', err);
-        onToast('تعذّر معالجة التسجيل الصوتي، يرجى المحاولة مجدداً', '❌');
+        onToast('تعذّر معالجة التسجيل الصوتي، يرجى المحاولة مجدداً', 'error');
         setVoiceSheetOpen(false);
       } finally {
         setVoiceSaving(false);

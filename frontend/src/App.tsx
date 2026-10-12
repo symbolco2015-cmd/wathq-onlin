@@ -14,6 +14,7 @@ import { toPublicResultsAnalysisRow } from './components/ResultsAnalysis/logic';
 
 import Nav from './components/Nav';
 import Auth from './components/Auth';
+import AuthConfirm from './components/AuthConfirm';
 import Dashboard from './components/Dashboard';
 import Public from './components/Public';
 import { PublicTopBar, PublicUnavailable } from './components/PublicChrome';
@@ -61,6 +62,9 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>(
     shareUserId || reportId ? 'public' : 'dashboard'
   );
+  // رابط تأكيد من البريد (/auth/confirm?token_hash=…&type=…) — صفحة مستقلة
+  // حتى يضغط المعلم «تأكيد» أو يرجع. الروابط القديمة (#access_token) على / لا تمر هنا.
+  const [confirmLink, setConfirmLink] = useState(() => window.location.pathname === '/auth/confirm');
   const [toastData, setToastData] = useState<{ msg: string; icon: string; show: boolean; action?: ToastAction; kind?: ToastKind }>({ msg: '', icon: '✓', show: false });
   const { 
     state,
@@ -246,6 +250,7 @@ export default function App() {
   // Redirect users dynamically based on auth status — but not when in shared-profile view
   useEffect(() => {
     if (shareUserId || reportId) return; // Don't redirect if viewing a shared profile or a harvest report
+    if (confirmLink) return; // صفحة تأكيد الرابط تحدد وجهتها بنفسها
     if (passwordRecovery) {
       // Keep the user on the auth screen to set a new password, even though a
       // temporary recovery session makes them "logged in".
@@ -264,7 +269,7 @@ export default function App() {
         }
       }
     }
-  }, [user, loading, currentPage, shareUserId, reportId, passwordRecovery]);
+  }, [user, loading, currentPage, shareUserId, reportId, passwordRecovery, confirmLink]);
 
   // ── visibilitychange: تحديث خلفي عند العودة بعد 5 دقائق + حفظ موقع التمرير ──
   const lastRefreshRef = useRef<number>(Date.now());
@@ -975,6 +980,19 @@ export default function App() {
   // حياً عند الانتقال من حالة تحميل إلى أخرى. بعد معرفة أن المستخدم مسجّل
   // الدخول تُعرض بدلها هيكلة لوحة التحكم.
   const showDashboardSkeleton = !!user && !shareUserId && !reportId && !passwordRecovery;
+
+  // صفحة تأكيد الرابط لا تحتاج الأقسام ولا الملف، فتسبق شاشات التحميل
+  if (confirmLink) {
+    return (
+      <>
+        <AuthConfirm
+          onDone={(page) => { setConfirmLink(false); setCurrentPage(page); }}
+          onToast={toastKind}
+        />
+        <Toast {...toastData} />
+      </>
+    );
+  }
 
   if (sectionsStatus === 'loading') {
     return showDashboardSkeleton ? <DashboardSkeleton /> : <SplashScreen key="boot" />;

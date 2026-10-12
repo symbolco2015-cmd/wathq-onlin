@@ -2,9 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import type { AdminUser, PlatformStats, PortfolioFeatureOverride, PortfolioActionResult } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
 import { formatDate } from '../../utils';
-import { SelectDropdown } from '../UI';
+import { Modal, SelectDropdown } from '../UI';
 import type { ToastKind } from '../UI';
-import { FIELD, BTN_2ND, toggleBtn } from '../formStyles';
+import { FIELD, LABEL, HINT, BTN_2ND, toggleBtn } from '../formStyles';
 import { BTN_PRI, BTN_GH, BTN_DNG, BTN_DNGF } from '../SectionView';
 import UserCard, { UserAvatar, ActiveStatus, CountBadge, isUserActive } from './UserCard';
 
@@ -29,6 +29,38 @@ const ICON_BOX = 'w-11 h-11 shrink-0 rounded-[var(--r-sm)] bg-[var(--s2)] border
 const ICON_BTN = 'w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--bd2)] bg-transparent text-[var(--t2)] text-[length:var(--fs-md)] cursor-pointer transition-colors duration-150 hover:bg-[var(--s2)] hover:text-[var(--t1)]';
 const BTN_OUTLINE = `${BTN_2ND} border-[var(--bd2)] text-[var(--t2)] cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]`;
 const EMPTY = 'flex flex-col items-center gap-2 py-12 px-4 text-center text-[length:var(--fs-sm)] text-[var(--t3)]';
+const ICON_BTN_DNG = 'w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--danger)]/35 bg-transparent text-[var(--danger)] text-[length:var(--fs-md)] cursor-pointer transition-colors duration-150 hover:bg-[var(--s2)]';
+// مثل FIELD لكن بلا ارتفاع ثابت
+const TEXTAREA = 'w-full min-h-[140px] px-3 py-3 bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-sm)] text-[length:var(--fs-md)] sm:text-[length:var(--fs-sm)] leading-relaxed text-[var(--t1)] placeholder:text-[var(--t3)] outline-none resize-y transition-colors duration-150 focus:border-[var(--accent)]';
+const CHIP = 'inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] border border-[var(--bd)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap';
+// صفوف قوائم التعاميم والمواعيد والاستثناءات — الصف قيد التعديل بحد أوضح لا بالأخضر
+const ROW = 'flex items-start gap-3 p-3 sm:p-4 rounded-[var(--r-sm)] border bg-[var(--s2)]';
+const ROW_IDLE = 'border-[var(--bd)]';
+const ROW_EDITING = 'border-[var(--bd2)]';
+const ROW_TITLE = 'text-[length:var(--fs-sm)] font-bold text-[var(--t1)] truncate';
+const FORM_BTN_PRI = `${BTN_PRI} transition-opacity duration-150 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed`;
+const FORM_BTN_CANCEL = `${BTN_OUTLINE} disabled:opacity-40 disabled:cursor-not-allowed`;
+
+// تصنيف التعميم: لون النقطة يطابق NotificationsSheet عند المعلم
+const ANN_CATEGORY_OPTIONS = [
+  { value: 'admin', label: 'تعميم إداري' },
+  { value: 'tech', label: 'تحديث برمجي' },
+  { value: 'urgent', label: 'تنبيه عاجل' },
+];
+const ANN_CATEGORY_BADGE: Record<Announcement['category'], { label: string; dot: string }> = {
+  admin: { label: 'تعميم إداري', dot: 'bg-[var(--info)]' },
+  tech: { label: 'تحديث', dot: 'bg-[var(--t2)]' },
+  urgent: { label: 'تنبيه عاجل', dot: 'bg-[var(--danger)]' },
+};
+
+function DotLabel({ dot, label, strong = false }: { dot: string; label: string; strong?: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-2 whitespace-nowrap text-[length:var(--fs-xs)] font-bold ${strong ? 'text-[var(--t1)]' : 'text-[var(--t2)]'}`}>
+      <span className={`w-2 h-2 shrink-0 rounded-[var(--r-full)] ${dot}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
 
 const tabBtn = (active: boolean) =>
   `shrink-0 h-11 px-4 inline-flex items-center gap-2 rounded-[var(--r-sm)] border text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer transition-colors duration-150 ${active
@@ -136,30 +168,15 @@ function FeatureOverrideRow({ user, override, onSetOverride, onRemoveOverride }:
   };
 
   return (
-    <div
-      className="ann-manage-item"
-      style={{
-        background: 'rgba(255, 255, 255, 0.03)',
-        border: '1px solid var(--line2)',
-        borderRadius: '16px',
-        padding: '14px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '16px',
-        flexWrap: 'wrap',
-        opacity: saving ? 0.6 : 1,
-        transition: 'opacity .2s',
-      }}
-    >
-      <div style={{ flex: 1, minWidth: '160px' }}>
-        <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0 }}>{user.name}</h4>
-        <p style={{ fontSize: '12px', color: 'var(--text4)', margin: '2px 0 0' }}>{user.email || '—'}</p>
+    <div className={`${ROW} ${ROW_IDLE} flex-col lg:flex-row lg:items-center transition-opacity duration-150 ${saving ? 'opacity-60' : ''}`}>
+      <div className="w-full lg:w-auto lg:flex-1 min-w-0">
+        <h4 className={ROW_TITLE}>{user.name}</h4>
+        <p className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1 truncate text-right" dir="ltr">{user.email || '—'}</p>
       </div>
-      <div className="filter-btns">
-        <button type="button" disabled={saving} className={`filter-btn ${mode === 'enabled' ? 'active' : ''}`} onClick={() => applyMode('enabled')}>استثناء فردي: تفعيل</button>
-        <button type="button" disabled={saving} className={`filter-btn ${mode === 'disabled' ? 'active' : ''}`} onClick={() => applyMode('disabled')}>استثناء فردي: تعطيل</button>
-        <button type="button" disabled={saving} className={`filter-btn ${mode === 'default' ? 'active' : ''}`} onClick={() => applyMode('default')}>بدون استثناء (اتبع الإعداد العام)</button>
+      <div className="w-full lg:w-auto flex flex-col sm:flex-row gap-2">
+        <button type="button" disabled={saving} className={`${toggleBtn(mode === 'enabled')} px-3 disabled:cursor-wait`} onClick={() => applyMode('enabled')}>استثناء فردي: تفعيل</button>
+        <button type="button" disabled={saving} className={`${toggleBtn(mode === 'disabled')} px-3 disabled:cursor-wait`} onClick={() => applyMode('disabled')}>استثناء فردي: تعطيل</button>
+        <button type="button" disabled={saving} className={`${toggleBtn(mode === 'default')} px-3 disabled:cursor-wait`} onClick={() => applyMode('default')}>بدون استثناء (اتبع الإعداد العام)</button>
       </div>
     </div>
   );
@@ -557,11 +574,10 @@ export default function AdminDashboard({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // تأكيد حذف تعميم أو موعد عبر نافذة Modal
+  const [pendingDelete, setPendingDelete] = useState<{ kind: 'announcement' | 'date'; id: string } | null>(null);
+
   const handleDeleteAnnouncement = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا التعميم؟ سيتم إزالته من عند جميع المستخدمين فوراً.')) {
-      return;
-    }
-    
     try {
       if (onDeleteAnnouncement) {
         const ok = await onDeleteAnnouncement(id);
@@ -681,10 +697,6 @@ export default function AdminDashboard({
   };
 
   const handleDeleteAcademicDate = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا الموعد الدراسي؟ سيتم إزالته من تذكيرات جميع المعلمين فوراً.')) {
-      return;
-    }
-
     try {
       if (onDeleteAcademicDate) {
         const ok = await onDeleteAcademicDate(id);
@@ -1012,69 +1024,67 @@ export default function AdminDashboard({
 
       {/* ── ANNOUNCEMENTS TAB ── */}
       {activeTab === 'announcements' && (
-        <div className="admin-announcements-tab" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
-          <div className="announcement-form-card">
-            <div className="form-header">
-              <i className={`ti ${editingAnnId ? 'ti-edit' : 'ti-speakerphone'}`} />
+        <div className="max-w-[720px] mx-auto flex flex-col gap-6">
+          <div className={`${CARD} p-4 sm:p-6`}>
+            <div className={`${CARD_TITLE} mb-4`}>
+              <i className={`ti ${editingAnnId ? 'ti-edit' : 'ti-speakerphone'} text-[var(--t2)]`} />
               <span>{editingAnnId ? 'تعديل التعميم' : 'نشر تعميم أو تحديث جديد للمستخدمين'}</span>
             </div>
 
-            <form onSubmit={handlePublishAnnouncement} className="ann-form">
-              <div className="form-group">
-                <label>عنوان التعميم / التحديث</label>
+            <form onSubmit={handlePublishAnnouncement} className="flex flex-col gap-4">
+              <div>
+                <label htmlFor="ann-title" className={LABEL}>عنوان التعميم / التحديث</label>
                 <input
+                  id="ann-title"
                   type="text"
                   required
                   placeholder="مثال: تحديثات هامة بخصوص تعبئة ملف الإنجاز"
                   value={annTitle}
                   onChange={e => setAnnTitle(e.target.value)}
-                  className="form-input"
+                  className={FIELD}
                 />
               </div>
 
-              <div className="form-row">
-                <div className="form-group flex-1">
-                  <label>التصنيف</label>
-                  <select
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <span className={LABEL}>التصنيف</span>
+                  <SelectDropdown
+                    options={ANN_CATEGORY_OPTIONS}
                     value={annCategory}
-                    onChange={e => setAnnCategory(e.target.value as any)}
-                    className="form-select"
-                  >
-                    <option value="admin">📄 تعميم إداري</option>
-                    <option value="tech">⚙️ تحديث برمجي</option>
-                    <option value="urgent">⚠️ تنبيه عاجل</option>
-                  </select>
+                    onChange={v => setAnnCategory(v as Announcement['category'])}
+                    placeholder="التصنيف"
+                    triggerClassName={FIELD}
+                  />
                 </div>
-                <div className="form-group flex-1">
-                  <label>رابط مرفق (اختياري)</label>
+                <div>
+                  <label htmlFor="ann-attachment" className={LABEL}>رابط مرفق (اختياري)</label>
                   <input
+                    id="ann-attachment"
                     type="url"
+                    dir="ltr"
                     placeholder="https://example.com/document.pdf"
                     value={annAttachmentUrl}
                     onChange={e => setAnnAttachmentUrl(e.target.value)}
-                    className="form-input"
+                    className={FIELD}
                   />
                 </div>
               </div>
 
-              <div className="form-group">
-                <label>محتوى التعميم</label>
+              <div>
+                <label htmlFor="ann-content" className={LABEL}>محتوى التعميم</label>
                 <textarea
+                  id="ann-content"
                   required
                   rows={6}
                   placeholder="اكتب تفاصيل التعميم أو التحديث هنا بالتفصيل..."
                   value={annContent}
                   onChange={e => setAnnContent(e.target.value)}
-                  className="form-textarea"
+                  className={TEXTAREA}
                 />
               </div>
 
-              <div className="ann-form-actions">
-                <button
-                  type="submit"
-                  disabled={publishingAnn}
-                  className="publish-submit-btn"
-                >
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button type="submit" disabled={publishingAnn} className={FORM_BTN_PRI}>
                   {publishingAnn ? (
                     <>
                       <i className="ti ti-loader animate-spin" />
@@ -1088,12 +1098,7 @@ export default function AdminDashboard({
                   )}
                 </button>
                 {editingAnnId && (
-                  <button
-                    type="button"
-                    onClick={resetAnnForm}
-                    disabled={publishingAnn}
-                    className="ann-cancel-btn"
-                  >
+                  <button type="button" onClick={resetAnnForm} disabled={publishingAnn} className={FORM_BTN_CANCEL}>
                     <i className="ti ti-x" />
                     <span>إلغاء التعديل</span>
                   </button>
@@ -1103,90 +1108,45 @@ export default function AdminDashboard({
           </div>
 
           {/* List of existing announcements */}
-          <div className="announcements-manage-section" style={{ marginTop: '32px' }}>
-            <div className="form-header" style={{ marginBottom: '16px' }}>
-              <i className="ti ti-list" />
+          <div className={`${CARD} p-4 sm:p-6`}>
+            <div className={`${CARD_TITLE} mb-4`}>
+              <i className="ti ti-list text-[var(--t2)]" />
               <span>التعاميم المنشورة حالياً ({manageableAnnouncements.length})</span>
             </div>
 
             {manageableAnnouncements.length > 0 ? (
-              <div className="ann-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="flex flex-col gap-3">
                 {manageableAnnouncements.map((ann) => {
-                  let catLabel = 'تحديث';
-                  let catClass = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-                  if (ann.category === 'admin') {
-                    catLabel = 'تعميم إداري';
-                    catClass = 'bg-[var(--gold)]/10 text-[var(--gold)] border-[var(--gold)]/20';
-                  } else if (ann.category === 'urgent') {
-                    catLabel = 'تنبيه عاجل';
-                    catClass = 'bg-red-500/10 text-red-400 border-red-500/20';
-                  }
-
+                  const cat = ANN_CATEGORY_BADGE[ann.category] ?? ANN_CATEGORY_BADGE.tech;
                   return (
-                    <div
-                      key={ann.id}
-                      className="ann-manage-item"
-                      style={{
-                        background: editingAnnId === ann.id ? 'rgba(82,196,120,.08)' : 'rgba(255, 255, 255, 0.03)',
-                        border: editingAnnId === ann.id ? '1px solid rgba(82,196,120,.4)' : '1px solid var(--line2)',
-                        borderRadius: '16px',
-                        padding: '16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '16px',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                          <span className={`inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border ${catClass}`}>
-                            {catLabel}
-                          </span>
-                          <span style={{ fontSize: '11px', color: 'var(--text4)' }}>
-                            {formatDate(ann.created_at, 'long')}
-                          </span>
+                    <div key={ann.id} className={`${ROW} ${editingAnnId === ann.id ? ROW_EDITING : ROW_IDLE}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-1 flex-wrap">
+                          <DotLabel dot={cat.dot} label={cat.label} />
+                          <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">{formatDate(ann.created_at, 'long')}</span>
                         </div>
-                        <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ann.title}</h4>
-                        <p style={{ fontSize: '12px', color: 'var(--text3)', margin: '4px 0 0', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{ann.content}</p>
+                        <h4 className={ROW_TITLE}>{ann.title}</h4>
+                        <p className="text-[length:var(--fs-xs)] text-[var(--t2)] mt-1 line-clamp-1">{ann.content}</p>
                       </div>
-                      
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
-                          style={{
-                            padding: '8px',
-                            borderRadius: '8px',
-                            border: '1px solid rgba(82,196,120,.25)',
-                            color: 'var(--em8)',
-                            background: 'rgba(82,196,120,.06)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.2s'
-                          }}
+                          type="button"
+                          className={ICON_BTN}
                           title="تعديل التعميم"
+                          aria-label="تعديل التعميم"
                           onClick={() => startEditAnnouncement(ann)}
                         >
-                          <i className="ti ti-edit" style={{ fontSize: '16px' }}></i>
+                          <i className="ti ti-edit" />
                         </button>
                         <button
-                          style={{
-                            padding: '8px',
-                            borderRadius: '8px',
-                            border: '1px solid rgba(248,113,113,.2)',
-                            color: '#f87171',
-                            background: 'rgba(248,113,113,.05)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.2s'
-                          }}
+                          type="button"
+                          className={ICON_BTN_DNG}
                           title="حذف التعميم"
-                          onClick={() => handleDeleteAnnouncement(ann.id)}
+                          aria-label="حذف التعميم"
+                          onClick={() => setPendingDelete({ kind: 'announcement', id: ann.id })}
                         >
-                          <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
+                          <i className="ti ti-trash" />
                         </button>
                       </div>
                     </div>
@@ -1194,12 +1154,12 @@ export default function AdminDashboard({
                 })}
               </div>
             ) : (
-              <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '32px 16px', textAlign: 'center', color: 'var(--text4)' }}>
-                <i className="ti ti-speakerphone" style={{ fontSize: '24px', marginBottom: '8px', display: 'block', opacity: 0.4 }}></i>
+              <div className={EMPTY}>
+                <i className="ti ti-speakerphone text-[length:var(--fs-xl)]" />
                 <span>لا توجد تعاميم منشورة حالياً</span>
                 {hasMockOnly && (
-                  <p style={{ fontSize: '12px', color: 'var(--text4)', margin: '10px 0 0', lineHeight: 1.6, maxWidth: '420px' }}>
-                    التعاميم الظاهرة للمستخدمين الآن هي <b>نماذج ترحيبية تجريبية</b> (غير قابلة للتعديل أو الحذف).
+                  <p className={`${HINT} max-w-[420px] leading-relaxed`}>
+                    التعاميم الظاهرة للمستخدمين الآن هي <b className="font-bold text-[var(--t2)]">نماذج ترحيبية تجريبية</b> (غير قابلة للتعديل أو الحذف).
                     انشر تعميماً حقيقياً من الأعلى وسيحل محلها تلقائياً.
                   </p>
                 )}
@@ -1211,83 +1171,84 @@ export default function AdminDashboard({
 
       {/* ── ACADEMIC DATES TAB ── */}
       {activeTab === 'academic-dates' && (
-        <div className="admin-announcements-tab" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
-          <div className="announcement-form-card">
-            <div className="form-header">
-              <i className={`ti ${editingAdId ? 'ti-edit' : 'ti-calendar-event'}`} />
+        <div className="max-w-[720px] mx-auto flex flex-col gap-6">
+          <div className={`${CARD} p-4 sm:p-6`}>
+            <div className={`${CARD_TITLE} mb-4`}>
+              <i className={`ti ${editingAdId ? 'ti-edit' : 'ti-calendar-event'} text-[var(--t2)]`} />
               <span>{editingAdId ? 'تعديل موعد دراسي' : 'إضافة موعد دراسي جديد'}</span>
             </div>
 
-            <form onSubmit={handlePublishAcademicDate} className="ann-form">
-              <div className="form-group">
-                <label>عنوان الموعد</label>
+            <form onSubmit={handlePublishAcademicDate} className="flex flex-col gap-4">
+              <div>
+                <label htmlFor="ad-title" className={LABEL}>عنوان الموعد</label>
                 <input
+                  id="ad-title"
                   type="text"
                   required
                   placeholder="مثال: عودة المعلمين والمعلمات الممارسين للتدريس"
                   value={adTitle}
                   onChange={e => setAdTitle(e.target.value)}
-                  className="form-input"
+                  className={FIELD}
                 />
               </div>
 
-              <div className="form-row">
-                <div className="form-group flex-1">
-                  <label>التاريخ الميلادي</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="ad-date" className={LABEL}>التاريخ الميلادي</label>
                   <input
+                    id="ad-date"
                     type="date"
                     required
                     value={adDate}
                     onChange={e => setAdDate(e.target.value)}
-                    className="form-input"
+                    className={FIELD}
                   />
                 </div>
-                <div className="form-group flex-1">
-                  <label>التاريخ الهجري (للعرض فقط، اختياري)</label>
+                <div>
+                  <label htmlFor="ad-hijri" className={LABEL}>التاريخ الهجري (للعرض فقط، اختياري)</label>
                   <input
+                    id="ad-hijri"
                     type="text"
                     placeholder="مثال: ١٠ صفر ١٤٤٨ هـ"
                     value={adHijriLabel}
                     onChange={e => setAdHijriLabel(e.target.value)}
-                    className="form-input"
+                    className={FIELD}
                   />
                 </div>
               </div>
 
-              <div className="form-row">
-                <div className="form-group flex-1">
-                  <label>طرف الفصل الدراسي (اختياري)</label>
-                  <SelectDropdown
-                    options={SEMESTER_BOUNDARY_OPTIONS}
-                    value={adSemesterBoundary}
-                    onChange={setAdSemesterBoundary}
-                    placeholder="بلا"
-                    allowClear
-                    triggerClassName="form-input"
-                  />
+              <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <span className={LABEL}>طرف الفصل الدراسي (اختياري)</span>
+                    <SelectDropdown
+                      options={SEMESTER_BOUNDARY_OPTIONS}
+                      value={adSemesterBoundary}
+                      onChange={setAdSemesterBoundary}
+                      placeholder="بلا"
+                      allowClear
+                      triggerClassName={FIELD}
+                    />
+                  </div>
+                  <div>
+                    <span className={LABEL}>رقم الفصل الدراسي (اختياري)</span>
+                    <SelectDropdown
+                      options={SEMESTER_NUMBER_OPTIONS}
+                      value={adSemesterNumber}
+                      onChange={setAdSemesterNumber}
+                      placeholder="بلا"
+                      allowClear
+                      triggerClassName={FIELD}
+                    />
+                  </div>
                 </div>
-                <div className="form-group flex-1">
-                  <label>رقم الفصل الدراسي (اختياري)</label>
-                  <SelectDropdown
-                    options={SEMESTER_NUMBER_OPTIONS}
-                    value={adSemesterNumber}
-                    onChange={setAdSemesterNumber}
-                    placeholder="بلا"
-                    allowClear
-                    triggerClassName="form-input"
-                  />
-                </div>
+                <p className={`${HINT} mt-2 leading-relaxed`}>
+                  يُستخدم هذان الحقلان فقط لبناء قائمة "الفصول المتاحة" في تقرير الحصاد الفصلي — أضِف موعدي بداية ونهاية بنفس رقم الفصل ليظهر كخيار جاهز للمعلمين.
+                </p>
               </div>
-              <p style={{ fontSize: '11px', color: 'var(--text4)', margin: '-8px 0 4px' }}>
-                يُستخدم هذان الحقلان فقط لبناء قائمة "الفصول المتاحة" في تقرير الحصاد الفصلي — أضِف موعدي بداية ونهاية بنفس رقم الفصل ليظهر كخيار جاهز للمعلمين.
-              </p>
 
-              <div className="ann-form-actions">
-                <button
-                  type="submit"
-                  disabled={publishingAd}
-                  className="publish-submit-btn"
-                >
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button type="submit" disabled={publishingAd} className={FORM_BTN_PRI}>
                   {publishingAd ? (
                     <>
                       <i className="ti ti-loader animate-spin" />
@@ -1301,12 +1262,7 @@ export default function AdminDashboard({
                   )}
                 </button>
                 {editingAdId && (
-                  <button
-                    type="button"
-                    onClick={resetAdForm}
-                    disabled={publishingAd}
-                    className="ann-cancel-btn"
-                  >
+                  <button type="button" onClick={resetAdForm} disabled={publishingAd} className={FORM_BTN_CANCEL}>
                     <i className="ti ti-x" />
                     <span>إلغاء التعديل</span>
                   </button>
@@ -1316,91 +1272,57 @@ export default function AdminDashboard({
           </div>
 
           {/* List of existing academic dates */}
-          <div className="announcements-manage-section" style={{ marginTop: '32px' }}>
-            <div className="form-header" style={{ marginBottom: '16px' }}>
-              <i className="ti ti-list" />
+          <div className={`${CARD} p-4 sm:p-6`}>
+            <div className={`${CARD_TITLE} mb-4`}>
+              <i className="ti ti-list text-[var(--t2)]" />
               <span>المواعيد الدراسية المضافة حالياً ({sortedAcademicDates.length})</span>
             </div>
 
             {sortedAcademicDates.length > 0 ? (
-              <div className="ann-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="flex flex-col gap-3">
                 {sortedAcademicDates.map((ad) => (
-                  <div
-                    key={ad.id}
-                    className="ann-manage-item"
-                    style={{
-                      background: editingAdId === ad.id ? 'rgba(82,196,120,.08)' : 'rgba(255, 255, 255, 0.03)',
-                      border: editingAdId === ad.id ? '1px solid rgba(82,196,120,.4)' : '1px solid var(--line2)',
-                      borderRadius: '16px',
-                      padding: '16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '16px',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                        <span className="inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20">
-                          {formatDate(ad.date, 'long')}
-                        </span>
+                  <div key={ad.id} className={`${ROW} ${editingAdId === ad.id ? ROW_EDITING : ROW_IDLE}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className={CHIP}>{formatDate(ad.date, 'long')}</span>
                         {ad.hijri_label && (
-                          <span style={{ fontSize: '11px', color: 'var(--text4)' }}>{ad.hijri_label}</span>
+                          <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">{ad.hijri_label}</span>
                         )}
                         {ad.semester_number && (
-                          <span className="inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border bg-[var(--gold)]/10 text-[var(--gold3)] border-[var(--gold)]/20">
+                          <span className={CHIP}>
                             الفصل {ad.semester_number}{ad.semester_boundary === 'start' ? ' — بداية' : ad.semester_boundary === 'end' ? ' — نهاية' : ''}
                           </span>
                         )}
                       </div>
-                      <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ad.title}</h4>
+                      <h4 className={ROW_TITLE}>{ad.title}</h4>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <div className="flex items-center gap-2 shrink-0">
                       <button
-                        style={{
-                          padding: '8px',
-                          borderRadius: '8px',
-                          border: '1px solid rgba(82,196,120,.25)',
-                          color: 'var(--em8)',
-                          background: 'rgba(82,196,120,.06)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.2s'
-                        }}
+                        type="button"
+                        className={ICON_BTN}
                         title="تعديل الموعد"
+                        aria-label="تعديل الموعد"
                         onClick={() => startEditAcademicDate(ad)}
                       >
-                        <i className="ti ti-edit" style={{ fontSize: '16px' }}></i>
+                        <i className="ti ti-edit" />
                       </button>
                       <button
-                        style={{
-                          padding: '8px',
-                          borderRadius: '8px',
-                          border: '1px solid rgba(248,113,113,.2)',
-                          color: '#f87171',
-                          background: 'rgba(248,113,113,.05)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.2s'
-                        }}
+                        type="button"
+                        className={ICON_BTN_DNG}
                         title="حذف الموعد"
-                        onClick={() => handleDeleteAcademicDate(ad.id)}
+                        aria-label="حذف الموعد"
+                        onClick={() => setPendingDelete({ kind: 'date', id: ad.id })}
                       >
-                        <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
+                        <i className="ti ti-trash" />
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '32px 16px', textAlign: 'center', color: 'var(--text4)' }}>
-                <i className="ti ti-calendar-event" style={{ fontSize: '24px', marginBottom: '8px', display: 'block', opacity: 0.4 }}></i>
+              <div className={EMPTY}>
+                <i className="ti ti-calendar-event text-[length:var(--fs-xl)]" />
                 <span>لا توجد مواعيد دراسية مضافة حالياً</span>
               </div>
             )}
@@ -1410,25 +1332,26 @@ export default function AdminDashboard({
 
       {/* ── FEATURES TAB ── */}
       {activeTab === 'features' && (
-        <div className="admin-announcements-tab" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
-          {/* السويتش العام */}
-          <div className="announcement-form-card">
-            <div className="form-header">
-              <i className="ti ti-flask" />
+        <div className="max-w-[720px] mx-auto flex flex-col gap-6">
+          {/* السويتش العام — زرّان صريحان لا مفتاح، تفادياً لضغطة خاطئة تغيّر التطبيق عند الجميع */}
+          <div className={`${CARD} p-4 sm:p-6`}>
+            <div className={`${CARD_TITLE} mb-4`}>
+              <i className="ti ti-flask text-[var(--t2)]" />
               <span>اقتراح تلقائي من الصورة (Beta)</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', padding: '4px 2px 6px' }}>
-              <div style={{ maxWidth: '520px' }}>
-                <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'white' }}>تفعيل اقتراح الصورة للمنصة بالكامل</div>
-                <p style={{ fontSize: '12px', color: 'var(--text4)', margin: '4px 0 0', lineHeight: 1.6 }}>
+            <div className="flex flex-col gap-4">
+              <div>
+                <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">تفعيل اقتراح الصورة للمنصة بالكامل</div>
+                <p className={`${HINT} leading-relaxed`}>
                   عند التفعيل يظهر زر "اقترح لي وصفاً" لكل المعلمين عند إضافة شاهد من نوع صورة، ما لم يوجد استثناء فردي لحساب معيّن أدناه يتجاوز هذا الإعداد.
                 </p>
               </div>
-              <div className="filter-btns">
+              <div className="flex gap-2">
                 <button
                   type="button"
                   disabled={savingGlobalFlag}
-                  className={`filter-btn ${featureFlags?.[IMAGE_SUGGESTION_FEATURE_KEY] ? 'active' : ''}`}
+                  aria-pressed={!!featureFlags?.[IMAGE_SUGGESTION_FEATURE_KEY]}
+                  className={`${toggleBtn(!!featureFlags?.[IMAGE_SUGGESTION_FEATURE_KEY])} px-3 disabled:cursor-wait`}
                   onClick={() => handleToggleGlobalFlag(true)}
                 >
                   مفعّلة للجميع
@@ -1436,7 +1359,8 @@ export default function AdminDashboard({
                 <button
                   type="button"
                   disabled={savingGlobalFlag}
-                  className={`filter-btn ${!featureFlags?.[IMAGE_SUGGESTION_FEATURE_KEY] ? 'active' : ''}`}
+                  aria-pressed={!featureFlags?.[IMAGE_SUGGESTION_FEATURE_KEY]}
+                  className={`${toggleBtn(!featureFlags?.[IMAGE_SUGGESTION_FEATURE_KEY])} px-3 disabled:cursor-wait`}
                   onClick={() => handleToggleGlobalFlag(false)}
                 >
                   معطّلة للجميع
@@ -1446,24 +1370,25 @@ export default function AdminDashboard({
           </div>
 
           {/* استثناء فردي */}
-          <div className="announcement-form-card" style={{ marginTop: '24px' }}>
-            <div className="form-header">
-              <i className="ti ti-user-cog" />
+          <div className={`${CARD} p-4 sm:p-6`}>
+            <div className={`${CARD_TITLE} mb-4`}>
+              <i className="ti ti-user-cog text-[var(--t2)]" />
               <span>استثناء فردي لمعلم محدد</span>
             </div>
-            <div className="form-group">
-              <label>ابحث بالاسم أو البريد الإلكتروني</label>
+            <div>
+              <label htmlFor="feature-search" className={LABEL}>ابحث بالاسم أو البريد الإلكتروني</label>
               <input
+                id="feature-search"
                 type="text"
                 placeholder="مثال: أحمد أو ahmed@edu.sa"
                 value={featureSearch}
                 onChange={e => setFeatureSearch(e.target.value)}
-                className="form-input"
+                className={FIELD}
               />
             </div>
 
             {featureSearch.trim() && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
+              <div className="flex flex-col gap-3 mt-4">
                 {matchedFeatureUsers.length > 0 ? matchedFeatureUsers.map(u => (
                   <FeatureOverrideRow
                     key={u.id}
@@ -1477,7 +1402,7 @@ export default function AdminDashboard({
                       : Promise.resolve(false)}
                   />
                 )) : (
-                  <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '20px 16px', textAlign: 'center', color: 'var(--text4)' }}>
+                  <div className="py-6 text-center text-[length:var(--fs-sm)] text-[var(--t3)]">
                     <span>لا يوجد معلم مطابق للبحث</span>
                   </div>
                 )}
@@ -1486,63 +1411,35 @@ export default function AdminDashboard({
           </div>
 
           {/* قائمة الاستثناءات الحالية */}
-          <div className="announcements-manage-section" style={{ marginTop: '32px' }}>
-            <div className="form-header" style={{ marginBottom: '16px' }}>
-              <i className="ti ti-list" />
+          <div className={`${CARD} p-4 sm:p-6`}>
+            <div className={`${CARD_TITLE} mb-4`}>
+              <i className="ti ti-list text-[var(--t2)]" />
               <span>الاستثناءات الفردية الحالية ({imageSuggestionOverrides.length})</span>
             </div>
 
             {imageSuggestionOverrides.length > 0 ? (
-              <div className="ann-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="flex flex-col gap-3">
                 {imageSuggestionOverrides.map(o => {
                   const u = users.find(us => us.id === o.portfolio_id);
                   return (
-                    <div
-                      key={o.portfolio_id}
-                      className="ann-manage-item"
-                      style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid var(--line2)',
-                        borderRadius: '16px',
-                        padding: '16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '16px',
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                          <span
-                            className={`inline-flex items-center gap-1.5 py-0.5 px-2 rounded-md text-[10px] font-bold border ${
-                              o.enabled
-                                ? 'bg-[var(--em7)]/10 text-[var(--em8)] border-[var(--em7)]/20'
-                                : 'bg-red-500/10 text-red-400 border-red-500/20'
-                            }`}
-                          >
-                            {o.enabled ? 'استثناء: مفعّلة' : 'استثناء: معطّلة'}
-                          </span>
+                    <div key={o.portfolio_id} className={`${ROW} ${ROW_IDLE}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="mb-1">
+                          <DotLabel
+                            dot={o.enabled ? 'bg-[var(--accent)]' : 'bg-[var(--idle)]'}
+                            label={o.enabled ? 'استثناء: مفعّلة' : 'استثناء: معطّلة'}
+                            strong={o.enabled}
+                          />
                         </div>
-                        <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u?.name || 'مستخدم محذوف'}</h4>
-                        <p style={{ fontSize: '12px', color: 'var(--text4)', margin: '4px 0 0' }}>{u?.email || o.portfolio_id}</p>
+                        <h4 className={ROW_TITLE}>{u?.name || 'مستخدم محذوف'}</h4>
+                        <p className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1 truncate text-right" dir="ltr">{u?.email || o.portfolio_id}</p>
                       </div>
 
                       <button
-                        style={{
-                          padding: '8px',
-                          borderRadius: '8px',
-                          border: '1px solid rgba(248,113,113,.2)',
-                          color: '#f87171',
-                          background: 'rgba(248,113,113,.05)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.2s',
-                          flexShrink: 0,
-                        }}
+                        type="button"
+                        className={ICON_BTN_DNG}
                         title="إزالة الاستثناء"
+                        aria-label="إزالة الاستثناء"
                         onClick={async () => {
                           const ok = onRemovePortfolioFeatureOverride
                             ? await onRemovePortfolioFeatureOverride(o.portfolio_id, IMAGE_SUGGESTION_FEATURE_KEY)
@@ -1550,15 +1447,15 @@ export default function AdminDashboard({
                           onToast(ok ? 'تمت إزالة الاستثناء بنجاح' : 'فشلت إزالة الاستثناء', ok ? 'success' : 'error');
                         }}
                       >
-                        <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
+                        <i className="ti ti-trash" />
                       </button>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <div className="empty-state" style={{ background: 'rgba(255,255,255,.02)', border: '1px dashed var(--line2)', borderRadius: '16px', padding: '32px 16px', textAlign: 'center', color: 'var(--text4)' }}>
-                <i className="ti ti-flask" style={{ fontSize: '24px', marginBottom: '8px', display: 'block', opacity: 0.4 }}></i>
+              <div className={EMPTY}>
+                <i className="ti ti-flask text-[length:var(--fs-xl)]" />
                 <span>لا توجد استثناءات فردية حالياً</span>
               </div>
             )}
@@ -1586,162 +1483,28 @@ export default function AdminDashboard({
         />
       )}
 
-      {/* Styles */}
-      <style>{adminStyles}</style>
+      {/* تأكيد حذف تعميم أو موعد */}
+      <Modal
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        tone="danger"
+        icon="ti-trash"
+        title={pendingDelete?.kind === 'date' ? 'حذف الموعد' : 'حذف التعميم'}
+        subtitle=""
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          const { kind, id } = pendingDelete;
+          setPendingDelete(null);
+          if (kind === 'announcement') void handleDeleteAnnouncement(id);
+          else void handleDeleteAcademicDate(id);
+        }}
+      >
+        <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">
+          {pendingDelete?.kind === 'date'
+            ? 'هل أنت متأكد من حذف هذا الموعد الدراسي؟ سيتم إزالته من تذكيرات جميع المعلمين فوراً.'
+            : 'هل أنت متأكد من حذف هذا التعميم؟ سيتم إزالته من عند جميع المستخدمين فوراً.'}
+        </p>
+      </Modal>
     </div>
   );
 }
-
-/* ─────────────────────────────────────────────
-   CSS Styles — بقايا تبويبات التعاميم والمواعيد والميزات فقط.
-   تُحذف كاملة مع وسم <style> في الخطوة 6.6ب.
-───────────────────────────────────────────── */
-const adminStyles = `
-.filter-btns { display: flex; gap: 6px; }
-.filter-btn {
-  padding: 9px 16px; border-radius: 10px;
-  background: rgba(255,255,255,.04); border: 1px solid var(--line2);
-  color: var(--text3); font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: all .2s; font-family: var(--font);
-}
-.filter-btn.active {
-  background: rgba(82,196,120,.12); border-color: rgba(82,196,120,.3); color: var(--em8);
-}
-.filter-btn:not(.active):hover { background: rgba(255,255,255,.07); color: var(--text1); }
-
-.empty-state {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 10px; padding: 48px; color: var(--text4); font-size: 15px;
-}
-.empty-state i { font-size: 36px; opacity: .5; }
-
-@keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
-@keyframes scaleIn { from { opacity:0; transform:scale(.95) } to { opacity:1; transform:scale(1) } }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
-@keyframes spin { to { transform: rotate(360deg) } }
-.animate-spin { animation: spin 1s linear infinite; }
-
-/* ── Announcements Form Tab ── */
-.admin-announcements-tab {
-  animation: scaleIn .35s var(--sp) both;
-  max-width: 720px;
-  margin: 0 auto;
-}
-.announcement-form-card {
-  background: rgba(255,255,255,.04);
-  border: 1px solid var(--line2);
-  border-radius: 20px;
-  padding: 24px;
-}
-.form-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 800;
-  color: white;
-  margin-bottom: 24px;
-  border-bottom: 1px solid var(--line2);
-  padding-bottom: 16px;
-}
-.form-header i {
-  color: var(--em8);
-  font-size: 20px;
-}
-.ann-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.form-group label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text2);
-}
-.form-row {
-  display: flex;
-  gap: 16px;
-}
-@media (max-width: 600px) {
-  .form-row {
-    flex-direction: column;
-  }
-}
-.form-input, .form-select, .form-textarea {
-  width: 100%;
-  padding: 12px 14px;
-  background: rgba(255,255,255,.05);
-  border: 1px solid var(--line2);
-  border-radius: 12px;
-  color: white;
-  font-size: 14px;
-  font-family: var(--font);
-  outline: none;
-  transition: all .2s;
-  box-sizing: border-box;
-}
-.form-select option {
-  background: #0d1f14;
-  color: white;
-}
-.form-input:focus, .form-select:focus, .form-textarea:focus {
-  border-color: rgba(82,196,120,.4);
-  background: rgba(82,196,120,.04);
-  box-shadow: 0 0 0 3px rgba(82,196,120,.1);
-}
-.ann-form-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 8px;
-}
-.publish-submit-btn {
-  flex: 1;
-  padding: 14px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--em4), var(--em7));
-  color: white;
-  font-size: 14px;
-  font-weight: 700;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: opacity .2s, transform .2s;
-  font-family: var(--font);
-}
-.ann-cancel-btn {
-  padding: 14px 20px;
-  border-radius: 12px;
-  background: rgba(255,255,255,.05);
-  border: 1px solid var(--line2);
-  color: var(--text3);
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: all .2s;
-  font-family: var(--font);
-  white-space: nowrap;
-}
-.ann-cancel-btn:hover { background: rgba(255,255,255,.1); color: white; }
-.ann-cancel-btn:disabled { opacity: .5; cursor: not-allowed; }
-.publish-submit-btn:hover {
-  opacity: .9;
-  transform: translateY(-1px);
-}
-.publish-submit-btn:disabled {
-  opacity: .6;
-  cursor: not-allowed;
-}
-
-`;

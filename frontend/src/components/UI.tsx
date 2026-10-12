@@ -17,6 +17,8 @@ interface ToastProps {
   action?: ToastAction;
   /** الافتراضي info */
   kind?: ToastKind;
+  /** إن وُجد يظهر زر إغلاق، والرسالة تبقى حتى يُغلقها المستخدم أو تُستبدل */
+  onClose?: () => void;
 }
 
 const TOAST_KIND_STYLE: Record<ToastKind, { icon: string; color: string }> = {
@@ -25,12 +27,13 @@ const TOAST_KIND_STYLE: Record<ToastKind, { icon: string; color: string }> = {
   info: { icon: 'ti-info-circle', color: 'text-[var(--info)]' },
 };
 
-export function Toast({ msg, show, action, kind }: ToastProps) {
+export function Toast({ msg, show, action, kind, onClose }: ToastProps) {
   // الرسالة لا تلتقط النقرات إلا وهي ظاهرة وفيها زر
-  const clickable = show && !!action;
+  const clickable = show && (!!action || !!onClose);
   const style = TOAST_KIND_STYLE[kind ?? 'info'];
   return (
-    <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 w-max max-w-[calc(100vw-32px)] bg-[var(--s2)] text-[var(--t1)] py-3 px-4 rounded-[var(--r-md)] text-[length:var(--fs-sm)] font-bold z-[600] ${clickable ? 'pointer-events-auto' : 'pointer-events-none'} border border-[var(--bd2)] flex items-center gap-3 transition-all duration-[350ms] ease-[var(--sp)] ${show ? 'translate-y-0 opacity-100' : 'translate-y-[100px] opacity-0'}`}>
+    // تحت md في الأعلى حتى لا يغطي الشريط السفلي وأزرار النماذج؛ من md في الأسفل كما كان
+    <div className={`fixed top-[calc(env(safe-area-inset-top)+16px)] md:top-auto md:bottom-8 left-1/2 -translate-x-1/2 w-max max-w-[calc(100vw-32px)] bg-[var(--s2)] text-[var(--t1)] py-3 px-4 rounded-[var(--r-md)] text-[length:var(--fs-sm)] font-bold z-[600] print:hidden ${clickable ? 'pointer-events-auto' : 'pointer-events-none'} border border-[var(--bd2)] flex items-center gap-3 transition-all duration-[350ms] ease-[var(--sp)] ${show ? 'translate-y-0 opacity-100' : '-translate-y-[100px] md:translate-y-[100px] opacity-0'}`}>
       <i className={`ti ${style.icon} ${style.color} text-[length:var(--fs-lg)] shrink-0`} style={{ animation: show ? 'pulse .4s var(--bounce)' : 'none' }}></i>
       <span>{msg}</span>
       {action && (
@@ -41,6 +44,18 @@ export function Toast({ msg, show, action, kind }: ToastProps) {
           className="h-9 px-3 -my-2 rounded-[var(--r-sm)] text-[length:var(--fs-sm)] font-bold text-[var(--t1)] underline cursor-pointer"
         >
           {action.label}
+        </button>
+      )}
+      {onClose && (
+        // مربع 36px ظاهر، ومساحة الضغط 44px عبر after شفاف
+        <button
+          type="button"
+          onClick={onClose}
+          tabIndex={show ? 0 : -1}
+          aria-label="إغلاق"
+          className="relative w-9 h-9 -my-2 shrink-0 flex items-center justify-center rounded-[var(--r-sm)] text-[var(--t2)] text-[length:var(--fs-md)] cursor-pointer after:absolute after:-inset-1"
+        >
+          <i className="ti ti-x"></i>
         </button>
       )}
     </div>

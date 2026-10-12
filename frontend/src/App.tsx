@@ -32,6 +32,7 @@ import { useMonthlyProgress } from './hooks/useMonthlyProgress';
 import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
 import { useSections } from './hooks/useSections';
 import { usePortfolioCompletion } from './hooks/usePortfolioCompletion';
+import { useSwUpdate } from './hooks/useSwUpdate';
 import type { ContinuityData } from './types';
 import { usePublicCustomIndicators } from './hooks/usePublicCustomIndicators';
 import type { PublicCustomIndicator } from './hooks/usePublicCustomIndicators';
@@ -65,7 +66,9 @@ export default function App() {
   // رابط تأكيد من البريد (/auth/confirm?token_hash=…&type=…) — صفحة مستقلة
   // حتى يضغط المعلم «تأكيد» أو يرجع. الروابط القديمة (#access_token) على / لا تمر هنا.
   const [confirmLink, setConfirmLink] = useState(() => window.location.pathname === '/auth/confirm');
-  const [toastData, setToastData] = useState<{ msg: string; icon: string; show: boolean; action?: ToastAction; kind?: ToastKind }>({ msg: '', icon: '✓', show: false });
+  const [toastData, setToastData] = useState<{ msg: string; icon: string; show: boolean; action?: ToastAction; kind?: ToastKind; onClose?: () => void }>({ msg: '', icon: '✓', show: false });
+  // فحص التحديث يعمل في كل المسارات؛ التنبيه وحده مقيَّد (انظر showUpdateToast)
+  const swUpdateReady = useSwUpdate();
   const { 
     state,
     user,
@@ -323,20 +326,55 @@ export default function App() {
   // مؤقّت واحد للرسالة: رسالة جديدة تلغي مؤقّت السابقة فلا تُخفيها مبكراً.
   // الرسالة التي فيها زر (مثل «تراجع») تبقى مدة أطول.
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // تنبيه «يتوفر تحديث» ثابت بلا مؤقّت. أي رسالة أخرى تستبدله مدتها فقط، ثم
+  // يعود ما دام updatePendingRef صحيحاً؛ لا يختفي نهائياً إلا بإغلاق المعلم له.
+  const updatePendingRef = useRef(false);
+  const showUpdateToastRef = useRef<() => void>(() => {});
+  const hideOrRestoreToast = useCallback(() => {
+    if (updatePendingRef.current) showUpdateToastRef.current();
+    else setToastData(prev => ({ ...prev, show: false }));
+  }, []);
   const showToast = useCallback((msg: string, icon = '✓', action?: ToastAction, durationMs?: number, kind?: ToastKind) => {
     setToastData({ msg, icon, show: true, action, kind });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(
-      () => setToastData(prev => ({ ...prev, show: false })),
+      hideOrRestoreToast,
       durationMs ?? (action ? INDICATOR_UNDO_MS : 3200),
     );
-  }, []);
+  }, [hideOrRestoreToast]);
   // كل تنبيه يحدّد نوعه صراحةً؛ وسيط icon في showToast لم يعد يُقرأ
   const toastKind = useCallback((msg: string, kind: ToastKind) => showToast(msg, '', undefined, undefined, kind), [showToast]);
   const hideToast = useCallback(() => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    hideOrRestoreToast();
+  }, [hideOrRestoreToast]);
+
+  const dismissUpdate = useCallback(() => {
+    updatePendingRef.current = false;
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastData(prev => ({ ...prev, show: false }));
   }, []);
+  showUpdateToastRef.current = () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastData({
+      msg: 'يتوفر تحديث جديد',
+      icon: '',
+      show: true,
+      kind: 'info',
+      // إعادة التحميل بضغطة المعلم فقط، لا تلقائياً
+      action: { label: 'تحديث', onClick: () => window.location.reload() },
+      onClose: dismissUpdate,
+    });
+  };
+
+  // لا تنبيه في ?share= و?report= و/auth/confirm؛ مرة واحدة في عمر الصفحة
+  const updateShownRef = useRef(false);
+  useEffect(() => {
+    if (!swUpdateReady || shareUserId || reportId || confirmLink || updateShownRef.current) return;
+    updateShownRef.current = true;
+    updatePendingRef.current = true;
+    showUpdateToastRef.current();
+  }, [swUpdateReady, shareUserId, reportId, confirmLink]);
 
   // ── المؤشرات المخصصة: إضافة وإعادة تسمية وحذف مؤجّل ─────────────
   const customIndicators = useCustomIndicators(user?.id ?? null);

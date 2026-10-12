@@ -1130,14 +1130,15 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         {archiveSectionsToShow.map(sec => {
           const secEv = archiveEvidenceBySection[sec.id] || [];
           return (
-            <div key={sec.id} className="bg-[var(--s1)] rounded-[var(--r-md)] border border-[var(--bd)] overflow-hidden">
+            // بلا overflow-hidden: قائمة ⋯ في EvRow (absolute) تتجاوز حدود البطاقة، كما في شاشة البند
+            <div key={sec.id} className="bg-[var(--s1)] rounded-[var(--r-md)] border border-[var(--bd)]">
               <div className="flex items-center gap-3 py-3 px-3.5">
                 <span className="w-10 h-10 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[20px] text-[var(--t2)] shrink-0">
                   <i className={`ti ${sec.icon}`} />
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)] leading-normal">{sec.ttl}</div>
-                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)]">{secEv.length} دليل هذا الشهر</div>
+                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)]">{secEv.length === 0 ? 'لا شواهد هذا الشهر' : `${nEv(secEv.length)} هذا الشهر`}</div>
                 </div>
                 {isArchiveEditable && (
                   <div className="shrink-0">
@@ -1156,8 +1157,10 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
                   sectionId={sec.id}
                   evidence={secEv}
                   loading={false}
-                  onDelete={supabaseEv.deleteEvidence}
                   onAddClick={() => setArchiveAddTarget({ open: true, sectionId: sec.id, sub: sec.subs[0] ?? 'عام' })}
+                  onEditEv={ev => onEditEv(sec.id, ev)}
+                  onDeleteEv={onDeleteEv}
+                  highlight={highlight}
                   readOnly={!isArchiveEditable}
                 />
               </div>

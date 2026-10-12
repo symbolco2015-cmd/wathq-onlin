@@ -234,10 +234,12 @@ export interface EvHighlightActions {
 // زر في قائمة ⋯ للشاهد
 const MENU_ITEM = 'w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer';
 
-export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete, canEdit = true, highlight }: {
+export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete, canEdit = true, locked = false, highlight }: {
   ev: SupabaseEvidence; menuOpen: boolean; onToggleMenu: () => void; onCloseMenu: () => void; onEdit?: () => void; onDelete: () => void;
   /** false يخفي «تعديل» من القائمة (شواهد الأقسام الخاصة) */
   canEdit?: boolean;
+  /** شهر أرشيف مقفل: يخفي «تعديل» و«حذف»، ويبقى ما هو إعداد عرض (التثبيت واللمحات) */
+  locked?: boolean;
   highlight?: EvHighlightActions;
 }) {
   const url = ev.file_url ?? ev.link_url ?? undefined;
@@ -246,6 +248,10 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
   const canPin = !!highlight && ev.section_id !== null;
   // المعرض للصور والفيديو فقط
   const canGallery = !!highlight && (ev.evidence_type === 'image' || ev.evidence_type === 'video');
+  const showEdit = !locked && canEdit && !!onEdit;
+  const showDelete = !locked;
+  // لا خيار في القائمة ⇐ لا زر ⋯
+  const hasMenu = canPin || canGallery || showEdit || showDelete;
   const content = (
     <>
       <span className="w-8 h-8 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center text-[16px] text-[var(--t2)] shrink-0">
@@ -279,16 +285,19 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
       ) : (
         <div className="flex items-center gap-2.5 min-w-0 flex-1">{content}</div>
       )}
-      <button
-        type="button"
-        aria-label="خيارات الشاهد"
-        aria-expanded={menuOpen}
-        onClick={onToggleMenu}
-        className="w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[16px] text-[var(--t2)] shrink-0 cursor-pointer"
-      >
-        <i className="ti ti-dots" />
-      </button>
-      {menuOpen && (
+      {hasMenu && (
+        // 36px بصرياً، ومساحة الضغط 44px بحافة غير مرئية 4px من كل جهة
+        <button
+          type="button"
+          aria-label="خيارات الشاهد"
+          aria-expanded={menuOpen}
+          onClick={onToggleMenu}
+          className="relative w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[16px] text-[var(--t2)] shrink-0 cursor-pointer before:absolute before:-inset-1 before:content-['']"
+        >
+          <i className="ti ti-dots" />
+        </button>
+      )}
+      {hasMenu && menuOpen && (
         <>
           <div className="fixed inset-0 z-20" onClick={onCloseMenu} />
           <div role="menu" className="absolute left-3.5 top-full mt-1 z-30 min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]">
@@ -314,7 +323,7 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
                   : <><i className="ti ti-eye-off text-[16px]" /> إخفاء من اللمحات</>}
               </button>
             )}
-            {canEdit && onEdit && (
+            {showEdit && onEdit && (
               <button
                 type="button"
                 role="menuitem"
@@ -324,14 +333,16 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
                 <i className="ti ti-pencil text-[16px]" /> تعديل
               </button>
             )}
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { onCloseMenu(); onDelete(); }}
-              className="w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold text-[var(--danger)] cursor-pointer"
-            >
-              <i className="ti ti-trash text-[16px]" /> حذف
-            </button>
+            {showDelete && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { onCloseMenu(); onDelete(); }}
+                className="w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold text-[var(--danger)] cursor-pointer"
+              >
+                <i className="ti ti-trash text-[16px]" /> حذف
+              </button>
+            )}
           </div>
         </>
       )}

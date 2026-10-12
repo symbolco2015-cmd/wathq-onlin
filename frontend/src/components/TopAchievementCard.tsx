@@ -11,9 +11,9 @@ const KIND_ICON: Record<PublicKind, string> = {
 
 const RIBBON = 'text-[length:var(--fs-xs)] font-bold text-[var(--bg)] bg-[var(--brand-gold)] px-2.5 py-0.5 rounded-[var(--r-full)]';
 
-/** المرئي: صورة أو فيديو أو مصغّرة يوتيوب. إن تعذّر التحميل ⇐ أيقونة النوع */
-function FeatVisual({ evidence, ytId }: { evidence: SupabaseEvidence; ytId: string | null }) {
-  const [failed, setFailed] = useState(false);
+/** المرئي: صورة أو فيديو أو مصغّرة يوتيوب. إن تعذّر التحميل ⇐ onFail، فتأخذ
+ *  البطاقة شكل الشاهد بلا مرئي (خانة الأيقونة الضيقة) */
+function FeatVisual({ evidence, ytId, onFail }: { evidence: SupabaseEvidence; ytId: string | null; onFail: () => void }) {
   const kind = publicKind(evidence);
   const media = 'absolute inset-0 w-full h-full object-cover';
   const play = (
@@ -22,21 +22,20 @@ function FeatVisual({ evidence, ytId }: { evidence: SupabaseEvidence; ytId: stri
     </span>
   );
 
-  if (failed) return <i className={`ti ${kind === 'vid' ? 'ti-player-play' : KIND_ICON[kind]} text-[48px] text-[var(--t2)]`}></i>;
   if (kind === 'img' && evidence.file_url) {
-    return <img src={evidence.file_url} alt="" loading="lazy" decoding="async" className={media} onError={() => setFailed(true)} />;
+    return <img src={evidence.file_url} alt="" loading="lazy" decoding="async" className={media} onError={onFail} />;
   }
   if (kind === 'vid' && evidence.file_url) {
     return (
       <>
-        <video src={`${evidence.file_url}#t=0.1`} preload="metadata" muted playsInline className={media} onError={() => setFailed(true)} />
+        <video src={`${evidence.file_url}#t=0.1`} preload="metadata" muted playsInline className={media} onError={onFail} />
         {play}
       </>
     );
   }
   return (
     <>
-      <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt="" loading="lazy" decoding="async" className={media} onError={() => setFailed(true)} />
+      <img src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`} alt="" loading="lazy" decoding="async" className={media} onError={onFail} />
       {play}
     </>
   );
@@ -55,8 +54,10 @@ export default function TopAchievementCard({ evidence, source, sectionName, indi
   const description = evidence.description?.trim();
   const kind = publicKind(evidence);
   const ytId = kind === 'link' && evidence.link_url ? extractYouTubeId(evidence.link_url) : null;
-  // مرئي حقيقي (صورة، فيديو، يوتيوب) ⇐ نصف البطاقة. غيره ⇐ خانة أيقونة ضيقة
-  const hasVisual = ((kind === 'img' || kind === 'vid') && !!evidence.file_url) || !!ytId;
+  // معرّف الشاهد الذي تعذّر تحميل مرئيه — يسقط تلقائياً إن تغيّر الشاهد
+  const [failedId, setFailedId] = useState<string | null>(null);
+  // مرئي حقيقي (صورة، فيديو، يوتيوب) حُمّل ⇐ نصف البطاقة. غيره ⇐ خانة أيقونة ضيقة
+  const hasVisual = (((kind === 'img' || kind === 'vid') && !!evidence.file_url) || !!ytId) && failedId !== evidence.id;
 
   const text = (
     <>
@@ -83,7 +84,7 @@ export default function TopAchievementCard({ evidence, source, sectionName, indi
       {hasVisual ? (
         <button type="button" onClick={onOpen} className={`${shell} grid lg:grid-cols-[1.1fr_1fr] print:grid-cols-1`}>
           <div className="print:hidden relative min-h-[190px] bg-[var(--s2)] flex items-center justify-center">
-            <FeatVisual evidence={evidence} ytId={ytId} />
+            <FeatVisual evidence={evidence} ytId={ytId} onFail={() => setFailedId(evidence.id)} />
             <span className={`absolute top-3 right-3 ${RIBBON}`}>{sourceLabel}</span>
           </div>
           <div className="p-4">{text}</div>

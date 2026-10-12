@@ -108,14 +108,19 @@ export default function AuthConfirm({ onDone, onToast }: AuthConfirmProps) {
   return (
     <div dir="rtl" className="min-h-dvh flex items-center justify-center px-4 py-6 bg-[var(--bg)]">
       <div className="bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-lg)] p-6 sm:p-8 w-full max-w-[480px] text-center">
-        <img src="/brand/logo-primary-ondark.svg" alt="وثّق" className="w-[116px] h-auto mx-auto mb-6" />
+        {/* الرأس بنمط صفحة الدخول: الشعار والعنوان في وسط صريح، لا بالوراثة فقط */}
+        <div className="text-center mb-3">
+          <img src="/brand/logo-primary-ondark.svg" alt="وثّق" className="w-[116px] h-auto mx-auto mb-6" />
+          <h1 className="text-center text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">
+            {failed ? 'تعذّر التأكيد' : copy.title}
+          </h1>
+        </div>
 
         {failed ? (
           <>
-            <h1 className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] mb-3">تعذّر التأكيد</h1>
-            <div role="alert" className="flex items-start justify-center gap-2 text-[length:var(--fs-sm)] text-[var(--danger)] leading-relaxed mb-2">
-              <i className="ti ti-alert-circle text-[24px] shrink-0" aria-hidden="true"></i>
-              <span>انتهت صلاحية الرابط أو استُعمل من قبل.</span>
+            <div role="alert" className="flex items-center justify-center gap-2 text-[length:var(--fs-sm)] text-[var(--danger)] leading-relaxed mb-2">
+              <i className="ti ti-alert-circle text-[20px] shrink-0" aria-hidden="true"></i>
+              <span className="text-center">انتهت صلاحية الرابط أو استُعمل من قبل.</span>
             </div>
             {!hasSession && (
               <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed mb-6">
@@ -129,7 +134,6 @@ export default function AuthConfirm({ onDone, onToast }: AuthConfirmProps) {
           </>
         ) : (
           <>
-            <h1 className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] mb-3">{copy.title}</h1>
             <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed mb-6">{copy.desc}</p>
             <button
               type="button"

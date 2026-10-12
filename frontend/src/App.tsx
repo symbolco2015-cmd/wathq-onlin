@@ -33,6 +33,7 @@ import { usePublicMonthlyProgress } from './hooks/usePublicMonthlyProgress';
 import { useSections } from './hooks/useSections';
 import { usePortfolioCompletion } from './hooks/usePortfolioCompletion';
 import { useSwUpdate } from './hooks/useSwUpdate';
+import { useSessionCheck } from './hooks/useSessionCheck';
 import type { ContinuityData } from './types';
 import { usePublicCustomIndicators } from './hooks/usePublicCustomIndicators';
 import type { PublicCustomIndicator } from './hooks/usePublicCustomIndicators';
@@ -250,6 +251,9 @@ export default function App() {
     return () => { cancelled = true; };
   }, [isOwnPreview, user?.id]);
 
+  // خروج سبّبه فحص الجلسة — تنبيهه من useSessionCheck، فلا يُكرَّر تنبيه التأثير أدناه
+  const sessionExpiredRef = useRef(false);
+
   // Redirect users dynamically based on auth status — but not when in shared-profile view
   useEffect(() => {
     if (shareUserId || reportId) return; // Don't redirect if viewing a shared profile or a harvest report
@@ -263,12 +267,14 @@ export default function App() {
     if (!loading) {
       if (user) {
         if (currentPage === 'auth') {
+          // دخول جديد بعد خروج فحص الجلسة
+          sessionExpiredRef.current = false;
           setCurrentPage('dashboard');
         }
       } else {
         if (currentPage === 'dashboard') {
           setCurrentPage('auth');
-          toastKind('انتهت جلستك، يرجى تسجيل الدخول مجدداً', 'info');
+          if (!sessionExpiredRef.current) toastKind('انتهت جلستك، يرجى تسجيل الدخول مجدداً', 'info');
         }
       }
     }
@@ -348,6 +354,15 @@ export default function App() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     hideOrRestoreToast();
   }, [hideOrRestoreToast]);
+
+  // الحساب أو جلسته لم يعد موجوداً على الخادم ⇐ خروج محلي (بلا طلب للخادم)
+  // وصفحة الدخول. انقطاع الشبكة وأخطاء 5xx لا تصل هنا (useSessionCheck).
+  useSessionCheck(!!user && !shareUserId && !reportId && !confirmLink, async () => {
+    sessionExpiredRef.current = true;
+    await supabase?.auth.signOut({ scope: 'local' });
+    setCurrentPage('auth');
+    toastKind('انتهت جلستك. سجّل الدخول من جديد.', 'info');
+  });
 
   const dismissUpdate = useCallback(() => {
     updatePendingRef.current = false;

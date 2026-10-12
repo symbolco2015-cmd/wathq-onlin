@@ -1152,7 +1152,7 @@ export default function App() {
             onDeleteUser={deleteUserPortfolio}
             onResetUser={resetUserPortfolio}
             onExportCSV={exportCSV}
-            onToast={showToast}
+            onToast={(msg, kind) => showToast(msg, '', undefined, undefined, kind)}
             getShareUrl={getShareUrl}
             onPublishAnnouncement={createAnnouncement}
             onUpdateAnnouncement={updateAnnouncement}

@@ -1,11 +1,54 @@
 import { useState } from 'react';
 import type { AdminUser } from '../../hooks/useAdminStore';
 import { formatDate } from '../../utils';
+import { BTN_2ND } from '../formStyles';
 
-// عتبة "فيه نشاط فعلي" — نفس القيمة المستخدمة في عرض الجدول (UserRow) لإبراز
-// نفس الصف بلون التمييز البرتقالي عند توسيع البطاقة. أي دليل واحد فأكثر يستحق
-// التمييز، لذا العتبة 1 لا تتطلب رقماً "مرتفعاً" فعلياً.
+// عتبة "فيه نشاط فعلي" — أي دليل أو استراتيجية واحدة فأكثر يُبرز رقمها بـ --t1،
+// والصفر يبقى خافتاً بـ --t3. مشتركة بين البطاقة وصف الجدول (UserRow).
 const HIGH_EVIDENCE_THRESHOLD = 1;
+
+/** نشط = حدّث ملفه خلال آخر 30 يوماً */
+export const isUserActive = (user: AdminUser): boolean =>
+  user.updated_at
+    ? (Date.now() - new Date(user.updated_at).getTime()) < 30 * 24 * 60 * 60 * 1000
+    : false;
+
+/** الصورة الشخصية، أو أول حرفين من الاسم على --s2 */
+export function UserAvatar({ user, size = 'md' }: { user: AdminUser; size?: 'md' | 'lg' }) {
+  const dims = size === 'lg' ? 'w-14 h-14 text-[length:var(--fs-lg)]' : 'w-9 h-9 text-[length:var(--fs-xs)]';
+  return (
+    <div
+      className={`${dims} shrink-0 rounded-[var(--r-full)] bg-[var(--s2)] border border-[var(--bd)] bg-cover bg-center flex items-center justify-center font-bold text-[var(--t2)]`}
+      style={user.avatar ? { backgroundImage: `url(${user.avatar})` } : {}}
+    >
+      {!user.avatar && user.name.substring(0, 2)}
+    </div>
+  );
+}
+
+/** حالة النشاط: نقطة مع نص دائماً — لا معنى باللون وحده */
+export function ActiveStatus({ active }: { active: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-2 whitespace-nowrap text-[length:var(--fs-xs)] font-bold ${active ? 'text-[var(--t1)]' : 'text-[var(--t3)]'}`}>
+      <span className={`w-2 h-2 shrink-0 rounded-[var(--r-full)] ${active ? 'bg-[var(--accent)]' : 'bg-[var(--idle)]'}`} aria-hidden="true" />
+      {active ? 'نشط' : 'غير نشط'}
+    </span>
+  );
+}
+
+/** عدد الأدلة أو الاستراتيجيات بأيقونة محايدة */
+export function CountBadge({ icon, count }: { icon: string; count: number }) {
+  return (
+    <span className={`inline-flex items-center gap-1 text-[length:var(--fs-sm)] font-bold ${count >= HIGH_EVIDENCE_THRESHOLD ? 'text-[var(--t1)]' : 'text-[var(--t3)]'}`}>
+      <i className={`ti ${icon} text-[var(--t3)]`} />
+      {count}
+    </span>
+  );
+}
+
+const ROW = 'flex items-center justify-between gap-3';
+const ROW_LABEL = 'shrink-0 text-[length:var(--fs-xs)] text-[var(--t3)]';
+const ROW_VALUE = 'min-w-0 truncate text-left text-[length:var(--fs-sm)] text-[var(--t2)]';
 
 /**
  * بطاقة مستخدم لعرض الجوال فقط (md:hidden) — تستبدل صفوف الجدول الأفقي
@@ -26,69 +69,53 @@ export default function UserCard({ user, onView }: {
     ? formatDate(user.updated_at, 'long')
     : '—';
 
-  const isActive = user.updated_at
-    ? (Date.now() - new Date(user.updated_at).getTime()) < 30 * 24 * 60 * 60 * 1000
-    : false;
-
-  const isHighEvidence = user.evidenceCount >= HIGH_EVIDENCE_THRESHOLD;
-
   return (
-    <div className={`user-card ${expanded ? 'expanded' : ''}`}>
+    <div className="bg-[var(--s1)] border border-[var(--bd)] rounded-[var(--r-md)] overflow-hidden">
       <button
         type="button"
-        className="user-card-head"
+        className="w-full min-h-14 flex items-center gap-3 p-3 bg-transparent border-0 text-right cursor-pointer"
         onClick={() => setExpanded(e => !e)}
         aria-expanded={expanded}
       >
-        <div className="user-av" style={user.avatar ? { backgroundImage: `url(${user.avatar})` } : {}}>
-          {!user.avatar && user.name.substring(0, 2)}
-        </div>
-        <span className="user-card-name">{user.name}</span>
-        <i className={`ti ti-chevron-down user-card-chevron ${expanded ? 'open' : ''}`} />
+        <UserAvatar user={user} />
+        <span className="flex-1 min-w-0 truncate text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{user.name}</span>
+        <i className={`ti ti-chevron-down shrink-0 text-[length:var(--fs-md)] text-[var(--t3)] transition-transform duration-[250ms] ${expanded ? 'rotate-180' : ''}`} />
       </button>
 
       {expanded && (
-        <div className="user-card-body">
-          <div className="ucard-row">
-            <span className="ucard-label">البريد</span>
-            <span className="ucard-value" dir="ltr">{user.email || '—'}</span>
+        <div className="flex flex-col gap-3 px-3 pt-3 pb-3 border-t border-[var(--bd)]">
+          <div className={ROW}>
+            <span className={ROW_LABEL}>البريد</span>
+            <span className={ROW_VALUE} dir="ltr">{user.email || '—'}</span>
           </div>
-          <div className="ucard-row">
-            <span className="ucard-label">المسمى الوظيفي</span>
-            <span className="role-badge">{user.role}</span>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>المسمى الوظيفي</span>
+            <span className="min-w-0 truncate inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] border border-[var(--bd)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t2)]">{user.role}</span>
           </div>
-          <div className="ucard-row">
-            <span className="ucard-label">جهة العمل</span>
-            <span className="ucard-value" title={user.school}>{user.school}</span>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>جهة العمل</span>
+            <span className={ROW_VALUE} title={user.school}>{user.school}</span>
           </div>
-          <div className="ucard-row">
-            <span className="ucard-label">الحالة</span>
-            <span className={`status-dot ${isActive ? 'active' : 'inactive'}`}>
-              {isActive ? 'نشط' : 'غير نشط'}
-            </span>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>الحالة</span>
+            <ActiveStatus active={isUserActive(user)} />
           </div>
-          <div className="ucard-row">
-            <span className="ucard-label">الأدلة</span>
-            <div className={`ev-count${isHighEvidence ? ' ev-count-high' : ''}`}>
-              <i className="ti ti-files" />
-              {user.evidenceCount}
-            </div>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>الأدلة</span>
+            <CountBadge icon="ti-files" count={user.evidenceCount} />
           </div>
-          <div className="ucard-row">
-            <span className="ucard-label">الاستراتيجيات</span>
-            <div className="strat-count">
-              <i className="ti ti-bulb" />
-              {user.strategiesCount}
-            </div>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>الاستراتيجيات</span>
+            <CountBadge icon="ti-bulb" count={user.strategiesCount} />
           </div>
-          <div className="ucard-row">
-            <span className="ucard-label">آخر نشاط</span>
-            <span className="ucard-value">{lastActive}</span>
+          <div className={ROW}>
+            <span className={ROW_LABEL}>آخر نشاط</span>
+            <span className={ROW_VALUE}>{lastActive}</span>
           </div>
 
           <button
             type="button"
-            className="action-btn view-btn ucard-manage"
+            className={`${BTN_2ND} w-full mt-1 border-[var(--bd2)] text-[var(--t1)] cursor-pointer hover:bg-[var(--s2)]`}
             onClick={() => onView(user)}
           >
             <i className="ti ti-eye" /> عرض التفاصيل الكاملة

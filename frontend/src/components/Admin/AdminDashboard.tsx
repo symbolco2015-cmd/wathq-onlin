@@ -1,9 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { AdminUser, PlatformStats, PortfolioFeatureOverride, PortfolioActionResult } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
-import { getCompletionColor, formatDate } from '../../utils';
+import { formatDate } from '../../utils';
 import { SelectDropdown } from '../UI';
-import UserCard from './UserCard';
+import type { ToastKind } from '../UI';
+import { FIELD, BTN_2ND, toggleBtn } from '../formStyles';
+import { BTN_PRI, BTN_GH, BTN_DNG, BTN_DNGF } from '../SectionView';
+import UserCard, { UserAvatar, ActiveStatus, CountBadge, isUserActive } from './UserCard';
 
 const SEMESTER_BOUNDARY_OPTIONS = [
   { value: 'start', label: 'بداية الفصل' },
@@ -19,56 +22,55 @@ const SEMESTER_NUMBER_OPTIONS = [
 // أضف مفاتيح أخرى هنا مستقبلاً إذا احتاجت المنصة ميزات تجريبية إضافية بنفس النمط.
 const IMAGE_SUGGESTION_FEATURE_KEY = 'image_suggestion';
 
-// نفس نظام الألوان الدلالي الموحد المستخدم في باقي المنصة (Sidebar/getCompletionColor):
-// أخضر ≥70% — نُعيد استخدام قيمته الثابتة لحالة "نشط" بدل اختراع أخضر مختلف.
-const ACTIVE_STATUS_COLOR = getCompletionColor(100);
-// "غير نشط" ليس "أداءً ضعيفاً" (فلا يصح اللون الأحمر هنا) بل حالة محايدة — رمادي
-// واضح بلا أي صبغة خضراء، ليتمايز بصرياً عن "نشط".
-const INACTIVE_STATUS_COLOR = '#94a3b8';
-// عتبة "فيه نشاط فعلي" لتمييزه بلون التمييز البرتقالي/الكهرماني الخاص بالمنصة
-// (نفس لون زر "أضف شاهداً الآن")، بدل تركه بنفس لون باقي الصف. أي دليل واحد
-// فأكثر يستحق التمييز — العتبة ليست "مرتفع جداً" بل "ليس صفراً".
-const HIGH_EVIDENCE_THRESHOLD = 1;
-const ACCENT_AMBER = '#f59e0b';
+// أنماط لوحة الإدارة — DESIGN.md: البطاقة --s1، والعناصر الداخلية --s2، والأيقونة محايدة
+const CARD = 'bg-[var(--s1)] border border-[var(--bd)] rounded-[var(--r-md)]';
+const CARD_TITLE = 'flex items-center gap-2 text-[length:var(--fs-md)] font-bold text-[var(--t1)]';
+const ICON_BOX = 'w-11 h-11 shrink-0 rounded-[var(--r-sm)] bg-[var(--s2)] border border-[var(--bd)] flex items-center justify-center text-[var(--t2)] text-[length:var(--fs-lg)]';
+const ICON_BTN = 'w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--bd2)] bg-transparent text-[var(--t2)] text-[length:var(--fs-md)] cursor-pointer transition-colors duration-150 hover:bg-[var(--s2)] hover:text-[var(--t1)]';
+const BTN_OUTLINE = `${BTN_2ND} border-[var(--bd2)] text-[var(--t2)] cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]`;
+const EMPTY = 'flex flex-col items-center gap-2 py-12 px-4 text-center text-[length:var(--fs-sm)] text-[var(--t3)]';
+
+const tabBtn = (active: boolean) =>
+  `shrink-0 h-11 px-4 inline-flex items-center gap-2 rounded-[var(--r-sm)] border text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer transition-colors duration-150 ${active
+    ? 'bg-[var(--s2)] border-[var(--bd2)] text-[var(--t1)]'
+    : 'bg-transparent border-transparent text-[var(--t3)] hover:text-[var(--t2)]'}`;
 
 /* ─────────────────────────────────────────────
    Stat Card
 ───────────────────────────────────────────── */
-function StatCard({ icon, label, value, sub, color, delay = 0 }: {
+function StatCard({ icon, label, value, sub }: {
   icon: string; label: string; value: string | number; sub?: string;
-  color: string; delay?: number;
 }) {
   return (
-    <div
-      className="stat-card"
-      style={{ animationDelay: `${delay}ms`, '--card-color': color } as React.CSSProperties}
-    >
-      <div className="stat-icon">
+    <div className={`${CARD} flex items-center gap-4 p-4`}>
+      <div className={ICON_BOX}>
         <i className={`ti ${icon}`} />
       </div>
-      <div className="stat-body">
-        <div className="stat-value">{value}</div>
-        <div className="stat-label">{label}</div>
-        {sub && <div className="stat-sub">{sub}</div>}
+      <div className="flex-1 min-w-0">
+        <div className="text-[length:var(--fs-xl)] font-bold text-[var(--t1)] leading-none">{value}</div>
+        <div className="text-[length:var(--fs-xs)] font-bold text-[var(--t2)] mt-2">{label}</div>
+        {sub && <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">{sub}</div>}
       </div>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────
-   Mini Bar Chart
+   Mini Bar Chart — أعمدة --t2 بلا تدرّج ولا ظل
 ───────────────────────────────────────────── */
 function MiniBarChart({ data }: { data: { date: string; count: number }[] }) {
   const max = Math.max(...data.map(d => d.count), 1);
   return (
-    <div className="mini-chart">
+    <div className="flex items-end gap-1 h-28">
       {data.map((d, i) => {
         const pct = Math.max((d.count / max) * 100, d.count > 0 ? 8 : 3);
         const label = formatDate(d.date, 'weekday');
         return (
-          <div key={i} className="mini-bar-wrap" title={`${label}: ${d.count} مستخدم`}>
-            <div className="mini-bar" style={{ height: `${pct}%` }} />
-            <span className="mini-bar-label">{label}</span>
+          <div key={i} className="flex-1 min-w-0 h-full flex flex-col items-center justify-end" title={`${label}: ${d.count} مستخدم`}>
+            <div className="w-full flex-1 flex items-end">
+              <div className="w-full bg-[var(--t2)] rounded-t-[var(--r-sm)] transition-[height] duration-[350ms]" style={{ height: `${pct}%` }} />
+            </div>
+            <span className="mt-1 max-w-full truncate text-[length:var(--fs-xs)] text-[var(--t3)]">{label}</span>
           </div>
         );
       })}
@@ -77,7 +79,7 @@ function MiniBarChart({ data }: { data: { date: string; count: number }[] }) {
 }
 
 /* ─────────────────────────────────────────────
-   Distribution Pills
+   Distribution — شريط --t2 على مسار --s3
 ───────────────────────────────────────────── */
 function DistributionList({ data, title, limit = 5 }: {
   data: Record<string, number>; title: string; limit?: number;
@@ -87,24 +89,24 @@ function DistributionList({ data, title, limit = 5 }: {
     .slice(0, limit);
   const total = Object.values(data).reduce((s, v) => s + v, 0);
   return (
-    <div className="dist-card">
-      <div className="dist-title">{title}</div>
-      <div className="dist-list">
+    <div className={`${CARD} p-4`}>
+      <div className={`${CARD_TITLE} mb-4`}>{title}</div>
+      <div className="flex flex-col gap-3">
         {sorted.map(([key, count], i) => {
           const pct = total > 0 ? Math.round((count / total) * 100) : 0;
           return (
-            <div key={i} className="dist-item">
-              <div className="dist-bar-bg">
-                <div className="dist-bar-fill" style={{ width: `${pct}%` }} />
+            <div key={i} className="flex flex-col gap-1">
+              <div className="h-1.5 bg-[var(--s3)] rounded-[var(--r-full)] overflow-hidden">
+                <div className="h-full bg-[var(--t2)] rounded-[var(--r-full)] transition-[width] duration-[350ms]" style={{ width: `${pct}%` }} />
               </div>
-              <div className="dist-meta">
-                <span className="dist-key" title={key}>{key}</span>
-                <span className="dist-count">{count} <small>({pct}%)</small></span>
+              <div className="flex justify-between items-center gap-2">
+                <span className="min-w-0 truncate text-[length:var(--fs-xs)] font-bold text-[var(--t2)]" title={key}>{key}</span>
+                <span className="shrink-0 text-[length:var(--fs-xs)] text-[var(--t3)]">{count} ({pct}%)</span>
               </div>
             </div>
           );
         })}
-        {sorted.length === 0 && <div className="dist-empty">لا توجد بيانات</div>}
+        {sorted.length === 0 && <div className="p-4 text-center text-[length:var(--fs-sm)] text-[var(--t3)]">لا توجد بيانات</div>}
       </div>
     </div>
   );
@@ -166,54 +168,44 @@ function FeatureOverrideRow({ user, override, onSetOverride, onRemoveOverride }:
 /* ─────────────────────────────────────────────
    User Row
 ───────────────────────────────────────────── */
-function UserRow({ user, onView, idx }: {
-  user: AdminUser; onView: (u: AdminUser) => void; idx: number;
+const TD = 'px-3 py-3 align-middle';
+const TH = 'px-3 py-3 text-right text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap';
+const TH_SORT = `${TH} cursor-pointer select-none hover:text-[var(--t1)]`;
+
+function UserRow({ user, onView }: {
+  user: AdminUser; onView: (u: AdminUser) => void;
 }) {
   const lastActive = user.updated_at
     ? formatDate(user.updated_at, 'long')
     : '—';
 
-  const isActive = user.updated_at
-    ? (Date.now() - new Date(user.updated_at).getTime()) < 30 * 24 * 60 * 60 * 1000
-    : false;
-
   return (
-    <tr className="user-row" style={{ animationDelay: `${idx * 30}ms` }}>
-      <td className="td-avatar">
-        <div className="user-av" style={user.avatar ? { backgroundImage: `url(${user.avatar})` } : {}}>
-          {!user.avatar && user.name.substring(0, 2)}
-        </div>
+    <tr className="border-b border-[var(--bd)] last:border-b-0 transition-colors duration-150 hover:bg-[var(--s2)]">
+      <td className={`${TD} w-14`}>
+        <UserAvatar user={user} />
       </td>
-      <td className="td-name">
-        <div className="user-name">{user.name}</div>
-        <div className="user-email">{user.email || '—'}</div>
+      <td className={TD}>
+        <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{user.name}</div>
+        <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1 text-right" dir="ltr">{user.email || '—'}</div>
       </td>
-      <td className="td-role">
-        <span className="role-badge">{user.role}</span>
+      <td className={TD}>
+        <span className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] border border-[var(--bd)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap">{user.role}</span>
       </td>
-      <td className="td-school">
-        <span className="school-text" title={user.school}>{user.school}</span>
+      <td className={TD}>
+        <span className="block max-w-[140px] truncate text-[length:var(--fs-xs)] text-[var(--t3)]" title={user.school}>{user.school}</span>
       </td>
-      <td className="td-ev">
-        <div className={`ev-count${user.evidenceCount >= HIGH_EVIDENCE_THRESHOLD ? ' ev-count-high' : ''}`}>
-          <i className="ti ti-files" />
-          {user.evidenceCount}
-        </div>
+      <td className={TD}>
+        <CountBadge icon="ti-files" count={user.evidenceCount} />
       </td>
-      <td className="td-strat">
-        <div className="strat-count">
-          <i className="ti ti-bulb" />
-          {user.strategiesCount}
-        </div>
+      <td className={TD}>
+        <CountBadge icon="ti-bulb" count={user.strategiesCount} />
       </td>
-      <td className="td-status">
-        <span className={`status-dot ${isActive ? 'active' : 'inactive'}`}>
-          {isActive ? 'نشط' : 'غير نشط'}
-        </span>
+      <td className={TD}>
+        <ActiveStatus active={isUserActive(user)} />
       </td>
-      <td className="td-date">{lastActive}</td>
-      <td className="td-actions">
-        <button className="action-btn view-btn" onClick={() => onView(user)} title="عرض التفاصيل">
+      <td className={`${TD} text-[length:var(--fs-xs)] text-[var(--t3)] whitespace-nowrap`}>{lastActive}</td>
+      <td className={TD}>
+        <button className={ICON_BTN} onClick={() => onView(user)} title="عرض التفاصيل" aria-label="عرض التفاصيل">
           <i className="ti ti-eye" />
         </button>
       </td>
@@ -229,7 +221,7 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
   onClose: () => void;
   onDelete: (id: string, confirmName: string, deleteAuth: boolean) => Promise<PortfolioActionResult>;
   onReset: (id: string, confirmName: string) => Promise<PortfolioActionResult>;
-  onToast: (msg: string, icon?: string) => void;
+  onToast: (msg: string, kind: ToastKind) => void;
   shareUrl: string;
 }) {
   const [copied, setCopied] = useState(false);
@@ -248,10 +240,26 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
     setInlineError('');
   };
 
+  const cancelConfirm = () => {
+    setPending(null);
+    setInlineError('');
+  };
+
+  // Esc يغلق لوحة التأكيد إن كانت مفتوحة، وإلا يغلق النافذة — ولا شيء أثناء التنفيذ
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || running) return;
+      if (pending) cancelConfirm();
+      else onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [pending, running, onClose]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopied(true);
-      onToast('تم نسخ الرابط بنجاح 🔗', '🔗');
+      onToast('تم نسخ الرابط بنجاح', 'success');
       setTimeout(() => setCopied(false), 2000);
     });
   };
@@ -263,9 +271,9 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
     try {
       const res = await onDelete(user.id, typedName.trim(), deleteAuth);
       if (res.ok) {
-        if (res.authError) onToast('حُذف الملف، لكن تعذّر حذف حساب الدخول', '⚠️');
-        else if (res.storageErrors > 0) onToast('تم، لكن تعذّر حذف بعض الملفات. أعد المحاولة لاحقاً', '⚠️');
-        else onToast('تم حذف بيانات المستخدم نهائياً 🗑️', '🗑️');
+        if (res.authError) onToast('حُذف الملف، لكن تعذّر حذف حساب الدخول', 'error');
+        else if (res.storageErrors > 0) onToast('تم، لكن تعذّر حذف بعض الملفات. أعد المحاولة لاحقاً', 'error');
+        else onToast('تم حذف بيانات المستخدم نهائياً', 'success');
         onClose();
       } else {
         setInlineError('message' in res ? res.message : 'تعذّر تنفيذ العملية، حاول مجدداً');
@@ -285,8 +293,8 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
     try {
       const res = await onReset(user.id, typedName.trim());
       if (res.ok) {
-        if (res.storageErrors > 0) onToast('تم، لكن تعذّر حذف بعض الملفات. أعد المحاولة لاحقاً', '⚠️');
-        else onToast('تم إعادة تعيين بيانات المستخدم ✅', '✅');
+        if (res.storageErrors > 0) onToast('تم، لكن تعذّر حذف بعض الملفات. أعد المحاولة لاحقاً', 'error');
+        else onToast('تم إعادة تعيين بيانات المستخدم', 'success');
         onClose();
       } else {
         setInlineError('message' in res ? res.message : 'تعذّر تنفيذ العملية، حاول مجدداً');
@@ -300,73 +308,65 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
   };
 
   return (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="user-modal">
+    <div
+      className="fixed inset-0 z-[500] bg-black/60 flex items-center justify-center p-4"
+      style={{ animation: 'fadeIn .25s both' }}
+      onClick={e => { if (e.target === e.currentTarget && !pending) onClose(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="umodal-title"
+        className="w-full max-w-[520px] max-h-[90dvh] overflow-y-auto bg-[var(--s1)] border border-[var(--bd2)] rounded-[var(--r-lg)]"
+        style={{ animation: 'scaleIn .35s var(--sp) both' }}
+      >
         {/* Header */}
-        <div className="umodal-header">
-          <div className="umodal-av" style={user.avatar ? { backgroundImage: `url(${user.avatar})` } : {}}>
-            {!user.avatar && user.name.substring(0, 2)}
+        <div className="relative flex items-center gap-4 p-6 pl-16 border-b border-[var(--bd)]">
+          <UserAvatar user={user} size="lg" />
+          <div className="min-w-0">
+            <div id="umodal-title" className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">{user.name}</div>
+            <div className="text-[length:var(--fs-sm)] text-[var(--t2)] mt-1">{user.role} — {user.school}</div>
+            <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1 text-right break-all" dir="ltr">{user.email}</div>
           </div>
-          <div>
-            <div className="umodal-name">{user.name}</div>
-            <div className="umodal-role">{user.role} — {user.school}</div>
-            <div className="umodal-email">{user.email}</div>
-          </div>
-          <button className="umodal-close" onClick={onClose}><i className="ti ti-x" /></button>
+          <button className={`${ICON_BTN} absolute left-3 top-3`} onClick={onClose} aria-label="إغلاق"><i className="ti ti-x" /></button>
         </div>
 
         {/* Stats Row */}
-        <div className="umodal-stats">
-          <div className="umodal-stat">
-            <i className="ti ti-files" />
-            <span>{user.evidenceCount}</span>
-            <small>أدلة</small>
-          </div>
-          <div className="umodal-stat">
-            <i className="ti ti-bulb" />
-            <span>{user.strategiesCount}</span>
-            <small>استراتيجية</small>
-          </div>
-          <div className="umodal-stat">
-            <i className="ti ti-calendar" />
-            <span>{user.yearsOfExperience}</span>
-            <small>سنوات خبرة</small>
-          </div>
-          <div className="umodal-stat">
-            <i className="ti ti-id" />
-            <span className="uid-text" title={user.id}>{user.id.slice(0, 8)}…</span>
-            <small>المعرّف</small>
+        <div className="grid grid-cols-4 border-b border-[var(--bd)]">
+          {[
+            { icon: 'ti-files', value: user.evidenceCount, label: 'أدلة' },
+            { icon: 'ti-bulb', value: user.strategiesCount, label: 'استراتيجية' },
+            { icon: 'ti-calendar', value: user.yearsOfExperience, label: 'سنوات خبرة' },
+          ].map(s => (
+            <div key={s.label} className="flex flex-col items-center gap-1 py-4 px-2 text-center border-l border-[var(--bd)]">
+              <i className={`ti ${s.icon} text-[length:var(--fs-lg)] text-[var(--t2)]`} />
+              <span className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] leading-none">{s.value}</span>
+              <small className="text-[length:var(--fs-xs)] text-[var(--t3)]">{s.label}</small>
+            </div>
+          ))}
+          <div className="flex flex-col items-center gap-1 py-4 px-2 text-center">
+            <i className="ti ti-id text-[length:var(--fs-lg)] text-[var(--t2)]" />
+            <span className="text-[length:var(--fs-xs)] font-bold text-[var(--t1)] leading-5" dir="ltr" title={user.id}>{user.id.slice(0, 8)}…</span>
+            <small className="text-[length:var(--fs-xs)] text-[var(--t3)]">المعرّف</small>
           </div>
         </div>
 
         {/* Info Grid */}
-        <div className="umodal-grid">
-          <div className="umodal-field">
-            <label>تاريخ الانضمام</label>
-            <span>{formatDate(user.created_at, 'long')}</span>
+        <div className="grid grid-cols-2 gap-4 px-6 py-4 border-b border-[var(--bd)]">
+          <div className="flex flex-col gap-1">
+            <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">تاريخ الانضمام</span>
+            <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t2)]">{formatDate(user.created_at, 'long')}</span>
           </div>
-          <div className="umodal-field">
-            <label>آخر تحديث</label>
-            <span>{user.updated_at ? formatDate(user.updated_at, 'long') : '—'}</span>
+          <div className="flex flex-col gap-1">
+            <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">آخر تحديث</span>
+            <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t2)]">{user.updated_at ? formatDate(user.updated_at, 'long') : '—'}</span>
           </div>
         </div>
 
         {/* Inline Error Banner */}
         {inlineError && (
-          <div style={{
-            margin: '0 24px 0',
-            padding: '12px 16px',
-            background: 'rgba(248,113,113,.1)',
-            border: '1px solid rgba(248,113,113,.3)',
-            borderRadius: '12px',
-            fontSize: '13px',
-            color: '#f87171',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '8px',
-            lineHeight: '1.5',
-          }}>
-            <i className="ti ti-alert-circle" style={{ fontSize: '16px', flexShrink: 0, marginTop: '1px' }} />
+          <div role="alert" className="mx-6 mt-4 flex items-start gap-2 p-3 rounded-[var(--r-sm)] border border-[var(--danger)]/35 bg-[var(--danger)]/10 text-[length:var(--fs-sm)] text-[var(--danger)] leading-relaxed">
+            <i className="ti ti-alert-circle text-[length:var(--fs-md)] shrink-0 mt-0.5" />
             {inlineError}
           </div>
         )}
@@ -374,42 +374,31 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
         {/* Confirm Panel — إعادة التعيين أو الحذف بكتابة اسم المعلم */}
         {pending && (() => {
           const isDelete = pending === 'delete';
-          const tone = isDelete ? '248,113,113' : '251,191,36';
-          const toneColor = isDelete ? '#f87171' : '#fbbf24';
           return (
-            <div style={{
-              margin: inlineError ? '12px 24px 0' : '0 24px 0',
-              padding: '16px',
-              background: `rgba(${tone},.06)`,
-              border: `1px solid rgba(${tone},.3)`,
-              borderRadius: '10px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 700, color: toneColor }}>
-                <i className={`ti ${isDelete ? 'ti-trash' : 'ti-refresh'}`} style={{ fontSize: '16px' }} />
+            <div className="mx-6 mt-4 p-4 flex flex-col gap-3 rounded-[var(--r-md)] border border-[var(--danger)]/35">
+              <div className="flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--danger)]">
+                <i className={`ti ${isDelete ? 'ti-trash' : 'ti-refresh'} text-[length:var(--fs-md)]`} />
                 {isDelete ? 'حذف الملف نهائياً' : 'إعادة تعيين الملف'}
               </div>
 
-              <div style={{ fontSize: '12px', color: 'var(--text2)', lineHeight: 1.7 }}>
+              <div className="text-[length:var(--fs-xs)] text-[var(--t2)] leading-relaxed">
                 <div>
-                  <strong>سيُحذف: </strong>
+                  <strong className="font-bold text-[var(--t1)]">سيُحذف: </strong>
                   {isDelete
                     ? 'الملف كاملاً، ومعه الأدلة وملفاتها، وعدّاد الشهر، وتحليل النتائج، وتقارير الحصاد، والملخصات، ومعه الصورة الشخصية.'
                     : 'الأدلة وملفاتها، وعدّاد الشهر، وتحليل النتائج، وتقارير الحصاد، والملخصات.'}
                 </div>
                 {!isDelete && (
                   <div>
-                    <strong>سيبقى: </strong>
+                    <strong className="font-bold text-[var(--t1)]">سيبقى: </strong>
                     الحساب، والملف الشخصي، والصورة.
                   </div>
                 )}
               </div>
 
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px', color: 'var(--text2)' }}>
+              <label className="flex flex-col gap-2 text-[length:var(--fs-sm)] text-[var(--t2)]">
                 <span>
-                  اكتب اسم المعلم للتأكيد: <strong style={{ color: 'var(--text1)' }}>{user.name}</strong>
+                  اكتب اسم المعلم للتأكيد: <strong className="font-bold text-[var(--t1)]">{user.name}</strong>
                 </span>
                 <input
                   type="text"
@@ -417,42 +406,31 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
                   onChange={e => setTypedName(e.target.value)}
                   disabled={running}
                   autoComplete="off"
-                  style={{
-                    height: '44px',
-                    padding: '0 12px',
-                    borderRadius: '10px',
-                    border: '1px solid var(--line2)',
-                    background: 'var(--surf3)',
-                    color: 'var(--text1)',
-                    fontSize: '14px',
-                    fontFamily: 'var(--font)',
-                    outline: 'none',
-                  }}
+                  className={FIELD}
                 />
               </label>
 
               {isDelete && (
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: running ? 'default' : 'pointer' }}>
+                <label className={`flex items-start gap-2 py-2 ${running ? 'cursor-default' : 'cursor-pointer'}`}>
                   <input
                     type="checkbox"
                     checked={deleteAuth}
                     onChange={e => setDeleteAuth(e.target.checked)}
                     disabled={running}
-                    style={{ marginTop: '4px', accentColor: '#f87171' }}
+                    className="mt-1 w-4 h-4 shrink-0 accent-[var(--danger)]"
                   />
-                  <span style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '14px', color: 'var(--text2)' }}>حذف حساب الدخول أيضاً</span>
-                    <span style={{ fontSize: '12px', color: 'var(--text4)' }}>لن يستطيع المعلم تسجيل الدخول بهذا البريد بعدها</span>
+                  <span className="flex flex-col gap-1">
+                    <span className="text-[length:var(--fs-sm)] text-[var(--t2)]">حذف حساب الدخول أيضاً</span>
+                    <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">لن يستطيع المعلم تسجيل الدخول بهذا البريد بعدها</span>
                   </span>
                 </label>
               )}
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div className="flex gap-2 flex-wrap">
                 <button
-                  className={`umodal-btn ${isDelete ? 'danger-btn' : 'warning-btn'} confirm`}
+                  className={`${BTN_DNGF} min-w-[180px] disabled:cursor-not-allowed ${!nameMatches && !running ? 'opacity-40' : ''}`}
                   onClick={isDelete ? handleDelete : handleReset}
                   disabled={!nameMatches || running}
-                  style={{ height: '44px', borderRadius: '10px', fontSize: '14px', opacity: !nameMatches && !running ? 0.5 : 1, cursor: !nameMatches || running ? 'not-allowed' : 'pointer' }}
                 >
                   <i className={`ti ${running ? 'ti-loader animate-spin' : 'ti-alert-triangle'}`} />
                   {running
@@ -460,10 +438,9 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
                     : (isDelete ? 'تأكيد الحذف النهائي' : 'تأكيد إعادة التعيين')}
                 </button>
                 <button
-                  className="umodal-btn copy-btn"
-                  onClick={() => { setPending(null); setInlineError(''); }}
+                  className={`${BTN_GH} hover:text-[var(--t1)] disabled:opacity-40 disabled:cursor-not-allowed`}
+                  onClick={cancelConfirm}
                   disabled={running}
-                  style={{ height: '44px', borderRadius: '10px', fontSize: '14px' }}
                 >
                   <i className="ti ti-x" /> إلغاء
                 </button>
@@ -473,23 +450,23 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
         })()}
 
         {/* Actions */}
-        <div className="umodal-actions">
+        <div className="flex gap-2 flex-wrap p-6">
           <a
             href={shareUrl}
             target="_blank"
             rel="noreferrer"
-            className="umodal-btn primary-btn"
+            className={`${BTN_PRI} min-w-[140px] no-underline transition-opacity duration-150 hover:opacity-90`}
           >
             <i className="ti ti-external-link" /> عرض ملف الإنجاز
           </a>
-          <button className="umodal-btn copy-btn" onClick={handleCopy}>
+          <button className={`${BTN_GH} min-w-[140px] hover:text-[var(--t1)]`} onClick={handleCopy}>
             <i className={`ti ${copied ? 'ti-check' : 'ti-copy'}`} />
             {copied ? 'تم النسخ!' : 'نسخ الرابط'}
           </button>
 
           {/* Reset Button — يفتح لوحة التأكيد فقط */}
           <button
-            className={`umodal-btn warning-btn${pending === 'reset' ? ' confirm' : ''}`}
+            className={`${BTN_DNG} min-w-[140px] disabled:opacity-40 disabled:cursor-not-allowed ${pending === 'reset' ? 'bg-[var(--danger)]/10' : 'bg-transparent'}`}
             onClick={() => openConfirm('reset')}
             disabled={running}
           >
@@ -498,7 +475,7 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
 
           {/* Delete Button — يفتح لوحة التأكيد فقط */}
           <button
-            className={`umodal-btn danger-btn${pending === 'delete' ? ' confirm' : ''}`}
+            className={`${BTN_DNG} min-w-[140px] disabled:opacity-40 disabled:cursor-not-allowed ${pending === 'delete' ? 'bg-[var(--danger)]/10' : 'bg-transparent'}`}
             onClick={() => openConfirm('delete')}
             disabled={running}
           >
@@ -522,7 +499,7 @@ interface AdminDashboardProps {
   onDeleteUser: (id: string, confirmName: string, deleteAuth: boolean) => Promise<PortfolioActionResult>;
   onResetUser: (id: string, confirmName: string) => Promise<PortfolioActionResult>;
   onExportCSV: (users: AdminUser[]) => void;
-  onToast: (msg: string, icon?: string) => void;
+  onToast: (msg: string, kind: ToastKind) => void;
   getShareUrl: (id: string) => string;
   onPublishAnnouncement?: (title: string, content: string, category: 'tech' | 'admin' | 'urgent', attachmentUrl?: string) => Promise<boolean>;
   onUpdateAnnouncement?: (id: string, title: string, content: string, category: 'tech' | 'admin' | 'urgent', attachmentUrl?: string) => Promise<boolean>;
@@ -589,23 +566,23 @@ export default function AdminDashboard({
       if (onDeleteAnnouncement) {
         const ok = await onDeleteAnnouncement(id);
         if (ok) {
-          onToast('تم حذف التعميم بنجاح 🗑️', '🗑️');
+          onToast('تم حذف التعميم بنجاح', 'success');
         } else {
-          onToast('فشل حذف التعميم. تأكد من صلاحيات الأدمن ❌', '❌');
+          onToast('فشل حذف التعميم. تأكد من صلاحيات الأدمن', 'error');
         }
       } else {
-        onToast('ميزة الحذف غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+        onToast('ميزة الحذف غير متوفرة في وضع التشغيل المحلي', 'info');
       }
     } catch (err) {
       console.error(err);
-      onToast('حدث خطأ أثناء محاولة الحذف ❌', '❌');
+      onToast('حدث خطأ أثناء محاولة الحذف', 'error');
     }
   };
 
   const handlePublishAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!annTitle.trim() || !annContent.trim()) {
-      onToast('يرجى ملء جميع الحقول المطلوبة ⚠️', '⚠️');
+      onToast('يرجى ملء جميع الحقول المطلوبة', 'error');
       return;
     }
     
@@ -616,31 +593,31 @@ export default function AdminDashboard({
         if (onUpdateAnnouncement) {
           const ok = await onUpdateAnnouncement(editingAnnId, annTitle.trim(), annContent.trim(), annCategory, annAttachmentUrl.trim());
           if (ok) {
-            onToast('تم تحديث التعميم بنجاح ✏️', '✏️');
+            onToast('تم تحديث التعميم بنجاح', 'success');
             resetAnnForm();
           } else {
-            onToast('فشل تحديث التعميم. تأكد من صلاحيات الأدمن ❌', '❌');
+            onToast('فشل تحديث التعميم. تأكد من صلاحيات الأدمن', 'error');
           }
         } else {
-          onToast('ميزة التعديل غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+          onToast('ميزة التعديل غير متوفرة في وضع التشغيل المحلي', 'info');
         }
       } else {
         // ── Create mode ──
         if (onPublishAnnouncement) {
           const ok = await onPublishAnnouncement(annTitle.trim(), annContent.trim(), annCategory, annAttachmentUrl.trim());
           if (ok) {
-            onToast('تم نشر التعميم بنجاح لجميع المستخدمين 🚀', '🚀');
+            onToast('تم نشر التعميم بنجاح لجميع المستخدمين', 'success');
             resetAnnForm();
           } else {
-            onToast('فشل نشر التعميم. تأكد من اتصالك وصلاحيات الأدمن ❌', '❌');
+            onToast('فشل نشر التعميم. تأكد من اتصالك وصلاحيات الأدمن', 'error');
           }
         } else {
-          onToast('ميزة النشر غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+          onToast('ميزة النشر غير متوفرة في وضع التشغيل المحلي', 'info');
         }
       }
     } catch (err) {
       console.error(err);
-      onToast('حدث خطأ غير متوقع ❌', '❌');
+      onToast('حدث خطأ غير متوقع', 'error');
     } finally {
       setPublishingAnn(false);
     }
@@ -678,7 +655,7 @@ export default function AdminDashboard({
     setSavingGlobalFlag(true);
     try {
       const ok = await onSetGlobalFeatureFlag(IMAGE_SUGGESTION_FEATURE_KEY, enabled);
-      onToast(ok ? 'تم تحديث إعداد الميزة بنجاح ✅' : 'فشل تحديث إعداد الميزة ❌', ok ? '✅' : '❌');
+      onToast(ok ? 'تم تحديث إعداد الميزة بنجاح' : 'فشل تحديث إعداد الميزة', ok ? 'success' : 'error');
     } finally {
       setSavingGlobalFlag(false);
     }
@@ -712,23 +689,23 @@ export default function AdminDashboard({
       if (onDeleteAcademicDate) {
         const ok = await onDeleteAcademicDate(id);
         if (ok) {
-          onToast('تم حذف الموعد بنجاح 🗑️', '🗑️');
+          onToast('تم حذف الموعد بنجاح', 'success');
         } else {
-          onToast('فشل حذف الموعد. تأكد من صلاحيات الأدمن ❌', '❌');
+          onToast('فشل حذف الموعد. تأكد من صلاحيات الأدمن', 'error');
         }
       } else {
-        onToast('ميزة الحذف غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+        onToast('ميزة الحذف غير متوفرة في وضع التشغيل المحلي', 'info');
       }
     } catch (err) {
       console.error(err);
-      onToast('حدث خطأ أثناء محاولة الحذف ❌', '❌');
+      onToast('حدث خطأ أثناء محاولة الحذف', 'error');
     }
   };
 
   const handlePublishAcademicDate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adTitle.trim() || !adDate.trim()) {
-      onToast('يرجى ملء عنوان الموعد وتاريخه الميلادي ⚠️', '⚠️');
+      onToast('يرجى ملء عنوان الموعد وتاريخه الميلادي', 'error');
       return;
     }
 
@@ -740,30 +717,30 @@ export default function AdminDashboard({
         if (onUpdateAcademicDate) {
           const ok = await onUpdateAcademicDate(editingAdId, adTitle.trim(), adDate, adHijriLabel.trim(), semesterBoundary, semesterNumber);
           if (ok) {
-            onToast('تم تحديث الموعد بنجاح ✏️', '✏️');
+            onToast('تم تحديث الموعد بنجاح', 'success');
             resetAdForm();
           } else {
-            onToast('فشل تحديث الموعد. تأكد من صلاحيات الأدمن ❌', '❌');
+            onToast('فشل تحديث الموعد. تأكد من صلاحيات الأدمن', 'error');
           }
         } else {
-          onToast('ميزة التعديل غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+          onToast('ميزة التعديل غير متوفرة في وضع التشغيل المحلي', 'info');
         }
       } else {
         if (onPublishAcademicDate) {
           const ok = await onPublishAcademicDate(adTitle.trim(), adDate, adHijriLabel.trim(), semesterBoundary, semesterNumber);
           if (ok) {
-            onToast('تمت إضافة الموعد الدراسي بنجاح 🚀', '🚀');
+            onToast('تمت إضافة الموعد الدراسي بنجاح', 'success');
             resetAdForm();
           } else {
-            onToast('فشلت إضافة الموعد. تأكد من اتصالك وصلاحيات الأدمن ❌', '❌');
+            onToast('فشلت إضافة الموعد. تأكد من اتصالك وصلاحيات الأدمن', 'error');
           }
         } else {
-          onToast('ميزة الإضافة غير متوفرة في وضع التشغيل المحلي ⚠️', '⚠️');
+          onToast('ميزة الإضافة غير متوفرة في وضع التشغيل المحلي', 'info');
         }
       }
     } catch (err) {
       console.error(err);
-      onToast('حدث خطأ غير متوقع ❌', '❌');
+      onToast('حدث خطأ غير متوقع', 'error');
     } finally {
       setPublishingAd(false);
     }
@@ -822,110 +799,99 @@ export default function AdminDashboard({
   };
 
   const SortIcon = ({ col }: { col: typeof sortBy }) => {
-    if (sortBy !== col) return <i className="ti ti-selector sort-icon neutral" />;
-    return <i className={`ti ${sortDir === 'asc' ? 'ti-arrow-up' : 'ti-arrow-down'} sort-icon`} />;
+    if (sortBy !== col) return <i className="ti ti-selector ms-1 text-[var(--t3)]" />;
+    return <i className={`ti ${sortDir === 'asc' ? 'ti-arrow-up' : 'ti-arrow-down'} ms-1 text-[var(--t1)]`} />;
   };
 
   if (loading) {
     return (
-      <div className="admin-loading">
-        <div className="admin-loader">
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <div className={`${ICON_BOX} w-14 h-14 rounded-[var(--r-md)] text-[length:var(--fs-xl)] motion-safe:animate-pulse`}>
           <i className="ti ti-shield-check" />
         </div>
-        <div className="admin-loading-text">جاري تحميل بيانات الأدمن...</div>
-        <div className="admin-loading-sub">الرجاء الانتظار</div>
+        <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">جاري تحميل بيانات الأدمن...</div>
+        <div className="text-[length:var(--fs-sm)] text-[var(--t3)]">الرجاء الانتظار</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="admin-error">
-        <i className="ti ti-alert-octagon" />
-        <div className="admin-error-title">خطأ في تحميل البيانات</div>
-        <div className="admin-error-msg">{error}</div>
-        <div className="admin-error-hint">
-          تأكد من إعداد جدول <code>admin_users</code> وسياسات RLS في Supabase.
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 p-6 text-center">
+        <i className="ti ti-alert-octagon text-[length:var(--fs-xl)] text-[var(--danger)]" />
+        <div className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">خطأ في تحميل البيانات</div>
+        <div className="max-w-[400px] text-[length:var(--fs-sm)] text-[var(--t2)]">{error}</div>
+        <div className="text-[length:var(--fs-xs)] text-[var(--t3)] bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-sm)] px-4 py-2">
+          تأكد من إعداد جدول <code className="text-[var(--t1)]" dir="ltr">admin_users</code> وسياسات RLS في Supabase.
         </div>
-        <button className="admin-retry-btn" onClick={onReload}>
-          <i className="ti ti-refresh" /> إعادة المحاولة
-        </button>
+        <div className="flex mt-2">
+          <button className={`${BTN_PRI} transition-opacity duration-150 hover:opacity-90`} onClick={onReload}>
+            <i className="ti ti-refresh" /> إعادة المحاولة
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="admin-wrap">
+    <div className="min-h-screen max-w-[1300px] mx-auto px-4 sm:px-6 pt-8 pb-20">
       {/* Page Header */}
-      <div className="admin-header">
-        <div className="admin-header-left">
-          <div className="admin-badge"><i className="ti ti-shield-check" /></div>
-          <div>
-            <h1 className="admin-title">لوحة تحكم الأدمن</h1>
-            <p className="admin-subtitle">إدارة المستخدمين وإحصائيات المنصة</p>
+      <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className={ICON_BOX}><i className="ti ti-shield-check" /></div>
+          <div className="min-w-0">
+            <h1 className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)] m-0">لوحة تحكم الأدمن</h1>
+            <p className="text-[length:var(--fs-sm)] text-[var(--t3)] m-0 mt-1">إدارة المستخدمين وإحصائيات المنصة</p>
           </div>
         </div>
-        <button className="admin-reload-btn" onClick={onReload} title="تحديث البيانات">
+        <button className={BTN_OUTLINE} onClick={onReload} title="تحديث البيانات">
           <i className="ti ti-refresh" />
           <span>تحديث</span>
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="admin-tabs">
-        <button
-          className={`admin-tab ${activeTab === 'overview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('overview')}
-        >
-          <i className="ti ti-chart-bar" /> نظرة عامة
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`}
-          onClick={() => setActiveTab('users')}
-        >
-          <i className="ti ti-users" /> المستخدمون
-          <span className="tab-count">{users.length}</span>
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'announcements' ? 'active' : ''}`}
-          onClick={() => setActiveTab('announcements')}
-        >
-          <i className="ti ti-speakerphone" /> نشر تعميم
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'academic-dates' ? 'active' : ''}`}
-          onClick={() => setActiveTab('academic-dates')}
-        >
-          <i className="ti ti-calendar-event" /> المواعيد الدراسية
-          <span className="tab-count">{sortedAcademicDates.length}</span>
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'features' ? 'active' : ''}`}
-          onClick={() => setActiveTab('features')}
-        >
-          <i className="ti ti-flask" /> الميزات التجريبية
-          <span className="tab-count">{imageSuggestionOverrides.length}</span>
-        </button>
+      {/* Tabs — تتمرر أفقياً داخل شريطها وحده على الجوال */}
+      <div role="tablist" className={`${CARD} flex gap-1 p-1 mb-6 w-full md:w-fit max-w-full overflow-x-auto`}>
+        {([
+          { id: 'overview', icon: 'ti-chart-bar', label: 'نظرة عامة' },
+          { id: 'users', icon: 'ti-users', label: 'المستخدمون', count: users.length },
+          { id: 'announcements', icon: 'ti-speakerphone', label: 'نشر تعميم' },
+          { id: 'academic-dates', icon: 'ti-calendar-event', label: 'المواعيد الدراسية', count: sortedAcademicDates.length },
+          { id: 'features', icon: 'ti-flask', label: 'الميزات التجريبية', count: imageSuggestionOverrides.length },
+        ] as const).map(t => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={activeTab === t.id}
+            className={tabBtn(activeTab === t.id)}
+            onClick={() => setActiveTab(t.id)}
+          >
+            <i className={`ti ${t.icon} text-[length:var(--fs-md)]`} /> {t.label}
+            {'count' in t && (
+              <span className="rounded-[var(--r-full)] bg-[var(--s3)] px-2 text-[length:var(--fs-xs)] font-bold text-[var(--t2)]">{t.count}</span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* ── OVERVIEW TAB ── */}
       {activeTab === 'overview' && stats && (
-        <div className="admin-overview">
+        <div>
           {/* Stats Grid */}
-          <div className="stats-grid">
-            <StatCard icon="ti-users" label="إجمالي المستخدمين" value={stats.totalUsers} sub="مسجّل في المنصة" color="#52c478" delay={0} />
-            <StatCard icon="ti-activity" label="المستخدمون النشطون" value={stats.activeUsers} sub="آخر 30 يوماً" color="#38bdf8" delay={60} />
-            <StatCard icon="ti-files" label="إجمالي الأدلة" value={stats.totalEvidence} sub={`معدل ${stats.avgEvidence} لكل مستخدم`} color="#a78bfa" delay={120} />
-            <StatCard icon="ti-certificate" label="ملفات موثّقة" value={stats.verifiedUsers} sub="أدلة ≥ 5 واستراتيجيات ≥ 2" color="#fbbf24" delay={180} />
-            <StatCard icon="ti-user-plus" label="انضم هذا الأسبوع" value={stats.newUsersThisWeek} sub="آخر 7 أيام" color="#f472b6" delay={240} />
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-4 mb-6">
+            <StatCard icon="ti-users" label="إجمالي المستخدمين" value={stats.totalUsers} sub="مسجّل في المنصة" />
+            <StatCard icon="ti-activity" label="المستخدمون النشطون" value={stats.activeUsers} sub="آخر 30 يوماً" />
+            <StatCard icon="ti-files" label="إجمالي الأدلة" value={stats.totalEvidence} sub={`معدل ${stats.avgEvidence} لكل مستخدم`} />
+            <StatCard icon="ti-certificate" label="ملفات موثّقة" value={stats.verifiedUsers} sub="أدلة ≥ 5 واستراتيجيات ≥ 2" />
+            <StatCard icon="ti-user-plus" label="انضم هذا الأسبوع" value={stats.newUsersThisWeek} sub="آخر 7 أيام" />
           </div>
 
           {/* Chart + Distributions */}
-          <div className="overview-bottom">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Signups Chart */}
-            <div className="chart-card">
-              <div className="chart-card-header">
-                <i className="ti ti-chart-bar" />
+            <div className={`${CARD} p-4`}>
+              <div className={`${CARD_TITLE} mb-4`}>
+                <i className="ti ti-chart-bar text-[var(--t2)]" />
                 <span>التسجيلات (آخر 7 أيام)</span>
               </div>
               <MiniBarChart data={stats.dailySignups} />
@@ -948,91 +914,95 @@ export default function AdminDashboard({
 
       {/* ── USERS TAB ── */}
       {activeTab === 'users' && (
-        <div className="admin-users-tab">
+        <div className="flex flex-col gap-4">
           {/* Controls */}
-          <div className="users-controls">
-            <div className="search-wrap">
-              <i className="ti ti-search search-ico" />
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <i className="ti ti-search absolute right-3 top-1/2 -translate-y-1/2 text-[length:var(--fs-md)] text-[var(--t3)] pointer-events-none" />
               <input
                 type="text"
                 placeholder="بحث بالاسم أو البريد أو المدرسة..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="admin-search"
+                className={`${FIELD} pr-10 pl-11`}
               />
               {search && (
-                <button className="search-clear" onClick={() => setSearch('')}>
+                <button
+                  className="absolute left-0 top-0 w-11 h-11 inline-flex items-center justify-center bg-transparent border-0 text-[var(--t3)] cursor-pointer hover:text-[var(--t1)]"
+                  onClick={() => setSearch('')}
+                  aria-label="مسح البحث"
+                >
                   <i className="ti ti-x" />
                 </button>
               )}
             </div>
-            <div className="filter-btns">
+            <div className="flex gap-2 w-full sm:w-auto">
               {(['all', 'active', 'inactive'] as const).map(f => (
                 <button
                   key={f}
-                  className={`filter-btn ${filterActive === f ? 'active' : ''}`}
+                  className={`${toggleBtn(filterActive === f)} px-4 whitespace-nowrap`}
                   onClick={() => setFilterActive(f)}
                 >
                   {f === 'all' ? 'الكل' : f === 'active' ? 'نشط' : 'غير نشط'}
                 </button>
               ))}
             </div>
-            <div className="results-count">
+            <div className="text-[length:var(--fs-sm)] text-[var(--t3)] whitespace-nowrap">
               {filteredUsers.length} من {users.length} مستخدم
             </div>
             <button
-              className="export-btn"
-              onClick={() => { onExportCSV(filteredUsers); onToast('تم تصدير الملف بنجاح 📄', '📄'); }}
+              className={BTN_OUTLINE}
+              onClick={() => { onExportCSV(filteredUsers); onToast('تم تصدير الملف بنجاح', 'success'); }}
               title="تصدير المستخدمين كملف CSV"
             >
               <i className="ti ti-file-spreadsheet" /> تصدير CSV
             </button>
           </div>
 
-          {/* Table — desktop only، الجدول الكامل بدون أي تعديل */}
-          <div className="table-wrap hidden md:block">
-            <table className="users-table">
+          {/* Table — desktop only، تمرير أفقي داخل الجدول لا للصفحة */}
+          <div className={`hidden md:block ${CARD} overflow-x-auto`}>
+            <table className="w-full min-w-[700px] border-collapse">
               <thead>
-                <tr>
-                  <th className="th-av"></th>
-                  <th className="th-sort" onClick={() => toggleSort('name')}>
+                <tr className="bg-[var(--s2)] border-b border-[var(--bd)]">
+                  <th className={`${TH} w-14`}></th>
+                  <th className={TH_SORT} onClick={() => toggleSort('name')}>
                     الاسم <SortIcon col="name" />
                   </th>
-                  <th>المسمى الوظيفي</th>
-                  <th>جهة العمل</th>
-                  <th className="th-sort" onClick={() => toggleSort('evidenceCount')}>
+                  <th className={TH}>المسمى الوظيفي</th>
+                  <th className={TH}>جهة العمل</th>
+                  <th className={TH_SORT} onClick={() => toggleSort('evidenceCount')}>
                     الأدلة <SortIcon col="evidenceCount" />
                   </th>
-                  <th>الاستراتيجيات</th>
-                  <th>الحالة</th>
-                  <th className="th-sort" onClick={() => toggleSort('updated_at')}>
+                  <th className={TH}>الاستراتيجيات</th>
+                  <th className={TH}>الحالة</th>
+                  <th className={TH_SORT} onClick={() => toggleSort('updated_at')}>
                     آخر نشاط <SortIcon col="updated_at" />
                   </th>
-                  <th></th>
+                  <th className={TH}></th>
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((u, i) => (
-                    <UserRow key={u.id} user={u} onView={setSelectedUser} idx={i} />
+                {filteredUsers.map(u => (
+                    <UserRow key={u.id} user={u} onView={setSelectedUser} />
                 ))}
               </tbody>
             </table>
             {filteredUsers.length === 0 && (
-              <div className="empty-state">
-                <i className="ti ti-search-off" />
+              <div className={EMPTY}>
+                <i className="ti ti-search-off text-[length:var(--fs-xl)]" />
                 <span>لا توجد نتائج مطابقة</span>
               </div>
             )}
           </div>
 
           {/* Cards — mobile only، نفس filteredUsers المستخدمة في الجدول أعلاه */}
-          <div className="users-cards flex flex-col gap-2.5 md:hidden">
+          <div className="flex flex-col gap-2 md:hidden">
             {filteredUsers.map(u => (
               <UserCard key={u.id} user={u} onView={setSelectedUser} />
             ))}
             {filteredUsers.length === 0 && (
-              <div className="empty-state">
-                <i className="ti ti-search-off" />
+              <div className={EMPTY}>
+                <i className="ti ti-search-off text-[length:var(--fs-xl)]" />
                 <span>لا توجد نتائج مطابقة</span>
               </div>
             )}
@@ -1577,7 +1547,7 @@ export default function AdminDashboard({
                           const ok = onRemovePortfolioFeatureOverride
                             ? await onRemovePortfolioFeatureOverride(o.portfolio_id, IMAGE_SUGGESTION_FEATURE_KEY)
                             : false;
-                          onToast(ok ? 'تمت إزالة الاستثناء بنجاح 🗑️' : 'فشلت إزالة الاستثناء ❌', ok ? '🗑️' : '❌');
+                          onToast(ok ? 'تمت إزالة الاستثناء بنجاح' : 'فشلت إزالة الاستثناء', ok ? 'success' : 'error');
                         }}
                       >
                         <i className="ti ti-trash" style={{ fontSize: '16px' }}></i>
@@ -1623,244 +1593,10 @@ export default function AdminDashboard({
 }
 
 /* ─────────────────────────────────────────────
-   CSS Styles
+   CSS Styles — بقايا تبويبات التعاميم والمواعيد والميزات فقط.
+   تُحذف كاملة مع وسم <style> في الخطوة 6.6ب.
 ───────────────────────────────────────────── */
 const adminStyles = `
-/* ── Layout ── */
-.admin-wrap {
-  min-height: 100vh;
-  padding: 32px 24px 80px;
-  max-width: 1300px;
-  margin: 0 auto;
-  font-family: var(--font);
-  direction: rtl;
-}
-
-/* ── Loading ── */
-.admin-loading {
-  min-height: 60vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-.admin-loader {
-  width: 72px; height: 72px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, var(--em3), var(--em6));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 34px; color: white;
-  animation: pulse 2s ease-in-out infinite;
-  box-shadow: 0 0 0 1px rgba(82,196,120,.3), 0 16px 48px rgba(42,122,68,.4);
-}
-.admin-loading-text { font-size: 18px; font-weight: 800; color: white; }
-.admin-loading-sub { font-size: 13px; color: var(--text4); }
-
-/* ── Error ── */
-.admin-error {
-  min-height: 60vh;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 12px; text-align: center; padding: 24px;
-}
-.admin-error > i { font-size: 48px; color: #f87171; }
-.admin-error-title { font-size: 20px; font-weight: 800; color: white; }
-.admin-error-msg { font-size: 14px; color: var(--text3); max-width: 400px; }
-.admin-error-hint { font-size: 12px; color: var(--text4); background: rgba(255,255,255,.04); padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line2); }
-.admin-error-hint code { color: var(--em8); background: rgba(82,196,120,.1); padding: 2px 6px; border-radius: 4px; }
-.admin-retry-btn {
-  margin-top: 8px; padding: 10px 24px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--em4), var(--em7));
-  color: white; font-size: 14px; font-weight: 700;
-  border: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
-  transition: opacity .2s;
-}
-.admin-retry-btn:hover { opacity: .85; }
-
-/* ── Header ── */
-.admin-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 28px; gap: 16px; flex-wrap: wrap;
-}
-.admin-header-left { display: flex; align-items: center; gap: 16px; }
-.admin-badge {
-  width: 52px; height: 52px; border-radius: 16px;
-  background: linear-gradient(135deg, var(--em3), var(--em6));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 24px; color: white;
-  box-shadow: 0 0 0 1px rgba(82,196,120,.3), 0 8px 28px rgba(42,122,68,.4);
-}
-.admin-title { font-size: 26px; font-weight: 900; color: white; margin: 0; }
-.admin-subtitle { font-size: 13px; color: var(--text4); margin: 0; }
-.admin-reload-btn {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 20px; border-radius: 12px;
-  background: rgba(255,255,255,.05);
-  border: 1px solid var(--line2);
-  color: var(--text2); font-size: 14px; font-weight: 600;
-  cursor: pointer; transition: all .2s; white-space: nowrap;
-}
-.admin-reload-btn:hover { background: rgba(82,196,120,.08); border-color: rgba(82,196,120,.3); color: var(--em8); }
-
-/* ── Tabs ── */
-.admin-tabs {
-  display: flex; gap: 4px;
-  /* نفس عائلة تدرج surf المستخدمة لبطاقات Dashboard/Sidebar، بدرجة surf3→surf4
-     (خطوة أعلى من بطاقات باقي الصفحات) لضمان فرق سطوع محسوس عن خلفية الصفحة (surf0). */
-  background: linear-gradient(135deg, var(--surf3), var(--surf4));
-  border: 1px solid var(--line2);
-  border-radius: 14px; padding: 4px;
-  margin-bottom: 28px; width: fit-content;
-}
-.admin-tab {
-  display: flex; align-items: center; gap: 8px;
-  padding: 9px 20px; border-radius: 10px;
-  border: none; cursor: pointer;
-  font-size: 14px; font-weight: 600;
-  color: var(--text3); background: transparent;
-  transition: all .2s; font-family: var(--font);
-}
-.admin-tab.active {
-  background: linear-gradient(135deg, var(--em3)/80%, var(--em6));
-  color: white;
-  box-shadow: 0 4px 14px rgba(42,122,68,.35);
-}
-.admin-tab:not(.active):hover { background: rgba(255,255,255,.05); color: var(--text1); }
-.tab-count {
-  background: rgba(82,196,120,.15);
-  color: var(--em8); font-size: 12px; font-weight: 700;
-  padding: 2px 8px; border-radius: 20px;
-}
-.admin-tab.active .tab-count { background: rgba(255,255,255,.2); color: white; }
-
-/* ── Stats Grid ── */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 16px;
-  margin-bottom: 28px;
-}
-.stat-card {
-  display: flex; align-items: center; gap: 16px;
-  padding: 20px; border-radius: 18px;
-  background: linear-gradient(135deg, var(--surf3), var(--surf4));
-  border: 1px solid var(--line2);
-  animation: scaleIn .4s var(--sp) both;
-  transition: transform .2s, box-shadow .2s;
-}
-.stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 32px rgba(0,0,0,.3);
-}
-.stat-icon {
-  width: 48px; height: 48px; border-radius: 14px; shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 22px; background: color-mix(in srgb, var(--card-color) 15%, transparent);
-  color: var(--card-color);
-  border: 1px solid color-mix(in srgb, var(--card-color) 25%, transparent);
-  flex-shrink: 0;
-}
-.stat-body { flex: 1; min-width: 0; }
-.stat-value { font-size: 28px; font-weight: 900; color: white; line-height: 1; }
-.stat-label { font-size: 12px; font-weight: 600; color: var(--text3); margin-top: 4px; }
-.stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
-
-/* ── Overview Bottom ── */
-.overview-bottom {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 16px;
-}
-@media (max-width: 900px) { .overview-bottom { grid-template-columns: 1fr; } }
-
-/* ── Chart Card ── */
-.chart-card {
-  background: linear-gradient(135deg, var(--surf3), var(--surf4));
-  border: 1px solid var(--line2);
-  border-radius: 18px; padding: 20px;
-}
-.chart-card-header {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 14px; font-weight: 700; color: var(--text2);
-  margin-bottom: 16px;
-}
-.chart-card-header i { color: var(--em8); font-size: 16px; }
-
-.mini-chart {
-  display: flex; align-items: flex-end; gap: 6px;
-  height: 100px; padding-bottom: 20px; position: relative;
-}
-.mini-bar-wrap {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: flex-end; height: 100%;
-}
-.mini-bar {
-  width: 100%; background: linear-gradient(to top, var(--em4), var(--em8));
-  border-radius: 6px 6px 0 0; min-height: 3px;
-  transition: height .6s var(--sp);
-  box-shadow: 0 4px 12px rgba(82,196,120,.2);
-}
-.mini-bar-label {
-  font-size: 10px; color: var(--text3);
-  margin-top: 4px; white-space: nowrap; font-family: var(--font2);
-}
-
-/* ── Distribution Card ── */
-.dist-card {
-  background: linear-gradient(135deg, var(--surf3), var(--surf4));
-  border: 1px solid var(--line2);
-  border-radius: 18px; padding: 20px;
-}
-.dist-title {
-  font-size: 14px; font-weight: 700; color: var(--text2); margin-bottom: 14px;
-}
-.dist-list { display: flex; flex-direction: column; gap: 10px; }
-.dist-item { display: flex; flex-direction: column; gap: 4px; }
-.dist-bar-bg {
-  height: 5px; background: rgba(255,255,255,.07);
-  border-radius: 99px; overflow: hidden;
-}
-.dist-bar-fill {
-  height: 100%; background: linear-gradient(90deg, var(--em4), var(--em8));
-  border-radius: 99px; transition: width .6s var(--sp);
-}
-.dist-meta { display: flex; justify-content: space-between; align-items: center; }
-.dist-key {
-  font-size: 12px; color: var(--text2); font-weight: 600;
-  max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.dist-count { font-size: 12px; color: var(--text3); }
-.dist-count small { color: var(--text3); font-size: 10px; }
-.dist-empty { font-size: 13px; color: var(--text4); text-align: center; padding: 16px; }
-
-/* ── Users Tab ── */
-.admin-users-tab { display: flex; flex-direction: column; gap: 16px; }
-.users-controls {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-}
-.search-wrap {
-  position: relative; flex: 1; min-width: 200px;
-}
-.search-ico {
-  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-  color: var(--text4); font-size: 16px; pointer-events: none;
-}
-.admin-search {
-  width: 100%; padding: 10px 40px 10px 12px;
-  background: rgba(255,255,255,.05);
-  border: 1px solid var(--line2); border-radius: 12px;
-  color: white; font-size: 14px; font-family: var(--font);
-  outline: none; transition: border-color .2s, background .2s;
-}
-.admin-search::placeholder { color: var(--text4); }
-.admin-search:focus { border-color: rgba(82,196,120,.4); background: rgba(82,196,120,.04); }
-.search-clear {
-  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-  background: none; border: none; color: var(--text4); cursor: pointer;
-  font-size: 14px; padding: 4px;
-}
-.search-clear:hover { color: white; }
 .filter-btns { display: flex; gap: 6px; }
 .filter-btn {
   padding: 9px 16px; border-radius: 10px;
@@ -1872,202 +1608,12 @@ const adminStyles = `
   background: rgba(82,196,120,.12); border-color: rgba(82,196,120,.3); color: var(--em8);
 }
 .filter-btn:not(.active):hover { background: rgba(255,255,255,.07); color: var(--text1); }
-.results-count { font-size: 13px; color: var(--text4); white-space: nowrap; }
-
-/* ── Table ── */
-.table-wrap {
-  background: linear-gradient(135deg, var(--surf3), var(--surf4));
-  border: 1px solid var(--line2); border-radius: 18px;
-  overflow: hidden; overflow-x: auto;
-}
-.users-table {
-  width: 100%; border-collapse: collapse; min-width: 700px;
-}
-.users-table thead tr {
-  background: rgba(255,255,255,.04);
-  border-bottom: 1px solid var(--line2);
-}
-.users-table th {
-  padding: 12px 14px; font-size: 12px; font-weight: 700;
-  color: var(--text4); text-align: right; white-space: nowrap;
-  font-family: var(--font);
-}
-.th-sort { cursor: pointer; user-select: none; }
-.th-sort:hover { color: var(--text2); }
-.th-av { width: 52px; }
-.sort-icon { font-size: 13px; margin-right: 4px; }
-.sort-icon.neutral { color: var(--text4); opacity: .5; }
-
-.user-row {
-  border-bottom: 1px solid var(--line2)/50%;
-  animation: fadeIn .3s var(--sp) both;
-  transition: background .15s;
-}
-.user-row:last-child { border-bottom: none; }
-.user-row:hover { background: rgba(255,255,255,.03); }
-.users-table td { padding: 12px 14px; vertical-align: middle; }
-
-.td-avatar { width: 52px; }
-.user-av {
-  width: 38px; height: 38px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--em4), var(--em7));
-  color: white; font-size: 13px; font-weight: 800;
-  display: flex; align-items: center; justify-content: center;
-  background-size: cover; background-position: center;
-  flex-shrink: 0;
-}
-.user-name { font-size: 14px; font-weight: 700; color: white; }
-.user-email { font-size: 11px; color: var(--text3); margin-top: 2px; direction: ltr; }
-.role-badge {
-  font-size: 12px; font-weight: 600; color: var(--text2);
-  background: rgba(255,255,255,.06); padding: 3px 10px; border-radius: 20px;
-  border: 1px solid var(--line2); white-space: nowrap;
-}
-.school-text {
-  font-size: 12px; color: var(--text3);
-  max-width: 140px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; display: block;
-}
-.ev-count, .strat-count {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 13px; font-weight: 700; color: var(--text2);
-}
-.ev-count i { color: #a78bfa; }
-.ev-count-high, .ev-count-high i { color: ${ACCENT_AMBER}; }
-.strat-count i { color: #fbbf24; }
-.status-dot {
-  font-size: 12px; font-weight: 700; padding: 3px 10px;
-  border-radius: 20px; white-space: nowrap;
-}
-.status-dot.active {
-  background: color-mix(in srgb, ${ACTIVE_STATUS_COLOR} 16%, transparent);
-  color: ${ACTIVE_STATUS_COLOR};
-  border: 1px solid color-mix(in srgb, ${ACTIVE_STATUS_COLOR} 32%, transparent);
-}
-.status-dot.inactive {
-  background: color-mix(in srgb, ${INACTIVE_STATUS_COLOR} 12%, transparent);
-  color: ${INACTIVE_STATUS_COLOR};
-  border: 1px solid color-mix(in srgb, ${INACTIVE_STATUS_COLOR} 28%, transparent);
-}
-.td-date { font-size: 12px; color: var(--text3); white-space: nowrap; }
-.action-btn {
-  width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line2);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all .2s; background: transparent; font-size: 15px;
-}
-.view-btn { color: var(--em8); }
-.view-btn:hover { background: rgba(82,196,120,.12); border-color: rgba(82,196,120,.3); }
 
 .empty-state {
   display: flex; flex-direction: column; align-items: center;
   gap: 10px; padding: 48px; color: var(--text4); font-size: 15px;
 }
 .empty-state i { font-size: 36px; opacity: .5; }
-
-/* ── User Detail Modal ── */
-.modal-overlay {
-  position: fixed; inset: 0; z-index: 500;
-  background: rgba(0,0,0,.7); backdrop-filter: blur(8px);
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px; animation: fadeIn .2s ease both;
-}
-.user-modal {
-  background: #0d1f14; border: 1px solid var(--line);
-  border-radius: 24px; width: 100%; max-width: 520px;
-  overflow: hidden;
-  box-shadow: 0 24px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(82,196,120,.1);
-  animation: scaleIn .3s var(--sp) both;
-}
-.umodal-header {
-  display: flex; align-items: center; gap: 16px;
-  padding: 24px; border-bottom: 1px solid var(--line2);
-  background: rgba(82,196,120,.04); position: relative;
-}
-.umodal-av {
-  width: 60px; height: 60px; border-radius: 18px; flex-shrink: 0;
-  background: linear-gradient(135deg, var(--em4), var(--em7));
-  color: white; font-size: 20px; font-weight: 800;
-  display: flex; align-items: center; justify-content: center;
-  background-size: cover; background-position: center;
-  box-shadow: 0 0 0 2px rgba(82,196,120,.25);
-}
-.umodal-name { font-size: 18px; font-weight: 800; color: white; }
-.umodal-role { font-size: 13px; color: var(--text3); margin-top: 2px; }
-.umodal-email { font-size: 12px; color: var(--text4); margin-top: 2px; direction: ltr; }
-.umodal-close {
-  position: absolute; left: 16px; top: 16px;
-  width: 32px; height: 32px; border-radius: 10px;
-  background: rgba(255,255,255,.06); border: 1px solid var(--line2);
-  color: var(--text3); cursor: pointer; font-size: 15px;
-  display: flex; align-items: center; justify-content: center;
-  transition: all .2s;
-}
-.umodal-close:hover { background: rgba(255,255,255,.1); color: white; }
-
-.umodal-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  border-bottom: 1px solid var(--line2);
-}
-.umodal-stat {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 16px 8px; border-left: 1px solid var(--line2); text-align: center;
-}
-.umodal-stat:last-child { border-left: none; }
-.umodal-stat i { font-size: 18px; color: var(--em8); }
-.umodal-stat span { font-size: 20px; font-weight: 800; color: white; line-height: 1; }
-.umodal-stat span.uid-text { font-size: 13px; font-family: monospace; direction: ltr; }
-.umodal-stat small { font-size: 11px; color: var(--text4); }
-
-.umodal-grid {
-  display: grid; grid-template-columns: 1fr 1fr;
-  gap: 0; padding: 16px 24px;
-  border-bottom: 1px solid var(--line2);
-}
-.umodal-field { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }
-.umodal-field label { font-size: 11px; color: var(--text4); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-.umodal-field span { font-size: 13px; color: var(--text2); font-weight: 600; }
-
-.umodal-actions {
-  display: flex; gap: 10px; padding: 20px 24px; flex-wrap: wrap;
-}
-.umodal-btn {
-  flex: 1; min-width: 120px; padding: 11px 16px; border-radius: 12px;
-  border: none; cursor: pointer; font-size: 13px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center; gap: 7px;
-  transition: all .2s; font-family: var(--font); text-decoration: none;
-}
-.primary-btn {
-  background: linear-gradient(135deg, var(--em4), var(--em7)); color: white;
-}
-.primary-btn:hover { opacity: .85; transform: translateY(-1px); }
-.copy-btn {
-  background: rgba(255,255,255,.06); color: var(--text2);
-  border: 1px solid var(--line2) !important;
-}
-.copy-btn:hover { background: rgba(255,255,255,.1); color: white; }
-.danger-btn {
-  background: rgba(248,113,113,.08); color: #f87171;
-  border: 1px solid rgba(248,113,113,.2) !important;
-}
-.danger-btn:hover { background: rgba(248,113,113,.15); }
-.danger-btn.confirm { background: rgba(248,113,113,.2); border-color: rgba(248,113,113,.4) !important; }
-.warning-btn {
-  background: rgba(251,191,36,.08); color: #fbbf24;
-  border: 1px solid rgba(251,191,36,.2) !important;
-}
-.warning-btn:hover { background: rgba(251,191,36,.15); }
-.warning-btn.confirm { background: rgba(251,191,36,.2); border-color: rgba(251,191,36,.4) !important; color: #f59e0b; }
-
-.export-btn {
-  display: flex; align-items: center; gap: 7px;
-  padding: 9px 16px; border-radius: 10px;
-  background: rgba(52,211,153,.08); color: #34d399;
-  border: 1px solid rgba(52,211,153,.2);
-  font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: all .2s; font-family: var(--font);
-  white-space: nowrap;
-}
-.export-btn:hover { background: rgba(52,211,153,.15); border-color: rgba(52,211,153,.35); }
 
 @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
 @keyframes scaleIn { from { opacity:0; transform:scale(.95) } to { opacity:1; transform:scale(1) } }
@@ -2198,71 +1744,4 @@ const adminStyles = `
   cursor: not-allowed;
 }
 
-/* ── Mobile-only overflow containment (≤767px) ──
-   The users table (min-width:700px) and the tab bar (width:fit-content,
-   no-wrap) can be wider than a phone screen. Without this, their overflow
-   leaks past .table-wrap/.admin-tabs into a page-level horizontal scroll,
-   which on some mobile browsers drags the fixed BottomNav along with it.
-   Desktop is untouched — these rules only apply under the breakpoint. */
-@media (max-width: 767px) {
-  .admin-tabs {
-    width: 100%;
-    max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .admin-tab {
-    flex-shrink: 0;
-  }
-  .table-wrap {
-    max-width: 100%;
-    -webkit-overflow-scrolling: touch;
-  }
-}
-
-/* ── Mobile User Cards (md:hidden — see UserCard.tsx) ──
-   عرض بديل للجدول على الجوال: بطاقة مصغّرة (أفاتار + اسم) تتوسّع بالضغط
-   لعرض نفس بيانات أعمدة الجدول. لا تُستخدم على الديسكتوب (الجدول يبقى كما هو).
-   ملاحظة: لا تُعرَّف display/flex-direction/gap هنا عمداً — كانت قاعدة
-   ".users-cards{display:flex}" غير المشروطة بـ media query سابقاً تتجاوز
-   (override) كلاس Tailwind "md:hidden" على الديسكتوب، لأن هذا <style> المُحقن
-   من React يأتي بعد ورقة أنماط Tailwind في ترتيب المستند، وعند تساوي
-   specificity يفوز الأحدث في ترتيب المصدر بصرف النظر عن media query. الحل:
-   ترك التحكم بالعرض (display) بالكامل لكلاسات Tailwind على العنصر نفسه
-   (flex flex-col gap-2.5 md:hidden) بدل تكراره هنا. */
-.user-card {
-  /* نفس تدرج surf3→surf4 المستخدم لبطاقة الجدول والإحصائيات أعلاه —
-     يطابق سطوع بطاقة الجدول على نفس المستوى بدل التراكب الأبيض شبه المعدوم. */
-  background: linear-gradient(135deg, var(--surf3), var(--surf4));
-  border: 1px solid var(--line2);
-  border-radius: 16px;
-  overflow: hidden;
-  animation: fadeIn .3s var(--sp) both;
-}
-.user-card-head {
-  width: 100%; display: flex; align-items: center; gap: 12px;
-  padding: 14px; background: none; border: none; cursor: pointer;
-  text-align: right; font-family: var(--font); color: inherit;
-}
-.user-card-name {
-  flex: 1; font-size: 14px; font-weight: 700; color: white;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.user-card-chevron { color: var(--text3); font-size: 16px; transition: transform .25s var(--sp); flex-shrink: 0; }
-.user-card-chevron.open { transform: rotate(180deg); }
-.user-card-body {
-  padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px;
-  border-top: 1px solid var(--line2);
-  animation: fadeIn .2s ease both;
-}
-.ucard-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.ucard-label { font-size: 12px; color: var(--text3); font-weight: 600; flex-shrink: 0; }
-.ucard-value {
-  font-size: 13px; color: var(--text2); text-align: left;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.ucard-manage {
-  width: 100%; margin-top: 4px; gap: 6px; font-size: 13px; font-weight: 700;
-  height: 38px; border-radius: 10px;
-}
 `;

@@ -34,17 +34,23 @@ export const STAGE_OPTIONS: { value: StageCode; label: string; grades: number }[
 
 const GRADE_ORDINALS = ['أول', 'ثاني', 'ثالث', 'رابع', 'خامس', 'سادس'];
 
-/** label للقائمة، named للاسم المركّب («الفتري الأول») */
-export const TEST_TYPE_OPTIONS: { value: TestTypeCode; label: string; named: string }[] = [
-  { value: 'midterm', label: 'فتري', named: 'الفتري' },
-  { value: 'final', label: 'نهائي', named: 'النهائي' },
-  { value: 'quiz', label: 'قصير', named: 'الاختبار القصير' },
-  { value: 'oral', label: 'شفهي', named: 'الاختبار الشفهي' },
-  { value: 'project', label: 'أداء أو مشروع', named: 'الأداء أو المشروع' },
-  { value: 'coursework', label: 'أعمال سنة', named: 'أعمال السنة' },
+/** label للقائمة، named للاسم المركّب («الفتري الأول»)، numbered: رقم
+ *  الاختبار إلزامي له. النهائي وأعمال السنة بلا رقم (يُحفظ null). */
+export const TEST_TYPE_OPTIONS: { value: TestTypeCode; label: string; named: string; numbered: boolean }[] = [
+  { value: 'midterm', label: 'فتري', named: 'الفتري', numbered: true },
+  { value: 'final', label: 'نهائي', named: 'النهائي', numbered: false },
+  { value: 'quiz', label: 'قصير', named: 'الاختبار القصير', numbered: true },
+  { value: 'oral', label: 'شفهي', named: 'الاختبار الشفهي', numbered: true },
+  { value: 'project', label: 'أداء أو مشروع', named: 'الأداء أو المشروع', numbered: true },
+  { value: 'coursework', label: 'أعمال سنة', named: 'أعمال السنة', numbered: false },
 ];
 
 export const TEST_SEQ_LABELS = ['الأول', 'الثاني', 'الثالث', 'الرابع'];
+
+/** هل يلزم رقم الاختبار لهذا النوع */
+export function testNeedsSeq(type: string | null | undefined): boolean {
+  return TEST_TYPE_OPTIONS.find(t => t.value === type)?.numbered ?? false;
+}
 
 export function gradeCountFor(stage: string | null | undefined): number {
   return STAGE_OPTIONS.find(s => s.value === stage)?.grades ?? 0;
@@ -259,9 +265,33 @@ export function fmtNum(n: number): string {
   return String(Math.round(n * 10) / 10);
 }
 
-/** «27 من 30 · 90%» */
+// عزل اتجاه النص داخل السلسلة نفسها (LRI … PDI)، وهو ما يفعله <bdi dir="ltr">،
+// لكنه يبقى نصاً، فيعمل في title والتلميحات وصورة التحويل إلى شاهد بلا JSX.
+// بدونه تظهر «%73.8» داخل سطر عربي.
+const LRI = '⁦';
+const PDI = '⁩';
+/** مسافة لا ينكسر عندها السطر — تُبقي «27 من 30» كتلة واحدة */
+const NBSP = ' ';
+
+/** «73.8%» معزولة الاتجاه، لا تنكسر ولا تنقلب */
+export function fmtPct(n: number): string {
+  return `${LRI}${fmtNum(n)}%${PDI}`;
+}
+
+/** «+5.2%» أو «-3%» معزولة الاتجاه — الإشارة تبقى قبل الرقم */
+export function fmtSignedPct(n: number): string {
+  return `${LRI}${n >= 0 ? '+' : ''}${fmtNum(n)}%${PDI}`;
+}
+
+/** «±5» معزولة الاتجاه */
+export function fmtPm(n: number): string {
+  return `${LRI}±${fmtNum(n)}${PDI}`;
+}
+
+/** «27 من 30 · 90%» — «27 من 30» و«90%» كتلتان لا تنكسران من الداخل،
+ *  والانكسار ممكن عند «·» فقط. */
 export function formatScore(raw: number, fullMark: number): string {
-  return `${fmtNum(raw)} من ${fmtNum(fullMark)} · ${fmtNum(toPct(raw, fullMark))}%`;
+  return `${LRI}${fmtNum(raw)}${PDI}${NBSP}من${NBSP}${LRI}${fmtNum(fullMark)}${PDI} · ${fmtPct(toPct(raw, fullMark))}`;
 }
 
 /** «ثاني متوسط · شعبة 3» — يُسقط الأجزاء الفارغة */

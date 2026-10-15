@@ -1,6 +1,6 @@
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { AnalysisSummary, GradeBand } from './types';
-import { DANGER_ZONE_CENTER, DANGER_ZONE_MARGIN } from './logic';
+import { DANGER_ZONE_CENTER, DANGER_ZONE_MARGIN, fmtPct, fmtPm } from './logic';
 
 interface ResultsBarChartProps {
   summary: AnalysisSummary;
@@ -18,7 +18,7 @@ interface BandDatum {
 
 /** يحوّل hex إلى نفس اللون بشفافية أعلى — يُستخدم لتظليل الجزء الواقع ضمن
  *  منطقة الخطر داخل عمودي "مقبول"/"ضعيف" فقط (نفس الهوية اللونية، وليست
- *  فئة بصرية جديدة). */
+ *  فئة بصرية جديدة). على الخلفية الداكنة يظهر هذا الجزء أغمق من بقية العمود. */
 const withAlpha = (hex: string, alpha: string) => `${hex}${alpha}`;
 
 const TOOLTIP_CLS = 'rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)] px-3 py-2';
@@ -106,7 +106,7 @@ export default function ResultsBarChart({ summary, bands }: ResultsBarChartProps
       {hasDangerShading && (
         <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">
           <i className="ti ti-info-circle text-[16px]" />
-          الجزء الفاتح من العمودين ضمن منطقة الخطر (±{DANGER_ZONE_MARGIN} حول {DANGER_ZONE_CENTER}%)
+          الجزء الغامق أسفل العمودين ضمن منطقة الخطر ({fmtPm(DANGER_ZONE_MARGIN)} حول {fmtPct(DANGER_ZONE_CENTER)})
         </div>
       )}
     </div>

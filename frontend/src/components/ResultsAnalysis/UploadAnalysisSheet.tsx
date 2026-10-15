@@ -7,7 +7,7 @@ import { parseFile } from './parseFile';
 import {
   computeSummary, deriveUniformSubject, detectColumns, distinctSectionValues, findSameTestFullMark, fmtNum, formatScore,
   gradeCountFor, gradeOrdinal, parseSectionNumber, DEFAULT_FULL_MARK, FULL_MARK_PRESETS, SECTION_LIST_MAX, SECTION_MAX,
-  STAGE_OPTIONS, TEST_SEQ_LABELS, TEST_TYPE_OPTIONS,
+  STAGE_OPTIONS, TEST_SEQ_LABELS, TEST_TYPE_OPTIONS, testNeedsSeq,
 } from './logic';
 import type { AnalysisMeta, AnalysisSummary, ColumnDetectionResult, GradeBand, ParsedFile, ResultsAnalysisRow, StageCode, TestTypeCode } from './types';
 
@@ -36,7 +36,6 @@ const STAT_TEXT = 'text-[length:var(--fs-sm)] font-bold text-[var(--t1)]';
 const STAT_LABEL = 'text-[length:var(--fs-xs)] text-[var(--t3)] mt-0.5';
 
 const SECTION_OTHER = 'other';
-const SEQ_NONE = 'none';
 /** أكثر عدد من أرقام الصفوف يُذكر في رسالة المنع */
 const MAX_LISTED_ROWS = 10;
 
@@ -47,7 +46,6 @@ const sectionOptions = [
 ];
 const testTypeOptions = TEST_TYPE_OPTIONS.map(t => ({ value: t.value, label: t.label }));
 const testSeqOptions = [
-  { value: SEQ_NONE, label: 'بلا ترتيب' },
   ...TEST_SEQ_LABELS.map((label, i) => ({ value: String(i + 1), label })),
 ];
 
@@ -74,7 +72,7 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
   const [sectionChoice, setSectionChoice] = useState('');
   const [sectionOther, setSectionOther] = useState('');
   const [testType, setTestType] = useState('');
-  const [testSeq, setTestSeq] = useState(SEQ_NONE);
+  const [testSeq, setTestSeq] = useState('');
   const [fullMarkText, setFullMarkText] = useState(String(DEFAULT_FULL_MARK));
   /** المعلم غيّر الدرجة العظمى بيده — يوقف الملء التلقائي */
   const [fullMarkTouched, setFullMarkTouched] = useState(false);
@@ -90,16 +88,19 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
 
   const sectionNumber = sectionChoice === SECTION_OTHER ? parseSectionNumber(sectionOther) : (sectionChoice ? Number(sectionChoice) : null);
   const gradeNumber = grade ? Number(grade) : null;
-  const seqNumber = testSeq === SEQ_NONE ? null : Number(testSeq);
+  // رقم الاختبار إلزامي للأنواع المرقّمة، ويُحفظ null للنهائي وأعمال السنة
+  const needsSeq = testNeedsSeq(testType);
+  const seqNumber = needsSeq && testSeq ? Number(testSeq) : null;
   const fullMarkNum = Number(fullMarkText);
   const fullMarkValid = fullMarkText.trim() !== '' && Number.isFinite(fullMarkNum) && fullMarkNum > 0;
   const gradeOptions = Array.from({ length: gradeCountFor(stage) }, (_, i) => ({ value: String(i + 1), label: gradeOrdinal(i + 1) }));
-  const metaComplete = !!subject.trim() && !!stage && gradeNumber !== null && sectionNumber !== null && !!testType && fullMarkValid;
+  const metaComplete = !!subject.trim() && !!stage && gradeNumber !== null && sectionNumber !== null && !!testType && (!needsSeq || seqNumber !== null) && fullMarkValid;
 
   // ملء الدرجة العظمى من تحليل الاختبار نفسه في شعبة أخرى — ما لم يغيّرها المعلم بيده
   useEffect(() => {
     if (fullMarkTouched) return;
-    const match = findSameTestFullMark(analyses, {
+    // نوع مرقّم بلا رقم بعد: لا يُعرف الاختبار، فلا بحث
+    const match = needsSeq && seqNumber === null ? null : findSameTestFullMark(analyses, {
       subject, stage, grade: gradeNumber, testType, testSeq: seqNumber, section: sectionNumber,
     });
     if (match) {
@@ -112,7 +113,7 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
       setAutoFilledFrom(undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analyses, subject, stage, gradeNumber, testType, seqNumber, sectionNumber, fullMarkTouched]);
+  }, [analyses, subject, stage, gradeNumber, testType, needsSeq, seqNumber, sectionNumber, fullMarkTouched]);
 
   // أي تغيير يمسّ الحساب بعد التحليل يمسح المعاينة، فيلزم التحليل من جديد
   useEffect(() => {
@@ -376,15 +377,18 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid ${needsSeq ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
               <div>
                 <div className={LABEL_CLS}>نوع الاختبار <span className="text-[var(--danger)]">*</span></div>
                 <SelectDropdown options={testTypeOptions} value={testType} onChange={setTestType} placeholder="اختر النوع" triggerClassName={INPUT_CLS + ' cursor-pointer'} />
               </div>
-              <div>
-                <div className={LABEL_CLS}>ترتيبه</div>
-                <SelectDropdown options={testSeqOptions} value={testSeq} onChange={setTestSeq} placeholder="بلا ترتيب" triggerClassName={INPUT_CLS + ' cursor-pointer'} />
-              </div>
+              {needsSeq && (
+                <div>
+                  <div className={LABEL_CLS}>رقم الاختبار <span className="text-[var(--danger)]">*</span></div>
+                  <SelectDropdown options={testSeqOptions} value={testSeq} onChange={setTestSeq} placeholder="اختر" triggerClassName={INPUT_CLS + ' cursor-pointer'} />
+                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">مثلاً: الفتري الأول أو الثاني</div>
+                </div>
+              )}
             </div>
 
             <div>

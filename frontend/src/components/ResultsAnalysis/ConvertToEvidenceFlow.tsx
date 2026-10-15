@@ -162,7 +162,7 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
           <div ref={captureRef} className="bg-[var(--s1)] rounded-[var(--r-md)] p-4 border border-[var(--bd)]">
             <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">تحليل نتائج - {sourceLabel}</div>
             <div className="text-[length:var(--fs-xs)] text-[var(--t2)] mt-1 mb-3">
-              المتوسط {formatScore(analysis.summary.average, fullMark)} · {analysis.summary.totalStudents} طالب
+              المتوسط{' '}{formatScore(analysis.summary.average, fullMark)} · {analysis.summary.totalStudents} طالب
               {absentCount > 0 ? ` · ${absentCount} غائب` : ''}
             </div>
             <ResultsBarChart summary={analysis.summary} bands={bands} />

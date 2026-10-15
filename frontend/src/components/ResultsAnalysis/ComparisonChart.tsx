@@ -1,6 +1,6 @@
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { ComparisonPoint } from './logic';
-import { comparisonDelta, fmtNum } from './logic';
+import { comparisonDelta, fmtPct, fmtSignedPct } from './logic';
 
 interface ComparisonChartProps {
   /** عنوان المجموعة: «رياضيات · ثاني متوسط · شعبة 3» */
@@ -14,7 +14,7 @@ function CompareTooltip({ active, payload }: any) {
   return (
     <div className="rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)] px-3 py-2">
       <div className="text-[length:var(--fs-xs)] font-bold text-[var(--t1)] mb-1">{d.label}</div>
-      <div className="text-[length:var(--fs-xs)] text-[var(--t2)]">المتوسط {fmtNum(d.average)}%</div>
+      <div className="text-[length:var(--fs-xs)] text-[var(--t2)]">المتوسط {fmtPct(d.average)}</div>
     </div>
   );
 }
@@ -34,7 +34,7 @@ export default function ComparisonChart({ title, series }: ComparisonChartProps)
         {delta && (
           <div className={`shrink-0 inline-flex items-center gap-1.5 py-1 px-3 rounded-[var(--r-full)] bg-[var(--s2)] border text-[length:var(--fs-xs)] font-bold ${delta.improved ? 'text-[var(--accent)] border-[var(--accent)]/35' : 'text-[var(--danger)] border-[var(--danger)]/35'}`}>
             <i className={`ti ${delta.improved ? 'ti-trending-up' : 'ti-trending-down'}`} />
-            {delta.improved ? 'تحسّن' : 'تراجع'} {delta.improved ? '+' : ''}{delta.diff}%
+            {delta.improved ? 'تحسّن' : 'تراجع'} {fmtSignedPct(delta.diff)}
           </div>
         )}
       </div>

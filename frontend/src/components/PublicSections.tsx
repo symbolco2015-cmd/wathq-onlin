@@ -8,7 +8,7 @@ import { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from '
 import { LevelBadge, nEv, type Level } from './SectionView';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
-import { comparisonDelta, formatClass, formatScore, formatTest, publicPcts } from './ResultsAnalysis/logic';
+import { comparisonDelta, fmtSignedPct, formatClass, formatScore, formatTest, publicPcts } from './ResultsAnalysis/logic';
 
 /** صف عرض شاهد: صف المؤشرات المعتاد + نوع العرض العام والوصف (لمعاينة الملاحظة). */
 export function toPublicRow(e: SupabaseEvidence) {
@@ -443,9 +443,9 @@ function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
           ></div>
         </div>
         <div dir="rtl" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[length:var(--fs-xs)] text-[var(--t3)] font-bold mt-2">
-          <span>أعلى {formatScore(hi, pcts.fullMark)}</span>
-          <span className="text-[var(--t1)]">متوسط {avgText}</span>
-          <span>أدنى {formatScore(lo, pcts.fullMark)}</span>
+          <span>أعلى{' '}{formatScore(hi, pcts.fullMark)}</span>
+          <span className="text-[var(--t1)]">متوسط{' '}{avgText}</span>
+          <span>أدنى{' '}{formatScore(lo, pcts.fullMark)}</span>
         </div>
       </div>
     </div>
@@ -480,7 +480,7 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
           <circle cx={w - pad} cy={y2} r={2.5} fill="var(--t1)" />
         </svg>
         <span className={`text-[length:var(--fs-xs)] font-bold whitespace-nowrap ${delta.improved ? 'text-[var(--accent)]' : 'text-[var(--warn)]'}`}>
-          {delta.improved ? 'تحسّن' : 'تراجع'} {delta.improved ? '+' : ''}{delta.diff}%
+          {delta.improved ? 'تحسّن' : 'تراجع'} {fmtSignedPct(delta.diff)}
         </span>
       </div>
     </div>

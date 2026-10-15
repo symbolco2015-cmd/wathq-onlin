@@ -32,8 +32,9 @@ function buildChartData(summary: AnalysisSummary, bands: GradeBand[]): BandDatum
   return bands.map(band => {
     const total = summary.bandCounts[band.id] ?? 0;
     // التظليل يظهر فقط داخل الفئتين اللتين يتقاطع مداهما فعلياً مع منطقة
-    // الخطر [55,65] — عملياً "مقبول" (60-69) و"ضعيف" (0-59) بالفئات الافتراضية،
-    // لكن الشرط عام على أي مدى فعلي بدل الاعتماد على تسمية الفئة.
+    // الخطر [55%,65%] — عملياً "مقبول" (60-69) و"ضعيف" (0-59) بالفئات الافتراضية،
+    // لكن الشرط عام على أي مدى فعلي بدل الاعتماد على تسمية الفئة. حدود الفئات
+    // والمنطقة كلاهما نسب مئوية.
     const bandIntersectsDanger =
       band.min_score <= DANGER_ZONE_CENTER + DANGER_ZONE_MARGIN &&
       band.max_score >= DANGER_ZONE_CENTER - DANGER_ZONE_MARGIN;
@@ -64,17 +65,6 @@ function ChartTooltip({ active, payload }: any) {
       {d.danger > 0 && (
         <div className="text-[length:var(--fs-xs)] text-[var(--warn)] mt-0.5">{d.danger} منهم ضمن منطقة الخطر</div>
       )}
-    </div>
-  );
-}
-
-function SectionTooltip({ active, payload }: any) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload as { section: string; average: number; count: number };
-  return (
-    <div className={TOOLTIP_CLS}>
-      <div className="text-[length:var(--fs-xs)] font-bold text-[var(--t1)] mb-1">{d.section}</div>
-      <div className="text-[length:var(--fs-xs)] text-[var(--t2)]">المتوسط {d.average.toFixed(1)} · {d.count} طالب</div>
     </div>
   );
 }
@@ -116,23 +106,7 @@ export default function ResultsBarChart({ summary, bands }: ResultsBarChartProps
       {hasDangerShading && (
         <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">
           <i className="ti ti-info-circle text-[16px]" />
-          الجزء الفاتح من العمودين ضمن منطقة الخطر (±{DANGER_ZONE_MARGIN} حول درجة {DANGER_ZONE_CENTER})
-        </div>
-      )}
-
-      {summary.sectionAverages && summary.sectionAverages.length > 1 && (
-        <div className="mt-6 pt-4 border-t border-[var(--bd)]">
-          <div className="text-[length:var(--fs-xs)] font-bold text-[var(--t3)] mb-2">مقارنة متوسط الشعب</div>
-          <div className="h-[140px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={summary.sectionAverages} barCategoryGap="25%" margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                <XAxis dataKey="section" axisLine={AXIS_LINE} tickLine={false} tick={X_TICK} />
-                <YAxis domain={[0, 100]} axisLine={false} tickLine={false} width={28} tick={Y_TICK} />
-                <Tooltip content={<SectionTooltip />} cursor={CURSOR} />
-                <Bar dataKey="average" fill="var(--t2)" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={false} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          الجزء الفاتح من العمودين ضمن منطقة الخطر (±{DANGER_ZONE_MARGIN} حول {DANGER_ZONE_CENTER}%)
         </div>
       )}
     </div>

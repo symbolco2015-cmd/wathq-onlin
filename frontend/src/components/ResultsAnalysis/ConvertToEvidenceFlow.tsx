@@ -6,6 +6,7 @@ import { BTN_GH, BTN_PRI } from '../SectionView';
 import EvidenceModal from '../EvidenceModal';
 import type { EvidenceFormProps } from '../EvidenceForm';
 import ResultsBarChart from './ResultsBarChart';
+import { analysisSourceLabel, formatScore, fullMarkOf } from './logic';
 import { supabase } from '../../supabaseClient';
 import type { SectionData } from '../../types';
 import type { GradeBand, ResultsAnalysisRow } from './types';
@@ -42,6 +43,9 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
   const [converting, setConverting] = useState(false);
   const [prefill, setPrefill] = useState<{ title: string; fileUrl: string; fileName: string } | null>(null);
   const captureRef = useRef<HTMLDivElement>(null);
+  const sourceLabel = analysisSourceLabel(analysis);
+  const fullMark = fullMarkOf(analysis.full_mark);
+  const absentCount = analysis.summary.absentCount ?? 0;
 
   // قسم الاستراتيجيات مُستبعد من وجهات التحويل — رسم تحليل نتائج لا علاقة له
   // منطقياً بـ"استراتيجية تدريس" ولا بـ"مراعاة الفروق الفردية" (subs[0] الخاص
@@ -72,7 +76,7 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
       if (error) throw error;
       const { data: urlData } = supabase.storage.from('evidence').getPublicUrl(path);
       setPrefill({
-        title: `تحليل نتائج - ${analysis.subject} - ${formatDate(analysis.created_at, 'short')}`,
+        title: `تحليل نتائج - ${sourceLabel} - ${formatDate(analysis.created_at, 'short')}`,
         fileUrl: urlData.publicUrl,
         fileName: 'analysis.png',
       });
@@ -156,7 +160,11 @@ export default function ConvertToEvidenceFlow({ analysis, bands, sections, userI
 
           {/* عنصر الالتقاط — يعكس بالضبط ما سيُحفَظ كصورة */}
           <div ref={captureRef} className="bg-[var(--s1)] rounded-[var(--r-md)] p-4 border border-[var(--bd)]">
-            <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)] mb-3">تحليل نتائج - {analysis.subject}</div>
+            <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">تحليل نتائج - {sourceLabel}</div>
+            <div className="text-[length:var(--fs-xs)] text-[var(--t2)] mt-1 mb-3">
+              المتوسط {formatScore(analysis.summary.average, fullMark)} · {analysis.summary.totalStudents} طالب
+              {absentCount > 0 ? ` · ${absentCount} غائب` : ''}
+            </div>
             <ResultsBarChart summary={analysis.summary} bands={bands} />
             {includeNames && (
               <div className="mt-4 pt-3 border-t border-[var(--bd)]">

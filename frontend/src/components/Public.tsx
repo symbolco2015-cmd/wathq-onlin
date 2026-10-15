@@ -20,7 +20,7 @@ import {
 import { sectionLevel, nEv, type Level } from './SectionView';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
-import { groupPublicAnalysesBySubject, buildPublicComparisonSeries } from './ResultsAnalysis/logic';
+import { buildPublicComparisons } from './ResultsAnalysis/logic';
 import './Public.print.css';
 
 interface PublicProps {
@@ -253,10 +253,7 @@ export default function Public({ state, sections: allSections, continuity, evide
   const resultsComparisons = useMemo(() => {
     if (frozenResultsComparisons) return frozenResultsComparisons;
     if (!sortedAnalysis || sortedAnalysis.length === 0) return [];
-    const groups = groupPublicAnalysesBySubject(sortedAnalysis);
-    return Array.from(groups.entries())
-      .filter(([, rows]) => rows.length >= 2)
-      .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(sortedAnalysis, subject) }));
+    return buildPublicComparisons(sortedAnalysis);
   }, [frozenResultsComparisons, sortedAnalysis]);
 
   // "مراعاة الفروق الفردية بين المتعلمين" — مؤشر فرعي عادي بالقسم الهجين،

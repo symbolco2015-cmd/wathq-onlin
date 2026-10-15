@@ -1,9 +1,10 @@
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { ComparisonPoint } from './logic';
-import { comparisonDelta } from './logic';
+import { comparisonDelta, fmtNum } from './logic';
 
 interface ComparisonChartProps {
-  subject: string;
+  /** عنوان المجموعة: «رياضيات · ثاني متوسط · شعبة 3» */
+  title: string;
   series: ComparisonPoint[];
 }
 
@@ -13,27 +14,27 @@ function CompareTooltip({ active, payload }: any) {
   return (
     <div className="rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)] px-3 py-2">
       <div className="text-[length:var(--fs-xs)] font-bold text-[var(--t1)] mb-1">{d.label}</div>
-      <div className="text-[length:var(--fs-xs)] text-[var(--t2)]">المتوسط {d.average.toFixed(1)}</div>
+      <div className="text-[length:var(--fs-xs)] text-[var(--t2)]">المتوسط {fmtNum(d.average)}%</div>
     </div>
   );
 }
 
-/** رسم خطي لمتوسط كل تحليل عبر الزمن لنفس المادة — يظهر فقط عبر تبويب
- *  "مقارنة" التلقائي (عنصران فأكثر بنفس subject، انظر AnalysisSectionCard). */
-export default function ComparisonChart({ subject, series }: ComparisonChartProps) {
+/** رسم خطي لمتوسط كل تحليل (بالنسبة المئوية) عبر الزمن للمادة والشعبة نفسيهما —
+ *  يظهر فقط عبر تبويب "مقارنة" التلقائي (عنصران فأكثر، انظر AnalysisSectionCard). */
+export default function ComparisonChart({ title, series }: ComparisonChartProps) {
   const delta = comparisonDelta(series);
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
-          <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">مقارنة — {subject}</div>
+          <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">مقارنة — {title}</div>
           <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-0.5">{series.length} تحليلات مرتبة زمنياً</div>
         </div>
         {delta && (
           <div className={`shrink-0 inline-flex items-center gap-1.5 py-1 px-3 rounded-[var(--r-full)] bg-[var(--s2)] border text-[length:var(--fs-xs)] font-bold ${delta.improved ? 'text-[var(--accent)] border-[var(--accent)]/35' : 'text-[var(--danger)] border-[var(--danger)]/35'}`}>
             <i className={`ti ${delta.improved ? 'ti-trending-up' : 'ti-trending-down'}`} />
-            {delta.improved ? 'تحسّن' : 'تراجع'} {delta.improved ? '+' : ''}{delta.diff}
+            {delta.improved ? 'تحسّن' : 'تراجع'} {delta.improved ? '+' : ''}{delta.diff}%
           </div>
         )}
       </div>

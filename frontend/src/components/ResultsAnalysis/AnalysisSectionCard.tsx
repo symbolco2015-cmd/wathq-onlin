@@ -6,8 +6,11 @@ import UploadAnalysisSheet from './UploadAnalysisSheet';
 import ResultsBarChart from './ResultsBarChart';
 import ComparisonChart from './ComparisonChart';
 import ConvertToEvidenceFlow from './ConvertToEvidenceFlow';
-import { buildComparisonSeries, computeScoreGap, groupAnalysesBySubject, groupRemedialStudents } from './logic';
-import type { AnalysisSummary, GradeBand, ResultsAnalysisRow } from './types';
+import {
+  analysisSourceLabel, buildComparisonSeries, classGroupLabel, computeScoreGap, fmtNum, formatScore, fullMarkOf,
+  groupAnalysesByClass, groupRemedialStudents,
+} from './logic';
+import type { AnalysisMeta, AnalysisSummary, GradeBand, ResultsAnalysisRow } from './types';
 import type { SectionData } from '../../types';
 import { formatDate } from '../../utils';
 import type { ToastKind } from '../UI';
@@ -20,7 +23,7 @@ interface AnalysisSectionBodyProps {
   supabaseEv?: SupabaseEvidenceHook;
   gradeBands: GradeBand[];
   analyses: ResultsAnalysisRow[];
-  saveAnalysis: (subject: string, classSection: string | null, summary: AnalysisSummary) => Promise<ResultsAnalysisRow | null>;
+  saveAnalysis: (meta: AnalysisMeta, summary: AnalysisSummary) => Promise<ResultsAnalysisRow | null>;
   onEvidenceSaved?: EvidenceFormProps['onEvidenceSaved'];
   onToast?: (msg: string, kind: ToastKind) => void;
   /** معرّف تحليل يجب فتح تبويبه مباشرة — يصل من بطاقة "تحسين نتائج المتعلمين"
@@ -31,11 +34,11 @@ interface AnalysisSectionBodyProps {
 
 type Tab =
   | { kind: 'analysis'; id: string; label: string; analysis: ResultsAnalysisRow }
-  | { kind: 'compare'; id: string; label: string; subject: string };
+  | { kind: 'compare'; id: string; label: string; title: string; group: ResultsAnalysisRow[] };
 
 /**
  * جسم شاشة بند 10 — أداة تحليل النتائج: تبويب لكل تحليل محفوظ + تبويب
- * "مقارنة" تلقائي لكل مادة لها تحليلان فأكثر. يُركَّب فقط بعد انتهاء التحميل
+ * "مقارنة" تلقائي لكل مادة وشعبة (مادة + مرحلة + صف + شعبة) لها تحليلان فأكثر. يُركَّب فقط بعد انتهاء التحميل
  * (الشاشة تعرض "جارٍ التحميل…" قبله)، فطلب التركيز يجد تبويباته من أول render.
  */
 export function AnalysisSectionBody({
@@ -48,20 +51,23 @@ export function AnalysisSectionBody({
 
   const noToast = () => {};
 
-  const subjectGroups = useMemo(() => groupAnalysesBySubject(analyses), [analyses]);
+  const classGroups = useMemo(() => groupAnalysesByClass(analyses), [analyses]);
 
   const tabs = useMemo<Tab[]>(() => {
     const analysisTabs: Tab[] = analyses.map(a => ({
       kind: 'analysis',
       id: a.id,
-      label: `${a.subject}${a.class_section ? ' · ' + a.class_section : ''}`,
+      label: analysisSourceLabel(a),
       analysis: a,
     }));
-    const compareTabs: Tab[] = Array.from(subjectGroups.entries())
+    const compareTabs: Tab[] = Array.from(classGroups.entries())
       .filter(([, list]) => list.length >= 2)
-      .map(([subject]) => ({ kind: 'compare' as const, id: `compare:${subject}`, label: `مقارنة · ${subject}`, subject }));
+      .map(([key, list]) => {
+        const title = classGroupLabel(list[0]);
+        return { kind: 'compare' as const, id: `compare:${key}`, label: `مقارنة · ${title}`, title, group: list };
+      });
     return [...analysisTabs, ...compareTabs];
-  }, [analyses, subjectGroups]);
+  }, [analyses, classGroups]);
 
   // تبويب افتراضي: أول تحليل عند التحميل، ما لم يوجد طلب تركيز صريح من بطاقة
   // "تحسين نتائج المتعلمين" (بند 5) — ذلك الطلب له الأولوية دائماً.
@@ -116,7 +122,7 @@ export function AnalysisSectionBody({
 
       {activeTab?.kind === 'compare' && (
         <div id="analysis-print-target" className="print-card bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
-          <ComparisonChart subject={activeTab.subject} series={buildComparisonSeries(analyses, activeTab.subject)} />
+          <ComparisonChart title={activeTab.title} series={buildComparisonSeries(activeTab.group)} />
         </div>
       )}
 
@@ -132,6 +138,7 @@ export function AnalysisSectionBody({
         <UploadAnalysisSheet
           onClose={() => setUploadOpen(false)}
           bands={gradeBands}
+          analyses={analyses}
           saveAnalysis={saveAnalysis}
           onSaved={(row) => { setUploadOpen(false); setActiveTabId(row.id); }}
           onToast={onToast ?? noToast}
@@ -161,13 +168,16 @@ interface AnalysisTabBodyProps {
 }
 
 const STAT_NUM = 'text-[length:var(--fs-lg)] font-bold text-[var(--t1)]';
+const STAT_TEXT = 'text-[length:var(--fs-sm)] font-bold text-[var(--t1)]';
 const STAT_LABEL = 'text-[length:var(--fs-xs)] text-[var(--t3)] mt-1';
 const BLOCK_TITLE = 'text-[length:var(--fs-xs)] font-bold text-[var(--t3)]';
 
 function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyProps) {
   const weakBand = bands[bands.length - 1];
+  const fullMark = fullMarkOf(analysis.full_mark);
   const gap = computeScoreGap(analysis.summary.students);
-  const remedial = groupRemedialStudents(analysis.summary.students, weakBand?.id);
+  const remedial = groupRemedialStudents(analysis.summary.students, weakBand?.id, fullMark);
+  const absentCount = analysis.summary.absentCount ?? 0;
   const dateLabel = formatDate(analysis.created_at, 'long');
 
   const handlePrint = () => window.print();
@@ -187,21 +197,27 @@ function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyPro
       </div>
 
       <div className="bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 text-center">
+        <div className={`grid grid-cols-2 ${absentCount > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-3 mb-4 text-center`}>
           <div>
             <div className={STAT_NUM}>{analysis.summary.totalStudents}</div>
             <div className={STAT_LABEL}>طالب</div>
           </div>
+          {absentCount > 0 && (
+            <div>
+              <div className={STAT_NUM}>{absentCount}</div>
+              <div className={STAT_LABEL}>غائب</div>
+            </div>
+          )}
           <div>
-            <div className={STAT_NUM}>{analysis.summary.average.toFixed(1)}</div>
+            <div className={STAT_TEXT}>{formatScore(analysis.summary.average, fullMark)}</div>
             <div className={STAT_LABEL}>المتوسط</div>
           </div>
           <div>
-            <div className={STAT_NUM}>{gap.toFixed(1)}</div>
+            <div className={STAT_TEXT}>{formatScore(gap, fullMark)}</div>
             <div className={STAT_LABEL}>مؤشر الفجوة</div>
           </div>
           <div>
-            <div className={STAT_NUM}>{analysis.summary.stdDev.toFixed(1)}</div>
+            <div className={STAT_TEXT}>{fmtNum(analysis.summary.stdDev)} نقطة</div>
             <div className={STAT_LABEL}>الانحراف المعياري</div>
           </div>
         </div>
@@ -232,10 +248,10 @@ function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyPro
               const band = bands.find(b => b.id === s.bandId);
               return (
                 <div key={i} className="flex items-center justify-between gap-3 py-2.5 px-3.5 text-[length:var(--fs-sm)]">
-                  <span className="text-[var(--t1)] truncate">{s.name}{s.section ? ` · ${s.section}` : ''}</span>
+                  <span className="text-[var(--t1)] truncate">{s.name}</span>
                   <div className="flex items-center gap-2 shrink-0">
                     {s.inDangerZone && <i className="ti ti-alert-triangle text-[16px] text-[var(--warn)]" title="ضمن منطقة الخطر" />}
-                    <span className="font-bold" style={{ color: band?.color }}>{s.score}</span>
+                    <span className="font-bold" style={{ color: band?.color }}>{formatScore(s.score, fullMark)}</span>
                   </div>
                 </div>
               );

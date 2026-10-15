@@ -2,7 +2,7 @@ import { useState } from 'react';
 import EvidenceModal from '../EvidenceModal';
 import type { EvidenceFormProps } from '../EvidenceForm';
 import { BTN_SM, BTN_GH_SM, BTN_PRI_SM } from '../SectionView';
-import { groupRemedialStudents } from './logic';
+import { analysisSourceLabel, fullMarkOf, groupRemedialStudents } from './logic';
 import type { SmartCheckResult } from './useResultsAnalysis';
 import type { GradeBand, ResultsAnalysisRow } from './types';
 import type { SectionData } from '../../types';
@@ -25,7 +25,7 @@ function checkKey(analysisId: string, kind: CheckKind) {
 function actionInputs(a: ResultsAnalysisRow, gradeBands: GradeBand[]) {
   const excellentBand = gradeBands[0];
   const weakBand = gradeBands[gradeBands.length - 1];
-  const remedial = groupRemedialStudents(a.summary.students, weakBand?.id);
+  const remedial = groupRemedialStudents(a.summary.students, weakBand?.id, fullMarkOf(a.full_mark));
   const remedialTotal = remedial.nearSuccess.length + remedial.largerGap.length;
   const excellentCount = excellentBand ? a.summary.bandCounts[excellentBand.id] ?? 0 : 0;
   return { remedial, remedialTotal, excellentCount };
@@ -96,7 +96,7 @@ export function ImprovementActionsBody({
             key={checkKey(a.id, 'remedial')}
             icon="ti-alert-circle"
             tone="warn"
-            sourceLabel={`${a.subject}${a.class_section ? ' · ' + a.class_section : ''}`}
+            sourceLabel={analysisSourceLabel(a)}
             title={`${remedialTotal} طالب يحتاجون خطة علاجية (${parts.join(' · ')})`}
             subtitle="هل وثّقت خطة علاجية لهذه المجموعة؟"
             check={checks[checkKey(a.id, 'remedial')] ?? { loading: false, result: null }}
@@ -117,7 +117,7 @@ export function ImprovementActionsBody({
             key={checkKey(a.id, 'honor')}
             icon="ti-award"
             tone="accent"
-            sourceLabel={`${a.subject}${a.class_section ? ' · ' + a.class_section : ''}`}
+            sourceLabel={analysisSourceLabel(a)}
             title={`${excellentCount} طالب متفوق في فئة "${excellentBand.label}"`}
             subtitle="هل قدّمت تكريماً؟"
             check={checks[checkKey(a.id, 'honor')] ?? { loading: false, result: null }}
@@ -137,7 +137,7 @@ export function ImprovementActionsBody({
           <div key={`${a.id}:inflation`} className="flex items-start gap-2.5 bg-[var(--s1)] border border-[var(--bd)] rounded-[var(--r-md)] p-4">
             <i className="ti ti-info-circle text-[20px] text-[var(--info)] shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mb-1">{a.subject}{a.class_section ? ` · ${a.class_section}` : ''}</div>
+              <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mb-1">{analysisSourceLabel(a)}</div>
               <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">مؤشرات تضخم في الدرجات</div>
               <div className="text-[length:var(--fs-xs)] text-[var(--t2)] mt-1 leading-relaxed">
                 نسبة كبيرة من الدرجات مرتفعة جداً أو تكدّس ضعيف بين الطلاب — يُنصح بتنويع أدوات التقييم لقياس الفروق الفردية بدقة أكبر.

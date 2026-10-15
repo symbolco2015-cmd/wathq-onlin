@@ -8,7 +8,7 @@ import { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from '
 import { LevelBadge, nEv, type Level } from './SectionView';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
-import { comparisonDelta } from './ResultsAnalysis/logic';
+import { comparisonDelta, formatClass, formatScore, formatTest, publicPcts } from './ResultsAnalysis/logic';
 
 /** صف عرض شاهد: صف المؤشرات المعتاد + نوع العرض العام والوصف (لمعاينة الملاحظة). */
 export function toPublicRow(e: SupabaseEvidence) {
@@ -401,29 +401,33 @@ export function IndivDiffContent({ evs, onPreview, eager }: { evs: PublicRow[]; 
 }
 
 /** سطر تحليل واحد ببند 10 — بلا رسم توزيع فئات أو قائمة طلاب (بيانات داخلية
- *  فقط)، فقط شريط مدى (0-100) يوضّح موقع الأدنى/الأعلى، وعلامة لموقع المتوسط.
- *  dir="ltr" مقصود ومعزول عن اتجاه الصفحة: شريط رقمي كهذا يحتاج تموضعاً مطلقاً
- *  (left: min%→max%)، وقيم الدرجات تُقرأ تقليدياً من اليسار لليمين. الأدنى
- *  والأعلى يُحسبان بـ min/max احتياطاً، فلا ينقلب الشريط أياً كان المصدر. */
+ *  فقط)، فقط شريط مدى بالنسبة المئوية يوضّح موقع الأدنى/الأعلى، وعلامة لموقع
+ *  المتوسط. dir="ltr" مقصود ومعزول عن اتجاه الصفحة: شريط رقمي كهذا يحتاج
+ *  تموضعاً مطلقاً (left: min%→max%)، وقيم الدرجات تُقرأ تقليدياً من اليسار
+ *  لليمين. الأدنى والأعلى يُحسبان بـ min/max احتياطاً، فلا ينقلب الشريط أياً
+ *  كان المصدر. لقطات الحصاد القديمة بلا full_mark تُقرأ من 100. */
 function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
   const clamp = (n: number) => Math.min(100, Math.max(0, n));
+  const pcts = publicPcts(row);
   const lo = Math.min(row.min_score, row.max_score);
   const hi = Math.max(row.min_score, row.max_score);
-  const minPct = clamp(lo);
-  const maxPct = clamp(hi);
-  const avgPct = clamp(row.average);
-  const metaParts = [row.stage, row.class_section].filter(Boolean) as string[];
+  const minPct = clamp(Math.min(pcts.min, pcts.max));
+  const maxPct = clamp(Math.max(pcts.min, pcts.max));
+  const avgPct = clamp(pcts.average);
+  const avgText = formatScore(row.average, pcts.fullMark);
+  const meta = [formatClass(row.stage, row.grade_level, row.class_section), formatTest(row.test_type, row.test_seq)].filter(Boolean).join(' · ');
+  const absent = row.absent_count ?? 0;
 
   return (
     <div className={PANEL}>
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
         <div className="min-w-0">
           <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{row.subject}</span>
-          {metaParts.length > 0 && (
-            <span className="text-[length:var(--fs-xs)] text-[var(--t3)] mr-2">{metaParts.join(' · ')}</span>
+          {meta && (
+            <span className="text-[length:var(--fs-xs)] text-[var(--t3)] mr-2">{meta}</span>
           )}
         </div>
-        <span className={`${PILL} shrink-0`}>{row.total_students} طالب</span>
+        <span className={`${PILL} shrink-0`}>{row.total_students} طالب{absent > 0 ? ` · ${absent} غائب` : ''}</span>
       </div>
 
       <div dir="ltr">
@@ -435,13 +439,13 @@ function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
           <div
             className="absolute top-1/2 w-[3px] h-3 rounded-[var(--r-full)] bg-[var(--t1)] print:bg-black -translate-y-1/2"
             style={{ left: `${avgPct}%`, marginLeft: '-1.5px' }}
-            title={`المتوسط ${row.average.toFixed(1)}`}
+            title={`المتوسط ${avgText}`}
           ></div>
         </div>
-        <div className="flex items-center justify-between text-[length:var(--fs-xs)] text-[var(--t3)] font-bold mt-2">
-          <span>أدنى {lo}</span>
-          <span className="text-[var(--t1)]">متوسط {row.average.toFixed(1)}</span>
-          <span>أعلى {hi}</span>
+        <div dir="rtl" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[length:var(--fs-xs)] text-[var(--t3)] font-bold mt-2">
+          <span>أعلى {formatScore(hi, pcts.fullMark)}</span>
+          <span className="text-[var(--t1)]">متوسط {avgText}</span>
+          <span>أدنى {formatScore(lo, pcts.fullMark)}</span>
         </div>
       </div>
     </div>
@@ -476,7 +480,7 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
           <circle cx={w - pad} cy={y2} r={2.5} fill="var(--t1)" />
         </svg>
         <span className={`text-[length:var(--fs-xs)] font-bold whitespace-nowrap ${delta.improved ? 'text-[var(--accent)]' : 'text-[var(--warn)]'}`}>
-          {delta.improved ? 'تحسّن' : 'تراجع'} {delta.improved ? '+' : ''}{delta.diff}
+          {delta.improved ? 'تحسّن' : 'تراجع'} {delta.improved ? '+' : ''}{delta.diff}%
         </span>
       </div>
     </div>

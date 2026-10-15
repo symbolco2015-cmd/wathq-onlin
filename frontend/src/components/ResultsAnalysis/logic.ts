@@ -1,13 +1,16 @@
-import type { GradeBand, AnalysisSummary, StudentResult, ColumnDetectionResult, ParsedFile, ResultsAnalysisRow, PublicResultsAnalysisRow } from './types';
+import type { GradeBand, AnalysisSummary, StudentResult, ColumnDetectionResult, ParsedFile, ResultsAnalysisRow, PublicResultsAnalysisRow, StageCode, TestTypeCode } from './types';
 import { formatDate } from '../../utils';
 
-/** هامش "منطقة الخطر" حول حد النجاح (60) — طالب بدرجة ضمن [55,65] يُعتبر في
+/** كل الحدود أدناه نسب مئوية (0-100) لا درجات خام: الدرجة تُحوَّل أولاً إلى
+ *  score / full_mark × 100، ثم تُصنَّف. */
+
+/** هامش "منطقة الخطر" حول حد النجاح (60%) — طالب بنسبة ضمن [55,65] يُعتبر في
  *  منطقة خطر. ثابت الآن، قابل للتعديل لاحقاً دون تغيير منطق الحساب. */
 export const DANGER_ZONE_MARGIN = 5;
 export const DANGER_ZONE_CENTER = 60;
 
-/** عتبتا كشف "تضخم الدرجات": نسبة الطلاب بدرجة ≥95 تتجاوز 50%، أو الانحراف
- *  المعياري للفصل بأكمله أقل من 5 (على مقياس 0-100 — تكدّس شديد للدرجات).
+/** عتبتا كشف "تضخم الدرجات": نسبة الطلاب بنسبة ≥95% تتجاوز 50%، أو الانحراف
+ *  المعياري للفصل بأكمله أقل من 5 نقاط مئوية (تكدّس شديد للدرجات).
  *  أي منهما كافٍ لإطلاق العلامة، بشرط عيّنة لا تقل عن 5 طلاب (تفادي نتائج
  *  زائفة على فصول صغيرة جداً). */
 export const HIGH_SCORE_INFLATION_PCT = 0.5;
@@ -15,24 +18,74 @@ export const LOW_STDDEV_INFLATION_THRESHOLD = 5;
 export const INFLATION_MIN_SAMPLE = 5;
 const HIGH_SCORE_THRESHOLD = 95;
 
-export function isDangerZone(score: number): boolean {
-  return Math.abs(score - DANGER_ZONE_CENTER) <= DANGER_ZONE_MARGIN;
+/** الدرجة العظمى حين لا تُعرف (صفوف ولقطات قديمة) */
+export const DEFAULT_FULL_MARK = 100;
+/** أزرار الدرجة العظمى السريعة في نموذج الرفع */
+export const FULL_MARK_PRESETS = [10, 20, 30, 40, 50, 100];
+/** الشعبة: قائمة من 1 إلى SECTION_LIST_MAX، و«شعبة أخرى» حتى SECTION_MAX (قيد CHECK) */
+export const SECTION_LIST_MAX = 15;
+export const SECTION_MAX = 50;
+
+export const STAGE_OPTIONS: { value: StageCode; label: string; grades: number }[] = [
+  { value: 'primary', label: 'ابتدائي', grades: 6 },
+  { value: 'intermediate', label: 'متوسط', grades: 3 },
+  { value: 'secondary', label: 'ثانوي', grades: 3 },
+];
+
+const GRADE_ORDINALS = ['أول', 'ثاني', 'ثالث', 'رابع', 'خامس', 'سادس'];
+
+/** label للقائمة، named للاسم المركّب («الفتري الأول») */
+export const TEST_TYPE_OPTIONS: { value: TestTypeCode; label: string; named: string }[] = [
+  { value: 'midterm', label: 'فتري', named: 'الفتري' },
+  { value: 'final', label: 'نهائي', named: 'النهائي' },
+  { value: 'quiz', label: 'قصير', named: 'الاختبار القصير' },
+  { value: 'oral', label: 'شفهي', named: 'الاختبار الشفهي' },
+  { value: 'project', label: 'أداء أو مشروع', named: 'الأداء أو المشروع' },
+  { value: 'coursework', label: 'أعمال سنة', named: 'أعمال السنة' },
+];
+
+export const TEST_SEQ_LABELS = ['الأول', 'الثاني', 'الثالث', 'الرابع'];
+
+export function gradeCountFor(stage: string | null | undefined): number {
+  return STAGE_OPTIONS.find(s => s.value === stage)?.grades ?? 0;
 }
 
-/** يطابق درجة الطالب بأقرب فئة من grade_bands. المطابقة الأساسية عبر المدى
- *  [min_score, max_score]؛ لو لم تقع الدرجة ضمن أي مدى (بيانات غير نظيفة رغم
- *  القص المسبق لـ[0,100]) نرجع لأقرب فئة بالمسافة المطلقة كحل احتياطي. */
-export function matchBand(score: number, bands: GradeBand[]): GradeBand | null {
+export function gradeOrdinal(grade: number): string {
+  return GRADE_ORDINALS[grade - 1] ?? String(grade);
+}
+
+/** الدرجة العظمى الفعلية لصف — 100 لو غابت أو لم تكن موجبة */
+export function fullMarkOf(fullMark: number | null | undefined): number {
+  return typeof fullMark === 'number' && fullMark > 0 ? fullMark : DEFAULT_FULL_MARK;
+}
+
+export function toPct(score: number, fullMark: number): number {
+  return (score / fullMark) * 100;
+}
+
+/** نسبة الطالب المحفوظة، أو محسوبة من الدرجة الخام لصف قديم بلا pct */
+export function studentPct(s: StudentResult, fullMark: number): number {
+  return typeof s.pct === 'number' ? s.pct : toPct(s.score, fullMark);
+}
+
+/** متوسط التحليل بالنسبة — من averagePct، أو من average لصف قديم */
+export function analysisAveragePct(row: ResultsAnalysisRow): number {
+  const { averagePct, average } = row.summary;
+  return typeof averagePct === 'number' ? averagePct : toPct(average, fullMarkOf(row.full_mark));
+}
+
+export function isDangerZone(pct: number): boolean {
+  return Math.abs(pct - DANGER_ZONE_CENTER) <= DANGER_ZONE_MARGIN;
+}
+
+/** يطابق نسبة الطالب بفئة من grade_bands: أعلى فئة يكون pct ≥ حدها الأدنى.
+ *  max_score لا يُستعمل في المطابقة، لأن الحدود أعداد صحيحة والنسبة عشرية
+ *  (89.5% تقع بين «جيد جداً» 80–89 و«ممتاز» 90–100، فتذهب إلى «جيد جداً»).
+ *  نسبة تحت كل الحدود (غير متوقعة، الأدنى 0) تذهب إلى الفئة الأدنى. */
+export function matchBand(pct: number, bands: GradeBand[]): GradeBand | null {
   if (bands.length === 0) return null;
-  const exact = bands.find(b => score >= b.min_score && score <= b.max_score);
-  if (exact) return exact;
-  let nearest = bands[0];
-  let nearestDist = Infinity;
-  for (const b of bands) {
-    const dist = score < b.min_score ? b.min_score - score : score - b.max_score;
-    if (dist < nearestDist) { nearest = b; nearestDist = dist; }
-  }
-  return nearest;
+  const byMinDesc = [...bands].sort((a, b) => b.min_score - a.min_score);
+  return byMinDesc.find(b => pct >= b.min_score) ?? byMinDesc[byMinDesc.length - 1];
 }
 
 const normalizeHeader = (h: string) => h.trim();
@@ -54,13 +107,21 @@ export function detectColumns(headers: string[]): ColumnDetectionResult {
   };
 }
 
-/** يحوّل نص خام إلى درجة رقمية ضمن [0,100]، أو null لو غير صالحة. */
-function parseScore(raw: string | undefined): number | null {
-  if (raw === undefined) return null;
-  const n = Number(String(raw).trim());
-  if (!Number.isFinite(n)) return null;
-  if (n < 0 || n > 100) return null;
-  return n;
+type ScoreCell =
+  | { kind: 'ok'; score: number }
+  | { kind: 'absent' }
+  | { kind: 'invalid' }
+  | { kind: 'over' };
+
+/** يقرأ خانة درجة: الفارغة غياب، والصفر المكتوب صفر، والنص غير الرقمي أو
+ *  السالب غير صالح، وما فوق الدرجة العظمى خطأ يمنع الحفظ. */
+function parseScoreCell(raw: string | undefined, fullMark: number): ScoreCell {
+  const text = String(raw ?? '').trim();
+  if (text === '') return { kind: 'absent' };
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) return { kind: 'invalid' };
+  if (n > fullMark) return { kind: 'over' };
+  return { kind: 'ok', score: n };
 }
 
 function mean(values: number[]): number {
@@ -81,28 +142,40 @@ export interface ComputeSummaryOptions {
   /** اختياري — غيابه لا يستبعد أي صف، فقط يستبدل الاسم الحقيقي بترقيم
    *  اصطناعي؛ الدرجة تبقى جزءاً كاملاً من المتوسط والتوزيع والتصنيف. */
   nameCol?: string | null;
-  sectionCol?: string | null;
+  fullMark: number;
 }
 
-/** يبني AnalysisSummary كاملاً من الصفوف المحلَّلة — منطق حسابي بحت، صفر AI. */
-export function computeSummary({ parsed, bands, scoreCol, sectionCol, nameCol }: ComputeSummaryOptions): AnalysisSummary {
-  const students: StudentResult[] = [];
-  let skippedRows = 0;
+export interface ComputeSummaryResult {
+  summary: AnalysisSummary;
+  /** أرقام صفوف الملف (العنوان الصف 1) التي درجتها أعلى من الدرجة العظمى —
+   *  غير فارغة تعني منع الحفظ */
+  overMaxRows: number[];
+}
 
-  parsed.rows.forEach((row) => {
-    const score = parseScore(row[scoreCol]);
-    if (score === null) { skippedRows++; return; }
-    const band = matchBand(score, bands);
+/** يبني AnalysisSummary كاملاً من الصفوف المحلَّلة — منطق حسابي بحت، صفر AI.
+ *  التصنيف كله بالنسبة؛ الغائبون خارج students وخارج كل الحسابات. */
+export function computeSummary({ parsed, bands, scoreCol, nameCol, fullMark }: ComputeSummaryOptions): ComputeSummaryResult {
+  const students: StudentResult[] = [];
+  const overMaxRows: number[] = [];
+  let skippedRows = 0;
+  let absentCount = 0;
+
+  parsed.rows.forEach((row, i) => {
+    const cell = parseScoreCell(row[scoreCol], fullMark);
+    if (cell.kind === 'absent') { absentCount++; return; }
+    if (cell.kind === 'invalid') { skippedRows++; return; }
+    if (cell.kind === 'over') { overMaxRows.push(i + 2); return; }
+    const pct = toPct(cell.score, fullMark);
+    const band = matchBand(pct, bands);
     if (!band) { skippedRows++; return; }
-    const section = sectionCol ? row[sectionCol]?.trim() || undefined : undefined;
     const name = (nameCol ? row[nameCol]?.trim() : '') || `طالب ${students.length + 1}`;
     students.push({
       name,
-      score,
-      section,
+      score: cell.score,
+      pct,
       bandId: band.id,
       bandLabel: band.label,
-      inDangerZone: isDangerZone(score),
+      inDangerZone: isDangerZone(pct),
     });
   });
 
@@ -110,43 +183,46 @@ export function computeSummary({ parsed, bands, scoreCol, sectionCol, nameCol }:
   for (const b of bands) bandCounts[b.id] = 0;
   for (const s of students) bandCounts[s.bandId] = (bandCounts[s.bandId] ?? 0) + 1;
 
-  const scores = students.map(s => s.score);
-  const average = mean(scores);
-  const stdDev = stddev(scores, average);
+  const pcts = students.map(s => studentPct(s, fullMark));
+  const averagePct = mean(pcts);
+  const stdDev = stddev(pcts, averagePct);
   const totalStudents = students.length;
-  const highScoreCount = students.filter(s => s.score >= HIGH_SCORE_THRESHOLD).length;
+  const highScoreCount = pcts.filter(p => p >= HIGH_SCORE_THRESHOLD).length;
   const highScorePct = totalStudents > 0 ? highScoreCount / totalStudents : 0;
 
   const inflationDetected = totalStudents >= INFLATION_MIN_SAMPLE &&
     (highScorePct > HIGH_SCORE_INFLATION_PCT || stdDev < LOW_STDDEV_INFLATION_THRESHOLD);
 
-  let sectionAverages: AnalysisSummary['sectionAverages'];
-  const distinctSections = new Set(students.map(s => s.section).filter(Boolean) as string[]);
-  if (distinctSections.size > 1) {
-    sectionAverages = Array.from(distinctSections).map(sec => {
-      const inSec = students.filter(s => s.section === sec);
-      return { section: sec, average: mean(inSec.map(s => s.score)), count: inSec.length };
-    });
-  }
-
   return {
-    students,
-    bandCounts,
-    average,
-    stdDev,
-    highScorePct,
-    inflationDetected,
-    sectionAverages,
-    totalStudents,
-    skippedRows,
+    summary: {
+      students,
+      bandCounts,
+      average: mean(students.map(s => s.score)),
+      averagePct,
+      stdDev,
+      highScorePct,
+      inflationDetected,
+      totalStudents,
+      absentCount,
+      skippedRows,
+    },
+    overMaxRows,
   };
 }
 
-/** يبني قيمة class_section الافتراضية لصف results_analysis: قيمة موحّدة فقط
- *  لو كل الطلاب بنفس الشعبة، وإلا null (التفصيل يبقى في summary.sectionAverages). */
-export function deriveUniformClassSection(summary: AnalysisSummary): string | null {
-  const sections = new Set(summary.students.map(s => s.section).filter(Boolean) as string[]);
-  return sections.size === 1 ? Array.from(sections)[0] : null;
+/** القيم المختلفة غير الفارغة في عمود الشعبة — أكثر من قيمة يمنع الحفظ
+ *  (كل تحليل شعبة واحدة). */
+export function distinctSectionValues(parsed: ParsedFile, sectionCol: string | null): string[] {
+  if (!sectionCol) return [];
+  return Array.from(new Set(parsed.rows.map(r => r[sectionCol]?.trim()).filter(Boolean) as string[]));
+}
+
+/** رقم شعبة صالح (1..SECTION_MAX) من نص، أو null */
+export function parseSectionNumber(value: string): number | null {
+  const text = value.trim();
+  if (text === '') return null;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= 1 && n <= SECTION_MAX ? n : null;
 }
 
 /** يبني قيمة "المادة" المقترحة من عمود مادة مكتشف، فقط لو كانت موحّدة عبر كل الصفوف. */
@@ -156,64 +232,161 @@ export function deriveUniformSubject(parsed: ParsedFile, subjectCol: string | nu
   return values.size === 1 ? Array.from(values)[0]! : '';
 }
 
-/** عتبة "القرب من النجاح" ضمن التجميع العلاجي — طالب بدرجة [50, 60) يُعتبر
+/** يبحث عن آخر تحليل للاختبار نفسه (مادة، مرحلة، صف، نوع، ترتيب) في شعبة
+ *  أخرى، لملء الدرجة العظمى تلقائياً. analyses مرتبة الأحدث أولاً. */
+export function findSameTestFullMark(
+  analyses: ResultsAnalysisRow[],
+  key: { subject: string; stage: string; grade: number | null; testType: string; testSeq: number | null; section: number | null },
+): { fullMark: number; section: number | null } | null {
+  if (!key.subject.trim() || !key.stage || !key.grade || !key.testType) return null;
+  const hit = analyses.find(a =>
+    a.subject.trim() === key.subject.trim() &&
+    a.stage === key.stage &&
+    a.grade_level === key.grade &&
+    a.test_type === key.testType &&
+    (a.test_seq ?? null) === key.testSeq &&
+    a.class_section !== key.section &&
+    typeof a.full_mark === 'number' && a.full_mark > 0);
+  return hit ? { fullMark: hit.full_mark as number, section: hit.class_section } : null;
+}
+
+// ---------------------------------------------------------------------------
+// التنسيق
+// ---------------------------------------------------------------------------
+
+/** منزلة عشرية واحدة، بلا «.0» */
+export function fmtNum(n: number): string {
+  return String(Math.round(n * 10) / 10);
+}
+
+/** «27 من 30 · 90%» */
+export function formatScore(raw: number, fullMark: number): string {
+  return `${fmtNum(raw)} من ${fmtNum(fullMark)} · ${fmtNum(toPct(raw, fullMark))}%`;
+}
+
+/** «ثاني متوسط · شعبة 3» — يُسقط الأجزاء الفارغة */
+export function formatClass(stage: string | null | undefined, grade: number | null | undefined, section: number | string | null | undefined): string {
+  const stageLabel = STAGE_OPTIONS.find(s => s.value === stage)?.label ?? stage ?? '';
+  const parts: string[] = [];
+  if (stageLabel) parts.push(grade ? `${gradeOrdinal(grade)} ${stageLabel}` : stageLabel);
+  if (section !== null && section !== undefined && String(section).trim() !== '') parts.push(`شعبة ${section}`);
+  return parts.join(' · ');
+}
+
+/** «الفتري الأول» — فارغ لو لم يُحدَّد النوع */
+export function formatTest(type: string | null | undefined, seq: number | null | undefined): string {
+  const named = TEST_TYPE_OPTIONS.find(t => t.value === type)?.named;
+  if (!named) return '';
+  return seq ? `${named} ${TEST_SEQ_LABELS[seq - 1] ?? seq}` : named;
+}
+
+interface LabelSource {
+  subject: string;
+  stage: string | null;
+  grade_level?: number | null;
+  class_section: number | string | null;
+  test_type?: string | null;
+  test_seq?: number | null;
+}
+
+/** «رياضيات · ثاني متوسط · شعبة 3 · الفتري الأول» */
+export function analysisSourceLabel(row: LabelSource): string {
+  return [row.subject, formatClass(row.stage, row.grade_level, row.class_section), formatTest(row.test_type, row.test_seq)]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** «رياضيات · ثاني متوسط · شعبة 3» — عنوان مجموعة المقارنة */
+export function classGroupLabel(row: LabelSource): string {
+  return [row.subject, formatClass(row.stage, row.grade_level, row.class_section)].filter(Boolean).join(' · ');
+}
+
+export function classGroupKey(row: LabelSource): string {
+  return [row.subject, row.stage ?? '', row.grade_level ?? '', row.class_section ?? ''].join('|');
+}
+
+// ---------------------------------------------------------------------------
+// التجميع العلاجي والفجوة
+// ---------------------------------------------------------------------------
+
+/** عتبة "القرب من النجاح" ضمن التجميع العلاجي — طالب بنسبة [50, 60) يُعتبر
  *  "قريباً من النجاح"، وأقل من 50 "فجوة أكبر". ثابت تقريبي قابل للتعديل لاحقاً
  *  دون تغيير منطق الحساب (نفس روح DANGER_ZONE_MARGIN أعلاه). */
 export const REMEDIAL_NEAR_SUCCESS_THRESHOLD = 50;
 
 export interface RemedialGroups {
-  /** درجة ضمن [50, 60) — قريبون من حد النجاح */
+  /** نسبة ضمن [50, 60) — قريبون من حد النجاح */
   nearSuccess: StudentResult[];
-  /** درجة أقل من 50 — فجوة أكبر تحتاج خطة أكثر تكثيفاً */
+  /** نسبة أقل من 50 — فجوة أكبر تحتاج خطة أكثر تكثيفاً */
   largerGap: StudentResult[];
 }
 
 /** يجمّع الطلاب "الأحوج لعلاج" (فئة "ضعيف" الأدنى، أو ضمن منطقة الخطر) إلى
- *  مجموعتين حسب مسافتهم عن حد النجاح (60). طالب ضمن منطقة الخطر لكن بدرجة
+ *  مجموعتين حسب مسافتهم عن حد النجاح (60%). طالب ضمن منطقة الخطر لكن بنسبة
  *  ≥60 (أي نجح فعلاً) لا يقع في أي من المجموعتين عمداً — التجميع العلاجي
  *  لطلاب لم ينجحوا بعد فقط، وليس تنبيه منطقة الخطر العام (مؤشر منفصل). */
-export function groupRemedialStudents(students: StudentResult[], weakBandId: string | undefined): RemedialGroups {
+export function groupRemedialStudents(students: StudentResult[], weakBandId: string | undefined, fullMark: number): RemedialGroups {
   const relevant = students.filter(s => s.bandId === weakBandId || s.inDangerZone);
   return {
-    nearSuccess: relevant.filter(s => s.score >= REMEDIAL_NEAR_SUCCESS_THRESHOLD && s.score < DANGER_ZONE_CENTER),
-    largerGap: relevant.filter(s => s.score < REMEDIAL_NEAR_SUCCESS_THRESHOLD),
+    nearSuccess: relevant.filter(s => {
+      const p = studentPct(s, fullMark);
+      return p >= REMEDIAL_NEAR_SUCCESS_THRESHOLD && p < DANGER_ZONE_CENTER;
+    }),
+    largerGap: relevant.filter(s => studentPct(s, fullMark) < REMEDIAL_NEAR_SUCCESS_THRESHOLD),
   };
 }
 
-/** مؤشر الفجوة: الفرق بين أعلى وأدنى درجة ضمن التحليل (skippedRows مُستبعدة
- *  أصلاً من summary.students وقت الحساب، فلا حاجة لاستبعاد إضافي هنا). */
+/** مؤشر الفجوة: الفرق الخام بين أعلى وأدنى درجة بين الحاضرين. */
 export function computeScoreGap(students: StudentResult[]): number {
   if (students.length === 0) return 0;
   const scores = students.map(s => s.score);
   return Math.max(...scores) - Math.min(...scores);
 }
 
+// ---------------------------------------------------------------------------
+// المقارنة
+// ---------------------------------------------------------------------------
+
 export interface ComparisonPoint {
   id: string;
   label: string;
+  /** متوسط النسب (0-100) */
   average: number;
   createdAt: string;
 }
 
-/** يبني سلسلة المقارنة الزمنية لكل التحليلات المشتركة بنفس قيمة subject
- *  (تطابق نصي تام) — مرتبة تصاعدياً بالتاريخ. لا فائدة من سلسلة بعنصر واحد،
- *  فالمستدعي (AnalysisSectionCard) هو من يقرر إظهار تبويب المقارنة أصلاً فقط
- *  عند وجود عنصرين فأكثر؛ هذه الدالة تبني السلسلة بصرف النظر عن طولها. */
-export function buildComparisonSeries(analyses: ResultsAnalysisRow[], subject: string): ComparisonPoint[] {
-  return analyses
-    .filter(a => a.subject === subject)
+/** تسمية نقطة المقارنة: اسم الاختبار إن وُجد، وإلا التاريخ */
+function pointLabel(row: { test_type?: string | null; test_seq?: number | null; created_at: string }): string {
+  return formatTest(row.test_type, row.test_seq) || formatDate(row.created_at, 'dayMonth');
+}
+
+/** يجمّع التحليلات بالمادة والشعبة معاً (مادة + مرحلة + صف + شعبة) — تبويب
+ *  "مقارنة" يظهر لكل مجموعة فيها عنصران فأكثر. */
+export function groupAnalysesByClass(analyses: ResultsAnalysisRow[]): Map<string, ResultsAnalysisRow[]> {
+  const map = new Map<string, ResultsAnalysisRow[]>();
+  for (const a of analyses) {
+    const key = classGroupKey(a);
+    const list = map.get(key) ?? [];
+    list.push(a);
+    map.set(key, list);
+  }
+  return map;
+}
+
+/** سلسلة المقارنة الزمنية لمجموعة واحدة بالنسب — مرتبة تصاعدياً بالتاريخ. */
+export function buildComparisonSeries(group: ResultsAnalysisRow[]): ComparisonPoint[] {
+  return group
     .slice()
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     .map(a => ({
       id: a.id,
-      label: formatDate(a.created_at, 'dayMonth'),
-      average: a.summary.average,
+      label: pointLabel(a),
+      average: analysisAveragePct(a),
       createdAt: a.created_at,
     }));
 }
 
-/** فرق نصي بين آخر نقطتين في سلسلة مقارنة — "تحسّن +X" أو "تراجع -X"، أو null
- *  لو أقل من نقطتين (لا فرق لحسابه). */
+/** فرق بين آخر نقطتين في سلسلة مقارنة (نقاط مئوية)، أو null لو أقل من نقطتين. */
 export function comparisonDelta(series: ComparisonPoint[]): { diff: number; improved: boolean } | null {
   if (series.length < 2) return null;
   const last = series[series.length - 1].average;
@@ -222,63 +395,74 @@ export function comparisonDelta(series: ComparisonPoint[]): { diff: number; impr
   return { diff, improved: diff >= 0 };
 }
 
-/** يجمّع التحليلات حسب subject (تطابق نصي) — يُستخدم لتحديد أي المواد تستحق
- *  تبويب "مقارنة" تلقائياً (عنصران فأكثر). */
-export function groupAnalysesBySubject(analyses: ResultsAnalysisRow[]): Map<string, ResultsAnalysisRow[]> {
-  const map = new Map<string, ResultsAnalysisRow[]>();
-  for (const a of analyses) {
-    const list = map.get(a.subject) ?? [];
-    list.push(a);
-    map.set(a.subject, list);
-  }
-  return map;
-}
+// ---------------------------------------------------------------------------
+// الشكل العام (?share= والمعاينة وتقرير الحصاد)
+// ---------------------------------------------------------------------------
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** يحوّل صفاً داخلياً كاملاً (يحوي أسماء الطلاب عبر summary.students) إلى
  *  الشكل المبسَّط الآمن للعرض العام — لمعاينة المالك لصفحته فقط، ولبناء
- *  لقطة تقرير الحصاد الفصلي. أدنى/أعلى درجة تُحسبان هنا بنفس
- *  الطريقة التي تحسبها get_shared_results_analysis() داخل SQL لنمط ?share=،
- *  حتى يتطابق العرض بين النمطين. */
+ *  لقطة تقرير الحصاد الفصلي. يحسب الحقول كما تحسبها
+ *  get_shared_results_analysis() داخل SQL لنمط ?share=، حتى يتطابق العرض. */
 export function toPublicResultsAnalysisRow(row: ResultsAnalysisRow): PublicResultsAnalysisRow {
+  const fullMark = fullMarkOf(row.full_mark);
   const scores = row.summary.students.map(s => s.score);
+  const hasScores = scores.length > 0;
+  const avg = mean(scores);
+  const min = hasScores ? Math.min(...scores) : 0;
+  const max = hasScores ? Math.max(...scores) : 0;
   return {
     id: row.id,
     subject: row.subject,
     stage: row.stage,
     class_section: row.class_section,
     created_at: row.created_at,
-    total_students: row.summary.totalStudents,
-    average: row.summary.average,
-    min_score: scores.length > 0 ? Math.min(...scores) : 0,
-    max_score: scores.length > 0 ? Math.max(...scores) : 0,
+    total_students: scores.length,
+    average: round2(avg),
+    min_score: min,
+    max_score: max,
+    grade_level: row.grade_level,
+    test_type: row.test_type,
+    test_seq: row.test_seq,
+    full_mark: fullMark,
+    absent_count: row.summary.absentCount ?? 0,
+    average_pct: round1(toPct(avg, fullMark)),
+    min_pct: round1(toPct(min, fullMark)),
+    max_pct: round1(toPct(max, fullMark)),
   };
 }
 
-/** نسخة عامة من groupAnalysesBySubject تعمل على الشكل المبسَّط — الشكلان غير
- *  متوافقين بنيوياً (average مباشر هنا، summary.average هناك) فتعذّر إعادة
- *  استخدام الدالة الأصلية مباشرة دون تحويل وسيط. */
-export function groupPublicAnalysesBySubject(rows: PublicResultsAnalysisRow[]): Map<string, PublicResultsAnalysisRow[]> {
-  const map = new Map<string, PublicResultsAnalysisRow[]>();
-  for (const r of rows) {
-    const list = map.get(r.subject) ?? [];
-    list.push(r);
-    map.set(r.subject, list);
-  }
-  return map;
+/** نسب صف عام — من الحقول المحسوبة، أو من الخام على 100 للقطات القديمة */
+export function publicPcts(r: PublicResultsAnalysisRow): { average: number; min: number; max: number; fullMark: number } {
+  const fullMark = fullMarkOf(r.full_mark);
+  return {
+    fullMark,
+    average: typeof r.average_pct === 'number' ? r.average_pct : toPct(r.average, fullMark),
+    min: typeof r.min_pct === 'number' ? r.min_pct : toPct(r.min_score, fullMark),
+    max: typeof r.max_pct === 'number' ? r.max_pct : toPct(r.max_score, fullMark),
+  };
 }
 
-/** نسخة عامة من buildComparisonSeries تعمل على الشكل المبسَّط — تُنتج نفس
- *  ComparisonPoint[] فتبقى comparisonDelta أعلاه قابلة لإعادة الاستخدام
- *  حرفياً بلا أي تكرار (هي أصلاً عامة، لا تعتمد على ResultsAnalysisRow). */
-export function buildPublicComparisonSeries(rows: PublicResultsAnalysisRow[], subject: string): ComparisonPoint[] {
-  return rows
-    .filter(r => r.subject === subject)
-    .slice()
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    .map(r => ({
-      id: r.id,
-      label: formatDate(r.created_at, 'dayMonth'),
-      average: r.average,
-      createdAt: r.created_at,
+/** عناصر المقارنة للشكل العام: مجموعة لكل (مادة + مرحلة + صف + شعبة) فيها
+ *  تحليلان فأكثر. خاصية subject تحمل عنوان المجموعة الكامل، ويبقى اسمها كما
+ *  هو لتوافق frozenResultsComparisons في لقطات الحصاد القديمة. */
+export function buildPublicComparisons(rows: PublicResultsAnalysisRow[]): { subject: string; series: ComparisonPoint[] }[] {
+  const groups = new Map<string, PublicResultsAnalysisRow[]>();
+  for (const r of rows) {
+    const key = classGroupKey(r);
+    const list = groups.get(key) ?? [];
+    list.push(r);
+    groups.set(key, list);
+  }
+  return Array.from(groups.values())
+    .filter(list => list.length >= 2)
+    .map(list => ({
+      subject: classGroupLabel(list[0]),
+      series: list
+        .slice()
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        .map(r => ({ id: r.id, label: pointLabel(r), average: publicPcts(r).average, createdAt: r.created_at })),
     }));
 }

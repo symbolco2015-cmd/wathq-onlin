@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
-import type { AnalysisSummary, GradeBand, ResultsAnalysisRow } from './types';
+import type { AnalysisMeta, AnalysisSummary, GradeBand, ResultsAnalysisRow } from './types';
 
 /** نافذة زمنية حول تاريخ إنشاء التحليل يُبحَث ضمنها عن شاهد ذي صلة —
  *  ±30 يوماً، ثابت قابل للتعديل لاحقاً. */
@@ -48,8 +48,7 @@ export function useResultsAnalysis(userId: string | undefined) {
   }, [fetchGradeBands, fetchAnalyses]);
 
   const saveAnalysis = useCallback(async (
-    subject: string,
-    classSection: string | null,
+    meta: AnalysisMeta,
     summary: AnalysisSummary,
   ): Promise<ResultsAnalysisRow | null> => {
     if (!supabase || !userId) return null;
@@ -57,9 +56,13 @@ export function useResultsAnalysis(userId: string | undefined) {
       .from('results_analysis')
       .insert({
         portfolio_id: userId,
-        subject,
-        stage: null,
-        class_section: classSection,
+        subject: meta.subject,
+        stage: meta.stage,
+        grade_level: meta.grade_level,
+        class_section: meta.class_section,
+        test_type: meta.test_type,
+        test_seq: meta.test_seq,
+        full_mark: meta.full_mark,
         summary,
         student_names_included: true, // مخزن داخلي فقط — الأسماء تُحفظ دائماً هنا
       })

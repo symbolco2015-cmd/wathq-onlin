@@ -8,7 +8,7 @@ import { calculatePointsLevelFromTotal, formatDate } from '../utils';
 import type { AcademicDate, AppState, HarvestSnapshot, SectionData } from '../types';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { ResultsAnalysisRow } from './ResultsAnalysis/types';
-import { toPublicResultsAnalysisRow, groupPublicAnalysesBySubject, buildPublicComparisonSeries } from './ResultsAnalysis/logic';
+import { toPublicResultsAnalysisRow, buildPublicComparisons } from './ResultsAnalysis/logic';
 
 interface HarvestReportSheetProps {
   isOpen: boolean;
@@ -191,10 +191,7 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
         .lte('created_at', toIso);
       if (raErr) throw raErr;
       const resultsAnalysis = ((analysisRows || []) as ResultsAnalysisRow[]).map(toPublicResultsAnalysisRow);
-      const resultsComparisonGroups = groupPublicAnalysesBySubject(resultsAnalysis);
-      const resultsComparisons = Array.from(resultsComparisonGroups.entries())
-        .filter(([, rows]) => rows.length >= 2)
-        .map(([subject]) => ({ subject, series: buildPublicComparisonSeries(resultsAnalysis, subject) }));
+      const resultsComparisons = buildPublicComparisons(resultsAnalysis);
 
       // 4) شارة اللقب/النقاط — من مجموع شواهد الفترة فقط، وليس نافذة "آخر 3
       // أشهر تقويمية" المعتادة في calculatePointsLevel (تلك مرتبطة بـ"اليوم"،

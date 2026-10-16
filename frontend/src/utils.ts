@@ -198,3 +198,44 @@ export function currentHijriYear(): number {
     .find(p => p.type === 'year')?.value;
   return Number(year);
 }
+
+// ---------------------------------------------------------------------------
+// جمع الأعداد
+// ---------------------------------------------------------------------------
+
+/** صيغ كلمة المعدود. one/two تُكتبان بلا رقم («طالب واحد»، «طالبان»)،
+ *  few للجمع (3-10)، many للمفرد المنصوب (11-99)، single للمفرد المجرور
+ *  (100 وما تنتهي خانتاه بـ 00 أو 01 أو 02، والصفر). twoGen المثنى المجرور
+ *  («حفظ تحليلين»)، ويُستعمل بدل two حين يُطلب. */
+export interface CountForms {
+  one: string;
+  two: string;
+  twoGen?: string;
+  few: string;
+  many: string;
+  single: string;
+}
+
+export const AR_STUDENT: CountForms = { one: 'طالب واحد', two: 'طالبان', twoGen: 'طالبين', few: 'طلاب', many: 'طالباً', single: 'طالب' };
+export const AR_ABSENT: CountForms = { one: 'غائب واحد', two: 'غائبان', twoGen: 'غائبين', few: 'غائبين', many: 'غائباً', single: 'غائب' };
+export const AR_ANALYSIS: CountForms = { one: 'تحليل واحد', two: 'تحليلان', twoGen: 'تحليلين', few: 'تحليلات', many: 'تحليلاً', single: 'تحليل' };
+export const AR_EVIDENCE: CountForms = { one: 'شاهد واحد', two: 'شاهدان', twoGen: 'شاهدين', few: 'شواهد', many: 'شاهداً', single: 'شاهد' };
+export const AR_ROW: CountForms = { one: 'صف واحد', two: 'صفان', twoGen: 'صفين', few: 'صفوف', many: 'صفاً', single: 'صف' };
+export const AR_SHEET: CountForms = { one: 'ورقة واحدة', two: 'ورقتان', twoGen: 'ورقتين', few: 'أوراق', many: 'ورقة', single: 'ورقة' };
+
+/** كلمة المعدود وحدها لعدد يُكتب بجانبها (بطاقة رقم كبير وتحته الكلمة):
+ *  1 ← طالب، 2 ← طالبان، 3-10 ← طلاب، 11-99 ← طالباً، 100 ← طالب. */
+export function countWord(n: number, forms: CountForms, opts?: { genitive?: boolean }): string {
+  if (n === 2) return opts?.genitive && forms.twoGen ? forms.twoGen : forms.two;
+  const r = n % 100;
+  if (n === 0 || n === 1 || (n >= 100 && r <= 2)) return forms.single;
+  if (r >= 3 && r <= 10) return forms.few;
+  return forms.many;
+}
+
+/** العدد مع معدوده: «طالب واحد»، «طالبان»، «3 طلاب»، «11 طالباً»، «100 طالب». */
+export function countAr(n: number, forms: CountForms, opts?: { genitive?: boolean }): string {
+  if (n === 1) return forms.one;
+  if (n === 2) return countWord(n, forms, opts);
+  return `${n} ${countWord(n, forms)}`;
+}

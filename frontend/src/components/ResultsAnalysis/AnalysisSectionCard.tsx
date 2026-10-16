@@ -10,9 +10,10 @@ import {
   analysisSourceLabel, buildComparisonSeries, classGroupLabel, computeScoreGap, fmtNum, formatScore, fullMarkOf,
   groupAnalysesByClass, groupRemedialStudents,
 } from './logic';
-import type { AnalysisMeta, AnalysisSummary, GradeBand, ResultsAnalysisRow } from './types';
+import type { GradeBand, ResultsAnalysisRow } from './types';
+import type { SaveAnalysisFn } from './useResultsAnalysis';
 import type { SectionData } from '../../types';
-import { formatDate } from '../../utils';
+import { AR_ABSENT, AR_STUDENT, countWord, formatDate } from '../../utils';
 import type { ToastKind } from '../UI';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvidence').useSupabaseEvidence>;
@@ -23,7 +24,7 @@ interface AnalysisSectionBodyProps {
   supabaseEv?: SupabaseEvidenceHook;
   gradeBands: GradeBand[];
   analyses: ResultsAnalysisRow[];
-  saveAnalysis: (meta: AnalysisMeta, summary: AnalysisSummary) => Promise<ResultsAnalysisRow | null>;
+  saveAnalysis: SaveAnalysisFn;
   onEvidenceSaved?: EvidenceFormProps['onEvidenceSaved'];
   onToast?: (msg: string, kind: ToastKind) => void;
   /** معرّف تحليل يجب فتح تبويبه مباشرة — يصل من بطاقة "تحسين نتائج المتعلمين"
@@ -200,12 +201,12 @@ function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyPro
         <div className={`grid grid-cols-2 ${absentCount > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-3 mb-4 text-center`}>
           <div>
             <div className={STAT_NUM}>{analysis.summary.totalStudents}</div>
-            <div className={STAT_LABEL}>طالب</div>
+            <div className={STAT_LABEL}>{countWord(analysis.summary.totalStudents, AR_STUDENT)}</div>
           </div>
           {absentCount > 0 && (
             <div>
               <div className={STAT_NUM}>{absentCount}</div>
-              <div className={STAT_LABEL}>غائب</div>
+              <div className={STAT_LABEL}>{countWord(absentCount, AR_ABSENT)}</div>
             </div>
           )}
           <div>

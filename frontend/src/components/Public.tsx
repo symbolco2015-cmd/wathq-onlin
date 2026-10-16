@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import type { ContinuityData, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
-import { formatDate } from '../utils';
+import { AR_ANALYSIS, countAr, formatDate } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
@@ -355,7 +355,7 @@ export default function Public({ state, sections: allSections, continuity, evide
     specialItems.push({ key: 'indiv', open: { kind: 'indiv' }, icon: 'ti-users', title: indivDiffSub, count: nEv(indivDiffEvs.length) });
   }
   if (analysisSection && (analysisRowCount > 0 || analysisEvCount > 0)) {
-    const parts = [analysisRowCount > 0 ? `${analysisRowCount} تحليل` : '', analysisEvCount > 0 ? nEv(analysisEvCount) : ''].filter(Boolean);
+    const parts = [analysisRowCount > 0 ? countAr(analysisRowCount, AR_ANALYSIS) : '', analysisEvCount > 0 ? nEv(analysisEvCount) : ''].filter(Boolean);
     specialItems.push({ key: 'analysis', open: { kind: 'analysis' }, icon: analysisSection.icon, title: analysisSection.ttl, count: parts.join(' · ') });
   }
   if (improvementSection && improvementGroups.length > 0) {

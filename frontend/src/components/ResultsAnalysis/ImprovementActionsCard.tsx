@@ -7,6 +7,7 @@ import type { SmartCheckResult } from './useResultsAnalysis';
 import type { GradeBand, ResultsAnalysisRow } from './types';
 import type { SectionData } from '../../types';
 import type { ToastKind } from '../UI';
+import { AR_STUDENT, countAr } from '../../utils';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -97,7 +98,7 @@ export function ImprovementActionsBody({
             icon="ti-alert-circle"
             tone="warn"
             sourceLabel={analysisSourceLabel(a)}
-            title={`${remedialTotal} طالب يحتاجون خطة علاجية (${parts.join(' · ')})`}
+            title={`يحتاجون خطة علاجية: ${countAr(remedialTotal, AR_STUDENT)} (${parts.join(' · ')})`}
             subtitle="هل وثّقت خطة علاجية لهذه المجموعة؟"
             check={checks[checkKey(a.id, 'remedial')] ?? { loading: false, result: null }}
             onSmartCheck={() => handleSmartCheck(a, 'remedial')}
@@ -118,7 +119,7 @@ export function ImprovementActionsBody({
             icon="ti-award"
             tone="accent"
             sourceLabel={analysisSourceLabel(a)}
-            title={`${excellentCount} طالب متفوق في فئة "${excellentBand.label}"`}
+            title={`متفوقون في فئة "${excellentBand.label}": ${countAr(excellentCount, AR_STUDENT)}`}
             subtitle="هل قدّمت تكريماً؟"
             check={checks[checkKey(a.id, 'honor')] ?? { loading: false, result: null }}
             onSmartCheck={() => handleSmartCheck(a, 'honor')}

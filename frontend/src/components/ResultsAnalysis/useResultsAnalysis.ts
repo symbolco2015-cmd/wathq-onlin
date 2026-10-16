@@ -11,6 +11,12 @@ const SMART_CHECK_WINDOW_DAYS = 30;
 const REMEDIAL_KEYWORDS = ['علاج'];
 const HONOR_KEYWORDS = ['تكريم', 'شهادة شكر'];
 
+export type SaveAnalysisResult =
+  | { row: ResultsAnalysisRow; duplicate: false }
+  | { row: null; duplicate: boolean };
+
+export type SaveAnalysisFn = (meta: AnalysisMeta, summary: AnalysisSummary, replaceId?: string) => Promise<SaveAnalysisResult>;
+
 export interface SmartCheckResult {
   found: boolean;
   evidenceTitle?: string;
@@ -47,31 +53,37 @@ export function useResultsAnalysis(userId: string | undefined) {
     Promise.all([fetchGradeBands(), fetchAnalyses()]).finally(() => setLoading(false));
   }, [fetchGradeBands, fetchAnalyses]);
 
+  /** يحفظ تحليل شعبة. replaceId: «استبدال» تحليل محفوظ بالمفتاح نفسه —
+   *  تحديث (UPDATE) للصف القديم في عملية واحدة، فيبقى id وcreated_at، ولا
+   *  تمر لحظة يكون فيها القديم محذوفاً والجديد لم يُنشأ. duplicate: رفضه
+   *  الفهرس الفريد results_analysis_unique_test (23505). */
   const saveAnalysis = useCallback(async (
     meta: AnalysisMeta,
     summary: AnalysisSummary,
-  ): Promise<ResultsAnalysisRow | null> => {
-    if (!supabase || !userId) return null;
-    const { data, error } = await supabase
-      .from('results_analysis')
-      .insert({
-        portfolio_id: userId,
-        subject: meta.subject,
-        stage: meta.stage,
-        grade_level: meta.grade_level,
-        class_section: meta.class_section,
-        test_type: meta.test_type,
-        test_seq: meta.test_seq,
-        full_mark: meta.full_mark,
-        summary,
-        student_names_included: true, // مخزن داخلي فقط — الأسماء تُحفظ دائماً هنا
-      })
-      .select()
-      .single();
-    if (error) { console.error('[ResultsAnalysis] تعذّر حفظ التحليل:', error.message); return null; }
+    replaceId?: string,
+  ): Promise<SaveAnalysisResult> => {
+    if (!supabase || !userId) return { row: null, duplicate: false };
+    const fields = {
+      subject: meta.subject,
+      stage: meta.stage,
+      grade_level: meta.grade_level,
+      class_section: meta.class_section,
+      test_type: meta.test_type,
+      test_seq: meta.test_seq,
+      full_mark: meta.full_mark,
+      summary,
+      student_names_included: true, // مخزن داخلي فقط — الأسماء تُحفظ دائماً هنا
+    };
+    const { data, error } = replaceId
+      ? await supabase.from('results_analysis').update(fields).eq('id', replaceId).eq('portfolio_id', userId).select().single()
+      : await supabase.from('results_analysis').insert({ portfolio_id: userId, ...fields }).select().single();
+    if (error) {
+      console.error('[ResultsAnalysis] تعذّر حفظ التحليل:', error.message);
+      return { row: null, duplicate: error.code === '23505' };
+    }
     const row = data as ResultsAnalysisRow;
-    setAnalyses(prev => [row, ...prev]);
-    return row;
+    setAnalyses(prev => replaceId ? prev.map(a => a.id === row.id ? row : a) : [row, ...prev]);
+    return { row, duplicate: false };
   }, [userId]);
 
   /** فحص تقريبي بالكلمات المفتاحية فقط (ILIKE) — لا ذكاء اصطناعي إطلاقاً. */

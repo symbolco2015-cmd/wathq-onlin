@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SectionData, SectionIndicator } from '../types';
 import type { SupabaseEvidence, EvidenceType } from '../hooks/useSupabaseEvidence';
-import { formatDate } from '../utils';
+import { AR_EVIDENCE, countAr, formatDate } from '../utils';
 import {
   CUSTOM_INDICATOR_LIMIT, CUSTOM_LIMIT_MSG, CUSTOM_NAME_MAX, validateIndicatorName,
   type IndicatorResult,
@@ -40,11 +40,7 @@ export function sectionLevel(covered: number, total: number, n: number): Level {
 
 /** صيغة العدد العربية — nEv() في النموذج */
 export function nEv(n: number): string {
-  if (n === 0) return 'لا شواهد بعد';
-  if (n === 1) return 'شاهد واحد';
-  if (n === 2) return 'شاهدان';
-  if (n <= 10) return `${n} شواهد`;
-  return `${n} شاهداً`;
+  return n === 0 ? 'لا شواهد بعد' : countAr(n, AR_EVIDENCE);
 }
 
 export const TYPE_ICON: Record<EvidenceType, string> = {

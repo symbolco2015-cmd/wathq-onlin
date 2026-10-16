@@ -1,5 +1,8 @@
-import type { GradeBand, AnalysisSummary, StudentResult, ColumnDetectionResult, ParsedFile, ResultsAnalysisRow, PublicResultsAnalysisRow, StageCode, TestTypeCode } from './types';
-import { formatDate } from '../../utils';
+import type { GradeBand, AnalysisSummary, StudentResult, ResultsAnalysisRow, PublicResultsAnalysisRow, SectionRow, StageCode, TestTypeCode } from './types';
+import { AR_STUDENT, countAr, formatDate } from '../../utils';
+import { parseScore } from './fileModel';
+
+export { SECTION_MAX } from './fileModel';
 
 /** كل الحدود أدناه نسب مئوية (0-100) لا درجات خام: الدرجة تُحوَّل أولاً إلى
  *  score / full_mark × 100، ثم تُصنَّف. */
@@ -22,9 +25,6 @@ const HIGH_SCORE_THRESHOLD = 95;
 export const DEFAULT_FULL_MARK = 100;
 /** أزرار الدرجة العظمى السريعة في نموذج الرفع */
 export const FULL_MARK_PRESETS = [10, 20, 30, 40, 50, 100];
-/** الشعبة: قائمة من 1 إلى SECTION_LIST_MAX، و«شعبة أخرى» حتى SECTION_MAX (قيد CHECK) */
-export const SECTION_LIST_MAX = 15;
-export const SECTION_MAX = 50;
 
 export const STAGE_OPTIONS: { value: StageCode; label: string; grades: number }[] = [
   { value: 'primary', label: 'ابتدائي', grades: 6 },
@@ -94,42 +94,6 @@ export function matchBand(pct: number, bands: GradeBand[]): GradeBand | null {
   return byMinDesc.find(b => pct >= b.min_score) ?? byMinDesc[byMinDesc.length - 1];
 }
 
-const normalizeHeader = (h: string) => h.trim();
-
-/** يبحث عن عمود وحيد يحوي الكلمة المفتاحية ضمن اسمه — تعدد المطابقات يُعامَل
- *  كفشل اكتشاف (غموض)، وليس تخميناً؛ الواجهة تعرض حينها اختياراً يدوياً. */
-function findColumn(headers: string[], keywords: string[]): string | null {
-  const matches = headers.filter(h => keywords.some(k => h.includes(k)));
-  return matches.length === 1 ? matches[0] : null;
-}
-
-export function detectColumns(headers: string[]): ColumnDetectionResult {
-  const normalized = headers.map(normalizeHeader);
-  return {
-    scoreCol: findColumn(normalized, ['درجة']),
-    nameCol: findColumn(normalized, ['اسم']),
-    sectionCol: findColumn(normalized, ['شعبة', 'فصل']),
-    subjectCol: findColumn(normalized, ['مادة']),
-  };
-}
-
-type ScoreCell =
-  | { kind: 'ok'; score: number }
-  | { kind: 'absent' }
-  | { kind: 'invalid' }
-  | { kind: 'over' };
-
-/** يقرأ خانة درجة: الفارغة غياب، والصفر المكتوب صفر، والنص غير الرقمي أو
- *  السالب غير صالح، وما فوق الدرجة العظمى خطأ يمنع الحفظ. */
-function parseScoreCell(raw: string | undefined, fullMark: number): ScoreCell {
-  const text = String(raw ?? '').trim();
-  if (text === '') return { kind: 'absent' };
-  const n = Number(text);
-  if (!Number.isFinite(n) || n < 0) return { kind: 'invalid' };
-  if (n > fullMark) return { kind: 'over' };
-  return { kind: 'ok', score: n };
-}
-
 function mean(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((a, b) => a + b, 0) / values.length;
@@ -142,48 +106,56 @@ function stddev(values: number[], avg: number): number {
 }
 
 export interface ComputeSummaryOptions {
-  parsed: ParsedFile;
+  /** صفوف شعبة واحدة بعد التقسيم (splitSections في fileModel.ts) */
+  rows: SectionRow[];
   bands: GradeBand[];
-  scoreCol: string;
-  /** اختياري — غيابه لا يستبعد أي صف، فقط يستبدل الاسم الحقيقي بترقيم
-   *  اصطناعي؛ الدرجة تبقى جزءاً كاملاً من المتوسط والتوزيع والتصنيف. */
-  nameCol?: string | null;
   fullMark: number;
+  /** صفوف الشعبة من أكثر من ورقة — يُذكر اسم الورقة مع رقم الصف */
+  multiSheet?: boolean;
 }
 
 export interface ComputeSummaryResult {
   summary: AnalysisSummary;
-  /** أرقام صفوف الملف (العنوان الصف 1) التي درجتها أعلى من الدرجة العظمى —
-   *  غير فارغة تعني منع الحفظ */
-  overMaxRows: number[];
+  /** الصفوف (رقم Excel) التي درجتها أعلى من الدرجة العظمى — غير فارغة تعني منع الحفظ */
+  overMaxRows: string[];
+  /** صفوف درجتها نص غير رقمي — تُستبعد وتُذكر */
+  ignoredRows: string[];
+  /** أعلى درجة خام بين الحاضرين، أو null */
+  maxScore: number | null;
+  /** الاسم مكتوب في الملف (لا ترقيم اصطناعي) */
+  hasNames: boolean;
 }
 
-/** يبني AnalysisSummary كاملاً من الصفوف المحلَّلة — منطق حسابي بحت، صفر AI.
- *  التصنيف كله بالنسبة؛ الغائبون خارج students وخارج كل الحسابات. */
-export function computeSummary({ parsed, bands, scoreCol, nameCol, fullMark }: ComputeSummaryOptions): ComputeSummaryResult {
+/** يبني AnalysisSummary لشعبة واحدة — منطق حسابي بحت، صفر AI. التصنيف كله
+ *  بالنسبة؛ الغائبون (خانة فارغة أو «غ/غائب/غياب») خارج students وكل الحسابات. */
+export function computeSummary({ rows, bands, fullMark, multiSheet = false }: ComputeSummaryOptions): ComputeSummaryResult {
   const students: StudentResult[] = [];
-  const overMaxRows: number[] = [];
-  let skippedRows = 0;
+  const overMaxRows: string[] = [];
+  const ignoredRows: string[] = [];
   let absentCount = 0;
+  let maxScore: number | null = null;
+  let hasNames = false;
 
-  parsed.rows.forEach((row, i) => {
-    const cell = parseScoreCell(row[scoreCol], fullMark);
-    if (cell.kind === 'absent') { absentCount++; return; }
-    if (cell.kind === 'invalid') { skippedRows++; return; }
-    if (cell.kind === 'over') { overMaxRows.push(i + 2); return; }
+  for (const row of rows) {
+    const label = multiSheet ? `${row.sheet} ${row.rowNo}` : String(row.rowNo);
+    const cell = parseScore(row.scoreRaw);
+    if (cell.kind === 'empty') { absentCount++; continue; }
+    if (cell.kind === 'invalid') { ignoredRows.push(label); continue; }
+    if (cell.score > fullMark) { overMaxRows.push(label); continue; }
     const pct = toPct(cell.score, fullMark);
     const band = matchBand(pct, bands);
-    if (!band) { skippedRows++; return; }
-    const name = (nameCol ? row[nameCol]?.trim() : '') || `طالب ${students.length + 1}`;
+    if (!band) { ignoredRows.push(label); continue; }
+    if (row.name) hasNames = true;
+    maxScore = maxScore === null ? cell.score : Math.max(maxScore, cell.score);
     students.push({
-      name,
+      name: row.name || `طالب ${students.length + 1}`,
       score: cell.score,
       pct,
       bandId: band.id,
       bandLabel: band.label,
       inDangerZone: isDangerZone(pct),
     });
-  });
+  }
 
   const bandCounts: Record<string, number> = {};
   for (const b of bands) bandCounts[b.id] = 0;
@@ -210,32 +182,111 @@ export function computeSummary({ parsed, bands, scoreCol, nameCol, fullMark }: C
       inflationDetected,
       totalStudents,
       absentCount,
-      skippedRows,
+      skippedRows: ignoredRows.length,
     },
     overMaxRows,
+    ignoredRows,
+    maxScore,
+    hasNames,
   };
 }
 
-/** القيم المختلفة غير الفارغة في عمود الشعبة — أكثر من قيمة يمنع الحفظ
- *  (كل تحليل شعبة واحدة). */
-export function distinctSectionValues(parsed: ParsedFile, sectionCol: string | null): string[] {
-  if (!sectionCol) return [];
-  return Array.from(new Set(parsed.rows.map(r => r[sectionCol]?.trim()).filter(Boolean) as string[]));
+// ---------------------------------------------------------------------------
+// الفحص قبل الحفظ
+// ---------------------------------------------------------------------------
+
+/** أكثر عدد من أرقام الصفوف يُذكر في رسالة */
+const MAX_LISTED_ROWS = 10;
+/** نسبة الغياب التي يُنبَّه فوقها */
+const ABSENT_WARN_RATIO = 0.3;
+/** فرق عدد الطلاب عن آخر تحليل للشعبة الذي يُنبَّه فوقه */
+const COUNT_CHANGE_WARN_RATIO = 0.3;
+
+/** نص تنبيه تضخم الدرجات كما كان في نافذة الرفع. الشرط inflationDetected
+ *  في computeSummary: 5 حاضرين على الأقل، و(أكثر من نصفهم بنسبة ≥95%، أو
+ *  الانحراف المعياري أقل من 5 نقاط مئوية). تنبيه لا يمنع الحفظ. */
+export const INFLATION_WARNING = 'مؤشرات على تضخم في الدرجات — نسبة عالية من الدرجات المرتفعة جداً أو تكدّس ضعيف. يُنصح بتنويع أدوات التقييم لقياس الفروق الفردية بدقة أكبر.';
+
+export function listRows(rows: string[]): string {
+  const shown = rows.slice(0, MAX_LISTED_ROWS).join('، ');
+  return rows.length > MAX_LISTED_ROWS ? `${shown}، و${rows.length - MAX_LISTED_ROWS} غيرها` : shown;
 }
 
-/** رقم شعبة صالح (1..SECTION_MAX) من نص، أو null */
-export function parseSectionNumber(value: string): number | null {
-  const text = value.trim();
-  if (text === '') return null;
-  const n = Number(text);
-  return Number.isInteger(n) && n >= 1 && n <= SECTION_MAX ? n : null;
+export interface SectionCheck {
+  /** يمنع حفظ هذه الشعبة */
+  blockers: string[];
+  /** يقرأه المعلم ولا يمنع */
+  warnings: string[];
 }
 
-/** يبني قيمة "المادة" المقترحة من عمود مادة مكتشف، فقط لو كانت موحّدة عبر كل الصفوف. */
-export function deriveUniformSubject(parsed: ParsedFile, subjectCol: string | null): string {
-  if (!subjectCol) return '';
-  const values = new Set(parsed.rows.map(r => r[subjectCol]?.trim()).filter(Boolean));
-  return values.size === 1 ? Array.from(values)[0]! : '';
+/** موانع الحفظ وتنبيهاته لشعبة واحدة. previousCount: عدد الحاضرين في آخر
+ *  تحليل للمادة والمرحلة والصف والشعبة نفسها، أو null. */
+export function checkSection(result: ComputeSummaryResult, fullMark: number, previousCount: number | null): SectionCheck {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  const { summary, overMaxRows, maxScore } = result;
+  const absent = summary.absentCount ?? 0;
+
+  if (overMaxRows.length > 0) {
+    blockers.push(`درجة أعلى من ${fmtNum(fullMark)} في ${overMaxRows.length === 1 ? 'الصف' : 'الصفوف'} ${listRows(overMaxRows)}`);
+  }
+  if (summary.totalStudents === 0 && overMaxRows.length === 0) {
+    blockers.push('لا حاضرين في هذه الشعبة');
+  }
+
+  if (summary.inflationDetected) warnings.push(INFLATION_WARNING);
+  if (maxScore !== null && maxScore < fullMark / 2) {
+    warnings.push(`أعلى درجة ${fmtNum(maxScore)} والاختبار من ${fmtNum(fullMark)}. هل الدرجة العظمى صحيحة؟`);
+  }
+  const listed = summary.totalStudents + absent + overMaxRows.length;
+  if (listed > 0 && absent / listed > ABSENT_WARN_RATIO) {
+    warnings.push(`${absent} من ${listed} بلا درجة. هل هم غائبون؟`);
+  }
+  if (result.hasNames) {
+    const seen = new Set<string>();
+    const dups = new Set<string>();
+    for (const s of summary.students) {
+      const n = s.name.replace(/\s+/g, ' ').trim();
+      if (seen.has(n)) dups.add(n); else seen.add(n);
+    }
+    if (dups.size > 0) warnings.push(`اسم مكرر في الشعبة: ${Array.from(dups).slice(0, 3).map(n => `«${n}»`).join('، ')}`);
+  }
+  if (previousCount !== null && previousCount > 0 &&
+      Math.abs(summary.totalStudents - previousCount) / previousCount > COUNT_CHANGE_WARN_RATIO) {
+    warnings.push(`في هذا الملف ${countAr(summary.totalStudents, AR_STUDENT)}، وفي آخر تحليل لهذه الشعبة في المادة ${countAr(previousCount, AR_STUDENT)}.`);
+  }
+  return { blockers, warnings };
+}
+
+const normSubject = (s: string) => s.trim().toLowerCase();
+
+/** عدد الحاضرين في آخر تحليل للمادة والمرحلة والصف والشعبة (أي اختبار).
+ *  analyses مرتبة الأحدث أولاً. */
+export function previousSectionCount(
+  analyses: ResultsAnalysisRow[],
+  key: { subject: string; stage: string; grade: number | null; section: number },
+): number | null {
+  const hit = analyses.find(a =>
+    normSubject(a.subject) === normSubject(key.subject) &&
+    a.stage === key.stage &&
+    a.grade_level === key.grade &&
+    a.class_section === key.section);
+  return hit ? hit.summary.totalStudents : null;
+}
+
+/** تحليل محفوظ بالمفتاح نفسه (مادة، مرحلة، صف، شعبة، نوع، رقم) — يطابق
+ *  الفهرس الفريد results_analysis_unique_test في القاعدة. */
+export function findDuplicateAnalysis(
+  analyses: ResultsAnalysisRow[],
+  key: { subject: string; stage: string; grade: number | null; section: number; testType: string; testSeq: number | null },
+): ResultsAnalysisRow | null {
+  return analyses.find(a =>
+    normSubject(a.subject) === normSubject(key.subject) &&
+    a.stage === key.stage &&
+    a.grade_level === key.grade &&
+    a.class_section === key.section &&
+    a.test_type === key.testType &&
+    (a.test_seq ?? 0) === (key.testSeq ?? 0)) ?? null;
 }
 
 /** يبحث عن آخر تحليل للاختبار نفسه (مادة، مرحلة، صف، نوع، ترتيب) في شعبة

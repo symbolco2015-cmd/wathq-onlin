@@ -6,41 +6,33 @@ import Papa from 'papaparse';
 // آخرين أو من الخادم)، وكل التنفيذ محلي في جلسته فقط. قرار مقصود بقبول هذه
 // المخاطرة المحدودة بدل تعطيل دعم XLSX بالكامل — أعد تقييمه إن ظهر إصلاح رسمي.
 import * as XLSX from 'xlsx';
-import type { ParsedFile } from './types';
+import type { RawSheet } from './types';
 
-/** يقرأ CSV/XLSX بالكامل في المتصفح — لا رفع للملف الخام لأي Storage أو خادم. */
-export async function parseFile(file: File): Promise<ParsedFile> {
-  const isCsv = /\.csv$/i.test(file.name);
-  if (isCsv) return parseCsv(file);
-  return parseXlsx(file);
+/** يقرأ CSV/XLSX بالكامل في المتصفح — لا رفع للملف الخام لأي Storage أو خادم.
+ *  يُرجع كل الأوراق شبكاتٍ خاماً بلا افتراض لصف العناوين؛ buildFileModel في
+ *  fileModel.ts يكتشفه ويحذف الأعمدة الحساسة، والشبكة الخام لا تُحفظ في الحالة. */
+export async function parseFile(file: File): Promise<RawSheet[]> {
+  if (/\.csv$/i.test(file.name)) return parseCsvText(await file.text(), file.name.replace(/\.csv$/i, ''));
+  return parseXlsxBuffer(await file.arrayBuffer());
 }
 
-function parseCsv(file: File): Promise<ParsedFile> {
-  return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: true,
-      encoding: 'UTF-8',
-      complete: (result) => {
-        const headers = (result.meta.fields ?? []).map(h => h.trim());
-        resolve({ headers, rows: result.data });
-      },
-      error: (err: Error) => reject(err),
-    });
-  });
+/** CSV = ورقة واحدة باسم الملف */
+export function parseCsvText(text: string, name: string): RawSheet[] {
+  const result = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false });
+  const grid = result.data.map(row => row.map(cell => String(cell ?? '')));
+  return [{ name, firstRow: 1, grid }];
 }
 
-async function parseXlsx(file: File): Promise<ParsedFile> {
-  const buffer = await file.arrayBuffer();
+export function parseXlsxBuffer(buffer: ArrayBuffer | Uint8Array): RawSheet[] {
   const workbook = XLSX.read(buffer, { type: 'array' });
-  const firstSheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-  const headers = rows.length > 0 ? Object.keys(rows[0]).map(h => h.trim()) : [];
-  const stringRows = rows.map(row => {
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(row)) out[k.trim()] = String(v ?? '');
-    return out;
+  return workbook.SheetNames.map(name => {
+    const sheet = workbook.Sheets[name];
+    const ref = sheet?.['!ref'];
+    if (!sheet || !ref) return { name, firstRow: 1, grid: [] };
+    // raw: الأرقام كما هي (24.5) لا بتنسيق الخلية؛ blankrows: تبقى الصفوف
+    // الفارغة حتى يطابق موضع الصف في الشبكة رقمه في Excel
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, blankrows: true, defval: '', raw: true });
+    const grid = rows.map(row => row.map(cell => String(cell ?? '')));
+    return { name, firstRow: XLSX.utils.decode_range(ref).s.r + 1, grid };
   });
-  return { headers, rows: stringRows };
 }

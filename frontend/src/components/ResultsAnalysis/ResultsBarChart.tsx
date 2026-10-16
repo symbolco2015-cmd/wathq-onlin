@@ -1,6 +1,7 @@
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { AnalysisSummary, GradeBand } from './types';
 import { DANGER_ZONE_CENTER, DANGER_ZONE_MARGIN, fmtPct, fmtPm } from './logic';
+import { AR_STUDENT, countAr } from '../../utils';
 
 interface ResultsBarChartProps {
   summary: AnalysisSummary;
@@ -61,7 +62,7 @@ function ChartTooltip({ active, payload }: any) {
         <span className="w-2.5 h-2.5 rounded-[var(--r-full)]" style={{ background: d.color }} />
         <span className="text-[length:var(--fs-xs)] font-bold text-[var(--t1)]">{d.label}</span>
       </div>
-      <div className="text-[length:var(--fs-xs)] text-[var(--t2)]">{d.total} طالب</div>
+      <div className="text-[length:var(--fs-xs)] text-[var(--t2)]">{countAr(d.total, AR_STUDENT)}</div>
       {d.danger > 0 && (
         <div className="text-[length:var(--fs-xs)] text-[var(--warn)] mt-0.5">{d.danger} منهم ضمن منطقة الخطر</div>
       )}

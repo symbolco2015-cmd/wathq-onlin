@@ -82,9 +82,80 @@ export interface AnalysisMeta {
   full_mark: number;
 }
 
-export interface ParsedFile {
-  headers: string[];
-  rows: Record<string, string>[];
+/** ورقة كما قرأها parseFile: شبكة خلايا نصية كاملة. firstRow رقم صف
+ *  Excel لأول صف في الشبكة (الصفوف الفارغة باقية فيها حتى تطابق الأرقام). */
+export interface RawSheet {
+  name: string;
+  firstRow: number;
+  grid: string[][];
+}
+
+/** عمود في نموذج الملف. key فريد في الورقة (العنوان، وعند تكراره يُضاف
+ *  رقم). الأعمدة الحساسة (بريد، معرّف، جوال) لا تصل إلى هنا. */
+export interface FileColumn {
+  key: string;
+  /** ≥80% من الخانات غير الفارغة أرقام، وفيه رقم واحد على الأقل */
+  numeric: boolean;
+  /** قيمه تسلسل 1، 2، 3… */
+  sequence: boolean;
+  /** نصف الخانات غير الفارغة أو أكثر نص غير رقمي */
+  textual: boolean;
+  /** نسبة القيم المطابقة لنمط «شعبة N – الاسم» من الخانات غير الفارغة */
+  sectionInNameRatio: number;
+  /** أول قيمتين غير فارغتين */
+  samples: string[];
+}
+
+export interface ModelRow {
+  /** رقم الصف في Excel */
+  rowNo: number;
+  cells: Record<string, string>;
+}
+
+export interface ModelSheet {
+  name: string;
+  /** رقم صف العناوين في Excel */
+  headerRow: number;
+  columns: string[];
+  rows: ModelRow[];
+  /** فيها عمود رقمي صالح غير مستبعد من اقتراح الدرجة */
+  hasScoreLikeColumn: boolean;
+}
+
+/** نموذج الملف بعد القراءة — هو وحده ما يبقى في حالة النافذة */
+export interface FileModel {
+  sheets: ModelSheet[];
+  columns: FileColumn[];
+  /** صف العناوين المعروض: المقترح لأول ورقة درجات، أو ما اختاره المعلم */
+  headerRow: number;
+  /** عدد الأعمدة الحساسة التي حُذفت قيمها عند القراءة */
+  hiddenColumns: number;
+  totalRows: number;
+}
+
+export type SectionSource = 'column' | 'name' | 'sheets' | 'single';
+
+/** صف طالب واحد بعد التقسيم إلى شعب */
+export interface SectionRow {
+  rowNo: number;
+  sheet: string;
+  /** الاسم بعد فصل الشعبة عنه، أو '' */
+  name: string;
+  scoreRaw: string;
+}
+
+export interface SectionGroup {
+  section: number;
+  rows: SectionRow[];
+  /** أسماء الأوراق التي جاءت منها صفوف هذه الشعبة */
+  sheets: string[];
+}
+
+/** قيمة شعبة لم يُستخرج منها رقم — يحدد المعلم رقمها */
+export interface UnresolvedSection {
+  key: string;
+  label: string;
+  count: number;
 }
 
 /** الشكل المبسَّط الآمن للعرض العام (بند 10 على ?share=) — يطابق حرفياً ما
@@ -112,14 +183,4 @@ export interface PublicResultsAnalysisRow {
   average_pct?: number | null;
   min_pct?: number | null;
   max_pct?: number | null;
-}
-
-export interface ColumnDetectionResult {
-  /** إلزامي — بدونه لا يمكن حساب أي تحليل */
-  scoreCol: string | null;
-  /** اختياري — غيابه لا يمنع التحليل، فقط يمنع عرض الأسماء (الطلاب يظهرون
-   *  حينها بترقيم اصطناعي "طالب 1"، "طالب 2"... لكن درجاتهم تدخل الحساب كاملة) */
-  nameCol: string | null;
-  sectionCol: string | null;
-  subjectCol: string | null;
 }

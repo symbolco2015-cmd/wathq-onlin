@@ -6,6 +6,7 @@ import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { toEvRow } from '../indicators';
 import { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from './EvidenceViewer';
 import { LevelBadge, nEv, type Level } from './SectionView';
+import { AR_ABSENT, AR_STUDENT, countAr } from '../utils';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
 import { comparisonDelta, fmtSignedPct, formatClass, formatScore, formatTest, publicPcts } from './ResultsAnalysis/logic';
@@ -427,7 +428,7 @@ function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
             <span className="text-[length:var(--fs-xs)] text-[var(--t3)] mr-2">{meta}</span>
           )}
         </div>
-        <span className={`${PILL} shrink-0`}>{row.total_students} طالب{absent > 0 ? ` · ${absent} غائب` : ''}</span>
+        <span className={`${PILL} shrink-0`}>{countAr(row.total_students, AR_STUDENT)}{absent > 0 ? ` · ${countAr(absent, AR_ABSENT)}` : ''}</span>
       </div>
 
       <div dir="ltr">

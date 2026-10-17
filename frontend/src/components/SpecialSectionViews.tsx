@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { SectionIndicator } from '../types';
-import { SectionHeader, EvRow, nEv, type EvHighlightActions } from './SectionView';
+import { SectionHeader, EvRow, FAB_CLEARANCE, nEv, type EvHighlightActions } from './SectionView';
 
 // شاشات الأقسام الخاصة «مراعاة الفروق الفردية» و«التنويع في استراتيجيات
 // التدريس» و«تحليل نتائج المتعلمين» و«تحسين نتائج المتعلمين» — بتصميم شاشة القسم العادي (SectionView)،
@@ -44,8 +44,8 @@ function ItemCard({ name, evidence, circle, addLabel, onAdd, onEditEv, onDeleteE
   if (circle !== undefined) {
     circleEl = (
       <span
-        className={`w-[26px] h-[26px] rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[14px] border-[1.5px] ${
-          circle === 'x' ? 'border-[var(--st-gold)] bg-[var(--st-gold)] text-[var(--bg)]'
+        className={`w-[26px] h-[26px] rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[length:var(--fs-sm)] border-[1.5px] ${
+          circle === 'x' ? 'border-[var(--gold)] bg-[var(--gold)] text-[var(--bg)]'
           : circle === 'g' ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--bg)]'
           : 'border-[var(--idle)] text-[var(--t3)]'
         }`}
@@ -157,7 +157,7 @@ export function IndivDiffView({ title, evidence, onBack, onAdd, onDeleteEv, high
   const [menuEvId, setMenuEvId] = useEvMenu();
   const n = evidence.length;
   return (
-    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
+    <div className={`flex flex-col gap-3 ${FAB_CLEARANCE}`}>
       <SectionHeader onBack={onBack} icon="ti-users" title={title} evCount={n} />
       <ItemCard
         name={title}
@@ -200,7 +200,7 @@ export function StrategiesView({ icon, title, evCount, yearEvCount, monthName, u
 }) {
   const [menuEvId, setMenuEvId] = useEvMenu();
   return (
-    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
+    <div className={`flex flex-col gap-3 ${FAB_CLEARANCE}`}>
       <SectionHeader onBack={onBack} icon={icon} title={title} evCount={evCount} />
 
       {monthName && (
@@ -257,7 +257,7 @@ export function AnalysisView({ icon, title, analysisCount, loading, onBack, chil
   children: ReactNode;
 } & SectionEvidenceProps) {
   return (
-    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
+    <div className={`flex flex-col gap-3 ${FAB_CLEARANCE}`}>
       <SectionHeader onBack={onBack} icon={icon} title={title} />
 
       <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
@@ -287,7 +287,7 @@ export function ImprovementView({ icon, title, actionCount, loading, onBack, chi
   children: ReactNode;
 } & SectionEvidenceProps) {
   return (
-    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
+    <div className={`flex flex-col gap-3 ${FAB_CLEARANCE}`}>
       <SectionHeader onBack={onBack} icon={icon} title={title} />
 
       <p className="px-1 text-[length:var(--fs-xs)] text-[var(--t3)]">

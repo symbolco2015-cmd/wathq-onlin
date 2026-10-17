@@ -9,7 +9,7 @@ function Sk({ style }: { style?: CSSProperties }) {
     <div
       className="rounded-[var(--r-sm)] motion-safe:animate-[skShimmer_1.3s_linear_infinite]"
       style={{
-        background: 'linear-gradient(90deg, var(--s2) 0%, #232b27 45%, var(--s2) 90%)',
+        background: 'linear-gradient(90deg, var(--s2) 0%, var(--s3) 45%, var(--s2) 90%)',
         backgroundSize: '220% 100%',
         ...style,
       }}

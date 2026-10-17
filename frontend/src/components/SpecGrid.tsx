@@ -10,7 +10,7 @@ export type SpecDot = 'idle' | 'basic' | 'over';
 const DOT_COLOR: Record<SpecDot, string> = {
   idle: 'bg-[var(--idle)]',
   basic: 'bg-[var(--accent)]',
-  over: 'bg-[var(--st-gold)]',
+  over: 'bg-[var(--gold)]',
 };
 
 export function SpecCard({ id, icon, title, desc, status, dot, onOpen }: {

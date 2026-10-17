@@ -12,7 +12,7 @@ interface EvidenceListProps {
   /** الحذف الموحّد بنافذة تأكيد (handleDeleteEv في App.tsx) */
   onDeleteEv: (evidenceId: string) => void;
   highlight?: EvHighlightActions;
-  /** شهر أرشيف مقفل — يخفي زر الإضافة، و«تعديل» و«حذف» من قائمة ⋯ */
+  /** شهر أرشيف مقفل — يخفي زر الإضافة. «تعديل» و«حذف» يخفيهما EvRow نفسه (isEvidenceLocked) */
   readOnly?: boolean;
 }
 
@@ -63,7 +63,6 @@ export default function EvidenceList({ evidence, loading, onAddClick, onEditEv, 
         <EvRow
           key={ev.id}
           ev={ev}
-          locked={readOnly}
           menuOpen={menuEvId === ev.id}
           onToggleMenu={() => setMenuEvId(prev => (prev === ev.id ? null : ev.id))}
           onCloseMenu={() => setMenuEvId(null)}

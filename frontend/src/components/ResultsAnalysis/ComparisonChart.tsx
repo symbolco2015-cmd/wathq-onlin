@@ -40,6 +40,20 @@ function LegendItem({ color, dashed, label }: { color: string; dashed?: boolean;
   );
 }
 
+/** تسمية المحور: الأولى تبدأ من نقطتها والأخيرة تنتهي عندها، فلا تُقص عند
+ *  حافتي الرسم. ما بينهما في الوسط. */
+function EdgeTick({ x, y, payload, index, visibleTicksCount }: {
+  x?: number; y?: number; payload?: { value: string }; index?: number; visibleTicksCount?: number;
+}) {
+  const last = (visibleTicksCount ?? 1) - 1;
+  const anchor = index === 0 ? 'start' : index === last ? 'end' : 'middle';
+  return (
+    <text x={x} y={y} dy={12} textAnchor={anchor} fill="var(--t2)" fontSize={12} fontWeight={700}>
+      {payload?.value}
+    </text>
+  );
+}
+
 const CELL = 'py-2.5 px-2 text-[length:var(--fs-xs)]';
 
 /** الشعبة نفسها عبر اختبارات الفصل، بالنسب على محور ثابت 0–100%. اختبار
@@ -65,7 +79,7 @@ export default function ComparisonChart({ title, points, onOpen }: ComparisonCha
                   axisLine={{ stroke: 'var(--bd2)' }}
                   tickLine={false}
                   interval={0}
-                  tick={{ fill: 'var(--t2)', fontSize: 12, fontWeight: 700 }}
+                  tick={<EdgeTick />}
                 />
                 <YAxis
                   domain={[0, 100]}

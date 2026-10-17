@@ -93,7 +93,7 @@ export default function NotificationsSheet({ isOpen, onClose, items, unreadAtOpe
                 onClick={() => onOpenTopSuggestion(item.evidenceId)}
                 className="w-full min-h-11 flex items-center gap-3 text-right cursor-pointer"
               >
-                <IconBox icon="ti-sparkles" color="text-[var(--st-gold)]" unread />
+                <IconBox icon="ti-sparkles" color="text-[var(--gold)]" unread />
                 <span className="flex-1 min-w-0">
                   <span className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">اقتراح لأبرز إنجاز</span>
                   <span className="block text-[length:var(--fs-xs)] text-[var(--t3)] whitespace-nowrap overflow-hidden text-ellipsis">

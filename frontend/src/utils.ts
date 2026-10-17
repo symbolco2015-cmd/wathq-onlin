@@ -187,6 +187,26 @@ export function formatDateTime(value: string | Date): string {
     : '';
 }
 
+// ── قفل الأرشيف ─────────────────────────────────────────────────────
+/** آخر يوم في الشهر الحالي يُعدَّل ويُحذف فيه شاهد الشهر السابق */
+export const ARCHIVE_EDIT_LAST_DAY = 10;
+
+/** هل شواهد الشهر (month 1–12) مقفلة للتعديل والحذف؟ الشهر الحالي (وما بعده)
+ *  مفتوح، والسابق مباشرة مفتوح حتى ARCHIVE_EDIT_LAST_DAY، وما قبله مقفل.
+ *  بتوقيت الجهاز المحلي، كما يجمّع الأرشيف الشواهد بأشهرها. */
+export function isMonthLocked(year: number, month: number, now: Date = new Date()): boolean {
+  const monthsAgo = (now.getFullYear() * 12 + now.getMonth() + 1) - (year * 12 + month);
+  if (monthsAgo <= 0) return false;
+  return !(monthsAgo === 1 && now.getDate() <= ARCHIVE_EDIT_LAST_DAY);
+}
+
+/** القاعدة نفسها على شاهد بشهر created_at (توقيت الجهاز المحلي). «أبرز إنجاز»
+ *  و«اللمحات» إعدادات عرض لا يمنعها القفل. */
+export function isEvidenceLocked(createdAt: string, now?: Date): boolean {
+  const d = toValidDate(createdAt);
+  return !!d && isMonthLocked(d.getFullYear(), d.getMonth() + 1, now);
+}
+
 export function formatHijri(value: string | Date): string {
   const d = toValidDate(value);
   return d ? d.toLocaleDateString(HIJRI_LOCALE, { year: 'numeric', month: 'long', day: 'numeric' }) : '';

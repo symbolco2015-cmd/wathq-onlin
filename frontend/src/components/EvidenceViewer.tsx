@@ -1,10 +1,10 @@
 // نافذة العرض الموحّدة للصفحة العامة — .lb في pub() بـ docs/design/wathq-prototype.html.
 // تستعملها نافذة البند، والبطاقات الخاصة، و«أبرز إنجاز»، ومعرض «لمحات».
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { extensionFromUrl } from '../utils';
 import PdfPreview, { PdfPreviewFallback } from './PdfPreview';
-import { BTN_PRI } from './SectionView';
+import { BTN_PRI, BTN_SM } from './SectionView';
 
 /** نوع العرض في الصفحة العامة، من evidence_type الأصلي وحقلي الملف والرابط —
  *  أدق من Evidence['type'] (supabaseEvidenceTypeToLocal) الذي يجعل الرابط
@@ -58,6 +58,24 @@ function YouTubeEmbed({ ytId, title }: { ytId: string; title: string }) {
   );
 }
 
+/** صورة أو فيديو تعذّر تحميله — رسالة هادئة بلا أحمر، فليس خطأ من المعلم */
+function MediaFailed({ url }: { url: string }) {
+  return (
+    <div className="w-full max-w-md text-center p-6 rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--bd)]">
+      <div className="w-12 h-12 rounded-[var(--r-sm)] bg-[var(--s2)] text-[var(--t2)] flex items-center justify-center mx-auto mb-4">
+        <i className="ti ti-photo-off text-[24px]"></i>
+      </div>
+      <p className="text-[length:var(--fs-sm)] text-[var(--t2)]">تعذّر عرض الملف.</p>
+      {url && (
+        <a href={url} target="_blank" rel="noreferrer" className={`${BTN_SM} mt-4 no-underline`}>
+          <i className="ti ti-external-link text-[16px]"></i>
+          فتح الملف
+        </a>
+      )}
+    </div>
+  );
+}
+
 const ICON_BTN = 'w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--bd2)] text-[var(--t1)] cursor-pointer';
 
 export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | null; onClose: () => void }) {
@@ -65,6 +83,8 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const open = item !== null;
+  // رابط الوسيط الذي تعذّر تحميله — يسقط تلقائياً إن تغيّر العنصر
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
   // Esc يغلق، والتركيز يعود للعنصر الذي فتح النافذة
   useEffect(() => {
@@ -92,6 +112,8 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
   const isUnknownFile = !ytId && item.kind === 'pdf' && !isPdf && !isOfficeDoc;
   const wide = isPdf || !!ytId;
   const canDownload = !!item.url && item.kind !== 'link' && item.kind !== 'note';
+  const mediaFailed = !!url && failedUrl === url;
+  const onMediaError = () => setFailedUrl(url);
   const showDescription = item.kind !== 'note' && !!item.description?.trim();
 
   return (
@@ -120,8 +142,10 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
       <div className="flex-1 flex flex-col items-center justify-center px-4 pb-6">
         <div className={`w-full ${wide ? 'max-w-[768px]' : 'max-w-[640px]'}`} onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-center">
-            {item.kind === 'img' && (
-              <img src={url} alt={item.name} className="max-w-full max-h-[65vh] object-contain rounded-[var(--r-md)]" />
+            {mediaFailed && <MediaFailed url={url} />}
+
+            {item.kind === 'img' && !mediaFailed && (
+              <img src={url} alt={item.name} onError={onMediaError} className="max-w-full max-h-[65vh] object-contain rounded-[var(--r-md)]" />
             )}
 
             {ytId && <YouTubeEmbed ytId={ytId} title={item.name} />}
@@ -148,8 +172,8 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
 
             {isUnknownFile && <PdfPreviewFallback url={url} name={item.name} />}
 
-            {item.kind === 'vid' && !ytId && (
-              <video src={url} controls className="max-w-full max-h-[65vh] rounded-[var(--r-md)] bg-black" />
+            {item.kind === 'vid' && !ytId && !mediaFailed && (
+              <video src={url} controls onError={onMediaError} className="max-w-full max-h-[65vh] rounded-[var(--r-md)] bg-black" />
             )}
 
             {item.kind === 'audio' && url && <audio src={url} controls className="w-full" />}

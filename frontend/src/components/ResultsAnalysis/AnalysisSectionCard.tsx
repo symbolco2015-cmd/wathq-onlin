@@ -51,6 +51,20 @@ type OpenItem =
 
 const sectionNo = (a: ResultsAnalysisRow) => a.class_section ?? Number.MAX_SAFE_INTEGER;
 
+/** مفتاح المدخل الفرعي في history.state — عنصر مفتوح فوق قائمة البند */
+const ITEM_STATE_KEY = 'wathqAnalysisItem';
+const historyHasItem = () => {
+  const st = window.history.state as Record<string, unknown> | null;
+  return st?.[ITEM_STATE_KEY] === true;
+};
+/** يضيف المدخل الفرعي إن لم يكن موجوداً — نسخة من مدخل الشاشة بعمق أكبر بواحد */
+const pushItemEntry = () => {
+  if (historyHasItem()) return;
+  const st = (window.history.state ?? {}) as Record<string, unknown>;
+  const depth = typeof st.wathqDepth === 'number' ? st.wathqDepth : 0;
+  window.history.pushState({ ...st, wathqDepth: depth + 1, [ITEM_STATE_KEY]: true }, '');
+};
+
 /**
  * جسم شاشة بند 10 — أداة تحليل النتائج. شريط تصفية (المادة، والصف إن تعدد)
  * وعرضان: «حسب الاختبار» (بطاقة الصفحة العامة نفسها، وكل سطر شعبة يفتح
@@ -58,9 +72,11 @@ const sectionNo = (a: ResultsAnalysisRow) => a.class_section ?? Number.MAX_SAFE_
  * المكان نفسه بمحتواه كاملاً. يُركَّب فقط بعد انتهاء التحميل، فطلب التركيز يجد
  * تحليله من أول render.
  *
- * فتح تحليل حالة داخل البند لا مدخل في سجل المتصفح: نظام الشاشات في
- * Dashboard (pushScreen) يعرف البند كله فقط، فزر الرجوع في الجوال أو المتصفح
- * يغلق البند. زر «كل الاختبارات» هو طريق الرجوع إلى القائمة.
+ * فتح تحليل أو مقارنة يضيف مدخلاً فرعياً في سجل المتصفح (ITEM_STATE_KEY):
+ * wathqScreen يبقى «analysis» فلا يغلق Dashboard البند، وwathqDepth يزيد واحداً
+ * فيبقى «البنود» (go(-depth)) صحيحاً. زر الرجوع في الجوال أو المتصفح يعود إلى
+ * القائمة، والضغطة الثانية تخرج من البند. التنقل داخل العنصر (الشعب، ومن
+ * المقارنة إلى تحليل) لا يضيف مدخلاً.
  */
 export function AnalysisSectionBody({
   sections, userId, supabaseEv, gradeBands, analyses,
@@ -124,14 +140,16 @@ export function AnalysisSectionBody({
 
   // تحليل حُذف أو شعبة لم يبق لها تحليل: العودة إلى القائمة
   useEffect(() => {
-    if (openItem?.kind === 'analysis' && !byId.has(openItem.id)) setOpenItem(null);
-    if (openItem?.kind === 'timeline' && openTimelineRows.length === 0) setOpenItem(null);
+    if (openItem?.kind === 'analysis' && !byId.has(openItem.id)) backToList();
+    if (openItem?.kind === 'timeline' && openTimelineRows.length === 0) backToList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openItem, byId, openTimelineRows.length]);
 
   const scrollToTop = () => requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: 'start' }));
 
   const openFromList = (item: OpenItem) => {
     if (!openItem) listScrollY.current = window.scrollY;
+    pushItemEntry();
     setOpenItem(item);
     scrollToTop();
   };
@@ -140,16 +158,33 @@ export function AnalysisSectionBody({
   const revealAnalysis = (a: ResultsAnalysisRow) => {
     updatePrefs({ subject: normalizeSubject(a.subject), grade: ALL });
     listScrollY.current = null;
+    pushItemEntry();
     setOpenItem({ kind: 'analysis', id: a.id, from: 'tests' });
     scrollToTop();
   };
 
-  const backToList = () => {
+  /** يغلق العنصر ويستعيد موضع القائمة — بعد أن يزول المدخل الفرعي من السجل */
+  const closeItem = () => {
     const y = listScrollY.current;
     setOpenItem(null);
     setConvertOpen(false);
     if (y !== null) requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' }));
   };
+
+  /** كل رجوع إلى القائمة يمر بالسجل إن كان فيه المدخل الفرعي، فلا يبقى مدخل يتيم */
+  const backToList = () => {
+    if (historyHasItem()) window.history.back(); // الإغلاق في popstate أدناه
+    else closeItem();
+  };
+
+  // زر الرجوع (أندرويد أو المتصفح) يزيل المدخل الفرعي ⇐ العودة إلى القائمة
+  const closeItemRef = useRef(closeItem);
+  closeItemRef.current = closeItem;
+  useEffect(() => {
+    const onPopState = () => { if (!historyHasItem()) closeItemRef.current(); };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     if (!focusAnalysisId) return;

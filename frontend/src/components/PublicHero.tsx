@@ -15,7 +15,7 @@ const RING_STROKE = 9;
 
 /** لون الحلقة من ألوان الحالة فقط — لا أحمر */
 function ringColor(pct: number): string {
-  if (pct >= 100) return 'var(--st-gold)';
+  if (pct >= 100) return 'var(--gold)';
   if (pct >= 50) return 'var(--accent)';
   return 'var(--prog)';
 }

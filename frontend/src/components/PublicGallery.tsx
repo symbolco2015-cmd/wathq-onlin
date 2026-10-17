@@ -36,20 +36,19 @@ export function pickGalleryItems(evidence: SupabaseEvidence[], topId: string | n
   return items.length >= GALLERY_MIN ? items : [];
 }
 
-function TileMedia({ e }: { e: SupabaseEvidence }) {
-  const [failed, setFailed] = useState(false);
+/** المرئي. إن تعذّر التحميل ⇐ onFail، فتأخذ البلاطة شكل الشاهد بلا مرئي
+ *  (طريقة TopAchievementCard نفسها) */
+function TileMedia({ e, onFail }: { e: SupabaseEvidence; onFail: () => void }) {
   const isVideo = e.evidence_type === 'video';
   const media = 'absolute inset-0 w-full h-full object-cover';
   return (
     <>
-      {failed ? (
-        <i className={`ti ${isVideo ? 'ti-player-play' : 'ti-photo'} text-[32px] text-[var(--t2)]`}></i>
-      ) : isVideo ? (
-        <video src={`${e.file_url}#t=0.1`} preload="metadata" muted playsInline className={media} onError={() => setFailed(true)} />
+      {isVideo ? (
+        <video src={`${e.file_url}#t=0.1`} preload="metadata" muted playsInline className={media} onError={onFail} />
       ) : (
-        <img src={e.file_url ?? ''} alt="" loading="lazy" decoding="async" className={media} onError={() => setFailed(true)} />
+        <img src={e.file_url ?? ''} alt="" loading="lazy" decoding="async" className={media} onError={onFail} />
       )}
-      {isVideo && !failed && (
+      {isVideo && (
         <span className="relative w-10 h-10 rounded-full bg-black/45 flex items-center justify-center text-[var(--t1)]">
           <i className="ti ti-player-play text-[16px]"></i>
         </span>
@@ -63,6 +62,8 @@ export default function PublicGallery({ items, sectionName, onOpen }: {
   sectionName: (sectionId: number | null) => string | undefined;
   onOpen: (e: SupabaseEvidence) => void;
 }) {
+  // معرّفات الشواهد التي تعذّر تحميل مرئيها
+  const [failedIds, setFailedIds] = useState<ReadonlySet<string>>(() => new Set());
   if (items.length === 0) return null;
   const n = items.length;
   const three = n === 3;
@@ -85,6 +86,7 @@ export default function PublicGallery({ items, sectionName, onOpen }: {
           const big = i === 0;
           const wideMobile = big || i === mobileWideLast;
           const sec = sectionName(e.section_id);
+          const failed = failedIds.has(e.id);
           return (
             <button
               key={e.id}
@@ -102,15 +104,30 @@ export default function PublicGallery({ items, sectionName, onOpen }: {
                 i >= 4 ? 'hidden lg:flex' : 'flex',
               ].join(' ')}
             >
-              {/* المرئي بنسبة ثابتة على الجوال، ويملأ ما بقي من صف الشبكة الثابت على سطح المكتب */}
-              <span className={`relative flex items-center justify-center bg-[var(--s2)] lg:aspect-auto lg:flex-1 lg:min-h-0 ${wideMobile ? 'aspect-[2/1]' : 'aspect-square'}`}>
-                <TileMedia e={e} />
-              </span>
-              {/* النص في شريط مستقل تحت المرئي، لا فوقه — حتى لا يغطي ما في الصورة من كتابة */}
-              <span className="block px-2.5 py-2 bg-[var(--s1)]">
-                <span className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] truncate">{e.title}</span>
-                {sec && <span className="block text-[length:var(--fs-xs)] text-[var(--t3)] truncate">{sec}</span>}
-              </span>
+              {failed ? (
+                // بلا مرئي: مربع أيقونة بجانب النص، بارتفاع البلاطة نفسه (فرع !hasVisual في TopAchievementCard)
+                <span className={`flex items-center gap-3 p-3 lg:flex-1 lg:min-h-0 ${wideMobile ? 'aspect-[2/1]' : 'aspect-square'} lg:aspect-auto`}>
+                  <span className="w-9 h-9 shrink-0 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center">
+                    <i className={`ti ${e.evidence_type === 'video' ? 'ti-video' : 'ti-photo'} text-[20px] text-[var(--t2)]`}></i>
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] line-clamp-2">{e.title}</span>
+                    {sec && <span className="block text-[length:var(--fs-xs)] text-[var(--t3)] truncate">{sec}</span>}
+                  </span>
+                </span>
+              ) : (
+                <>
+                  {/* المرئي بنسبة ثابتة على الجوال، ويملأ ما بقي من صف الشبكة الثابت على سطح المكتب */}
+                  <span className={`relative flex items-center justify-center bg-[var(--s2)] lg:aspect-auto lg:flex-1 lg:min-h-0 ${wideMobile ? 'aspect-[2/1]' : 'aspect-square'}`}>
+                    <TileMedia e={e} onFail={() => setFailedIds(prev => new Set(prev).add(e.id))} />
+                  </span>
+                  {/* النص في شريط مستقل تحت المرئي، لا فوقه — حتى لا يغطي ما في الصورة من كتابة */}
+                  <span className="block px-2.5 py-2 bg-[var(--s1)]">
+                    <span className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] truncate">{e.title}</span>
+                    {sec && <span className="block text-[length:var(--fs-xs)] text-[var(--t3)] truncate">{sec}</span>}
+                  </span>
+                </>
+              )}
             </button>
           );
         })}

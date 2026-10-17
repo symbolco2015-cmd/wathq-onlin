@@ -952,13 +952,26 @@ export function groupSectionTimelines(analyses: ResultsAnalysisRow[]): SectionTi
     || (a.section ?? 0) - (b.section ?? 0));
 }
 
+/** كلمة «نقطة» بعد عدد موجب: «6 نقاط»، «5.5 نقطة» */
+function pointsWord(abs: number): string {
+  return Number.isInteger(abs) ? countWord(abs, AR_POINT) : 'نقطة';
+}
+
 /** «+6 نقاط» أو «−4 نقاط» أو «+5.5 نقطة» — الرقم والإشارة معزولان الاتجاه */
 export function fmtPointsDelta(d: number): string {
   const r = round1(d);
   if (r === 0) return 'دون تغيّر';
   const abs = Math.abs(r);
-  const word = Number.isInteger(abs) ? countWord(abs, AR_POINT) : 'نقطة';
-  return `${LRI}${r > 0 ? '+' : '−'}${fmtNum(abs)}${PDI} ${word}`;
+  return `${LRI}${r > 0 ? '+' : '−'}${fmtNum(abs)}${PDI} ${pointsWord(abs)}`;
+}
+
+/** «تحسّن 6 نقاط» أو «تراجع 8.7 نقطة» — الفرق بلا إشارة، والكلمة تحمل الاتجاه.
+ *  الكلمة من fmtPointsDelta نفسها، و0 ⇐ «دون تغيّر» */
+export function fmtPointsChange(d: number): string {
+  const r = round1(d);
+  if (r === 0) return 'دون تغيّر';
+  const abs = Math.abs(r);
+  return `${r > 0 ? 'تحسّن' : 'تراجع'} ${LRI}${fmtNum(abs)}${PDI} ${pointsWord(abs)}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -9,9 +9,9 @@ import BottomSheet from './BottomSheet';
 import EvidenceForm from './EvidenceForm';
 import type { EvidenceFormHandle } from './EvidenceForm';
 import EvidenceModal from './EvidenceModal';
-import SectionView, { nEv, sectionLevel, LevelBadge, BTN_PRI_SM, BTN_GH_SM, BTN_SM, BTN_DNG, type Level, type SectionSummary, type IndicatorHandlers, type EvHighlightActions } from './SectionView';
+import SectionView, { nEv, sectionLevel, LevelBadge, BTN_PRI_SM, BTN_GH_SM, BTN_SM, BTN_DNG, FAB_CLEARANCE, type Level, type SectionSummary, type IndicatorHandlers, type EvHighlightActions } from './SectionView';
 import { IndivDiffView, StrategiesView, AnalysisView, ImprovementView } from './SpecialSectionViews';
-import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, formatDate, formatHijri } from '../utils';
+import { calculatePointsLevel, isLastDaysOfMonth, upcomingAcademicDate, AI_CONSENT_TEXT, formatDate, formatHijri, isMonthLocked, ARCHIVE_EDIT_LAST_DAY } from '../utils';
 import { useQuickCapture, VOICE_CAPTURE_ENABLED, VOICE_CAPTURE_DISABLED_MESSAGE } from '../hooks/useQuickCapture';
 import type { MonthlyProgressRow } from '../hooks/useMonthlyProgress';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
@@ -356,14 +356,11 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
     return Array.from(seen.values()).sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month));
   }, [supabaseEv, monthlyProgress]);
 
-  // قاعدة نافذة 10 أيام: التعديل مسموح فقط للشهر السابق مباشرة، وفقط خلال
-  // أول 10 أيام من الشهر الحالي — أي شهر آخر يُعرض read-only بالكامل
-  const isImmediatePrevMonth = !!(archiveMonth && monthlyProgress &&
-    (archiveMonth.year * 12 + archiveMonth.month) === (monthlyProgress.currentYear * 12 + monthlyProgress.currentMonth) - 1
-  );
-  const todayDayOfMonth = new Date().getDate();
-  const isArchiveEditable = isImmediatePrevMonth && todayDayOfMonth <= 10;
-  const archiveDaysLeft = Math.max(0, 10 - todayDayOfMonth);
+  // قاعدة نافذة 10 أيام (isMonthLocked في utils — الدالة نفسها في كل مكان):
+  // التعديل مسموح فقط للشهر السابق مباشرة، وفقط خلال أول 10 أيام من الشهر
+  // الحالي — أي شهر آخر يُعرض read-only بالكامل
+  const isArchiveEditable = !!archiveMonth && !!monthlyProgress && !isMonthLocked(archiveMonth.year, archiveMonth.month);
+  const archiveDaysLeft = Math.max(0, ARCHIVE_EDIT_LAST_DAY - new Date().getDate());
   const archiveLockLabel = archiveDaysLeft === 0
     ? 'اليوم'
     : `خلال ${archiveDaysLeft} ${archiveDaysLeft === 1 ? 'يوم' : 'أيام'}`;
@@ -1126,7 +1123,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
       )}
 
-      <div className="flex flex-col gap-3 pb-[100px] lg:pb-0">
+      <div className={`flex flex-col gap-3 ${FAB_CLEARANCE}`}>
         {archiveSectionsToShow.map(sec => {
           const secEv = archiveEvidenceBySection[sec.id] || [];
           return (
@@ -1333,7 +1330,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
         </div>
 
         {/* SECTIONS */}
-        <div id="sections-list" className="flex flex-col gap-2 pb-[100px] lg:pb-0 scroll-mt-24">
+        <div id="sections-list" className={`flex flex-col gap-2 ${FAB_CLEARANCE} scroll-mt-24`}>
           {/* بترتيب sections الثابت، كتنقل عمود الملخص — .secr في النموذج */}
           {nonStratSections.map(sec => {
             const secStat = getSectionStat(sec.id);

@@ -36,7 +36,7 @@ export default function SplashScreen({ failed = false, onRetry }: SplashScreenPr
       aria-live="polite"
       className="fixed inset-0 z-[500] flex flex-col items-center justify-center"
       style={{
-        background: phase === 'blank' ? 'var(--brand)' : 'radial-gradient(70% 50% at 50% 40%, #124a31 0%, var(--brand) 65%)',
+        background: phase === 'blank' ? 'var(--brand)' : 'radial-gradient(70% 50% at 50% 40%, color-mix(in srgb, var(--accent) 15%, var(--brand)) 0%, var(--brand) 65%)',
         color: 'var(--brand-cream)',
       }}
     >
@@ -48,12 +48,12 @@ export default function SplashScreen({ failed = false, onRetry }: SplashScreenPr
             width={116}
             className="block w-[116px] h-auto motion-safe:animate-[splashBreathe_2.4s_ease-in-out_infinite]"
           />
-          <div className="mt-[14px] text-[length:var(--fs-sm)]" style={{ color: 'rgba(247,245,239,.62)' }}>
+          <div className="mt-[14px] text-[length:var(--fs-sm)]" style={{ color: 'color-mix(in srgb, var(--brand-cream) 62%, transparent)' }}>
             ملف إنجازك المهني
           </div>
           <div
             className="relative mt-[26px] w-[132px] h-[3px] overflow-hidden rounded-[var(--r-full)]"
-            style={{ background: 'rgba(247,245,239,.12)' }}
+            style={{ background: 'color-mix(in srgb, var(--brand-cream) 12%, transparent)' }}
           >
             <i
               className="absolute top-0 bottom-0 right-[30%] w-[40%] rounded-[var(--r-full)] motion-safe:animate-[splashBar_1.25s_cubic-bezier(.4,0,.2,1)_infinite]"
@@ -62,7 +62,7 @@ export default function SplashScreen({ failed = false, onRetry }: SplashScreenPr
           </div>
           <div
             className={`mt-4 min-h-[20px] text-[length:var(--fs-sm)] transition-opacity duration-[400ms] motion-reduce:transition-none ${phase === 'slow' ? 'opacity-100' : 'opacity-0'}`}
-            style={{ color: 'rgba(247,245,239,.8)' }}
+            style={{ color: 'color-mix(in srgb, var(--brand-cream) 80%, transparent)' }}
           >
             الاتصال أبطأ من المعتاد…
           </div>
@@ -71,24 +71,24 @@ export default function SplashScreen({ failed = false, onRetry }: SplashScreenPr
         <div className="flex flex-col items-center text-center px-8 motion-safe:animate-[splashFade_.3s_ease]">
           <div
             className="w-14 h-14 flex items-center justify-center rounded-[var(--r-md)] text-[32px]"
-            style={{ background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)' }}
+            style={{ background: 'var(--bd)', border: '1px solid var(--bd2)' }}
           >
             <i className="ti ti-wifi-off" aria-hidden="true"></i>
           </div>
           <h2 className="mt-[18px] text-[length:var(--fs-lg)] font-bold">تعذّر الاتصال</h2>
-          <p className="mt-1.5 max-w-[300px] text-[length:var(--fs-sm)] leading-[1.8]" style={{ color: 'rgba(247,245,239,.78)' }}>
+          <p className="mt-1.5 max-w-[300px] text-[length:var(--fs-sm)] leading-[1.8]" style={{ color: 'color-mix(in srgb, var(--brand-cream) 78%, transparent)' }}>
             تأكد من اتصالك بالإنترنت ثم أعد المحاولة. شواهدك محفوظة ولن تضيع.
           </p>
           <button
             type="button"
             onClick={retry}
             className="mt-5 h-11 px-4 inline-flex items-center justify-center gap-[7px] rounded-[var(--r-sm)] text-[length:var(--fs-sm)] font-bold cursor-pointer border"
-            style={{ background: 'var(--accent)', borderColor: 'var(--accent)', color: '#04210f' }}
+            style={{ background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)' }}
           >
             <i className="ti ti-refresh" aria-hidden="true"></i>
             إعادة المحاولة
           </button>
-          <small className="mt-3 text-[length:var(--fs-xs)]" style={{ color: 'rgba(247,245,239,.55)' }}>
+          <small className="mt-3 text-[length:var(--fs-xs)]" style={{ color: 'color-mix(in srgb, var(--brand-cream) 55%, transparent)' }}>
             إذا استمرت المشكلة تواصل معنا:{' '}
             <a
               href={`https://wa.me/${whatsapp}`}

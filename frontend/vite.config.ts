@@ -37,7 +37,9 @@ export default defineConfig(() => {
           // Supabase API/Realtime calls and the /api/* Gemini proxy are
           // never touched by the service worker — they always hit the
           // network, same as without a PWA.
-          globPatterns: ['**/*.{js,css,html,woff,woff2,png,svg,ico}'],
+          // عامل pdf.js وحده من ملفات .mjs، حتى يفتح PDF بلا اتصال. ملفات ort*.mjs
+          // (إزالة خلفية الصورة) لا تُخزَّن: لا فائدة منها بلا ملف wasm الكبير.
+          globPatterns: ['**/*.{js,css,html,woff,woff2,png,svg,ico}', '**/pdf.worker*.mjs'],
           globIgnores: ['brand/og-image.png'],
           // خط Tabler يُطلب بلاحقة ?v3.44.0، فبدون /^v\d/ لا يطابق نسخة
           // الـ precache وتظهر الأيقونات مربعات فارغة بلا اتصال. أول قيمتين

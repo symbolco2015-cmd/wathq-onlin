@@ -8,7 +8,7 @@ import { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from '
 import { LevelBadge, nEv, type Level } from './SectionView';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
-import { comparisonDelta, fmtSignedPct, formatScore, publicPcts } from './ResultsAnalysis/logic';
+import { comparisonDelta, fmtPointsChange, formatScore, publicPcts } from './ResultsAnalysis/logic';
 
 /** صف عرض شاهد: صف المؤشرات المعتاد + نوع العرض العام والوصف (لمعاينة الملاحظة). */
 export function toPublicRow(e: SupabaseEvidence) {
@@ -465,8 +465,8 @@ export function ResultComparisonMini({ subject, series }: { subject: string; ser
           <circle cx={pad} cy={y1} r={2.5} fill="var(--t2)" />
           <circle cx={w - pad} cy={y2} r={2.5} fill="var(--t1)" />
         </svg>
-        <span className={`text-[length:var(--fs-xs)] font-bold whitespace-nowrap ${delta.improved ? 'text-[var(--accent)]' : 'text-[var(--warn)]'}`}>
-          {delta.improved ? 'تحسّن' : 'تراجع'} {fmtSignedPct(delta.diff)}
+        <span dir="rtl" className={`text-[length:var(--fs-xs)] font-bold whitespace-nowrap ${delta.improved ? 'text-[var(--accent)]' : 'text-[var(--warn)]'}`}>
+          {fmtPointsChange(delta.diff)}
         </span>
       </div>
     </div>

@@ -25,7 +25,7 @@ import DashboardSkeleton from './components/DashboardSkeleton';
 import { Modal, Toast, SelectDropdown } from './components/UI';
 import EvidenceModal from './components/EvidenceModal';
 import { supabase } from './supabaseClient';
-import { isProfileIncomplete } from './utils';
+import { isEvidenceLocked, isProfileIncomplete } from './utils';
 import { useSupabaseEvidence } from './hooks/useSupabaseEvidence';
 import type { SupabaseEvidence } from './hooks/useSupabaseEvidence';
 import { useMonthlyProgress } from './hooks/useMonthlyProgress';
@@ -430,7 +430,13 @@ export default function App() {
         const deleted = await customIndicators.deleteIndicator(op.indicatorId);
         if (!deleted) toastKind('نُقلت الشواهد، وتعذّر حذف المؤشر', 'error');
       } else {
-        const ids = ev.evidence.filter(e => e.indicator_id === op.indicatorId).map(e => e.id);
+        const evs = ev.evidence.filter(e => e.indicator_id === op.indicatorId);
+        // حارس أخير: نافذة الحذف لا تعرض «حذفها معه» إن كان فيها شاهد مقفل
+        if (evs.some(e => isEvidenceLocked(e.created_at))) {
+          toastKind('في المؤشر شواهد من شهر مقفل، فلا تُحذف. انقلها إلى مؤشر آخر', 'error');
+          return;
+        }
+        const ids = evs.map(e => e.id);
         // deleteEvidence تحذف الملف من Storage وتُنقص عدّاد الشهر، وترمي عند الفشل
         for (const id of ids) await ev.deleteEvidence(id);
         const deleted = await customIndicators.deleteIndicator(op.indicatorId);
@@ -519,7 +525,11 @@ export default function App() {
   };
 
   // وضع التعديل — القسم من الشاشة المعروضة لا من ev.section_id (يقبل الفراغ)
+  const LOCKED_EV_MSG = 'هذا الشاهد من شهر مقفل، فلا يُعدَّل ولا يُحذف';
+
   const openEditEvModal = (sid: number, ev: SupabaseEvidence) => {
+    // حارس أخير: الواجهة لا تعرض «تعديل» للمقفل أصلاً
+    if (isEvidenceLocked(ev.created_at)) { toastKind(LOCKED_EV_MSG, 'error'); return; }
     setEvidenceModal({ open: true, sectionId: sid, sub: '', mode: 'edit', initial: ev });
   };
 
@@ -698,8 +708,10 @@ export default function App() {
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                   const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-                  gradient.addColorStop(0, '#52c478'); // var(--em4)
-                  gradient.addColorStop(1, '#1a4f2c'); // var(--em7) roughly
+                  // canvas لا يقرأ var() — القيم من متغيرات DESIGN.md وقت الرسم
+                  const rootStyle = getComputedStyle(document.documentElement);
+                  gradient.addColorStop(0, rootStyle.getPropertyValue('--accent').trim());
+                  gradient.addColorStop(1, rootStyle.getPropertyValue('--brand').trim());
                   ctx.fillStyle = gradient;
                   ctx.fillRect(0, 0, canvas.width, canvas.height);
                   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -1005,6 +1017,9 @@ export default function App() {
   };
 
   const handleDeleteEv = (evidenceId: string) => {
+    // حارس أخير: الواجهة لا تعرض «حذف» للمقفل أصلاً
+    const target = supabaseEv.evidence.find(e => e.id === evidenceId);
+    if (target && isEvidenceLocked(target.created_at)) { toastKind(LOCKED_EV_MSG, 'error'); return; }
     setModalConfig({
       isOpen: true,
       title: 'حذف الشاهد',

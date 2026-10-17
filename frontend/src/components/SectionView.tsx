@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SectionData, SectionIndicator } from '../types';
 import type { SupabaseEvidence, EvidenceType } from '../hooks/useSupabaseEvidence';
-import { AR_EVIDENCE, countAr, formatDate } from '../utils';
+import { AR_EVIDENCE, countAr, formatDate, isEvidenceLocked } from '../utils';
 import {
   CUSTOM_INDICATOR_LIMIT, CUSTOM_LIMIT_MSG, CUSTOM_NAME_MAX, validateIndicatorName,
   type IndicatorResult,
@@ -14,7 +14,7 @@ import {
 export type Level = 'n' | 'p' | 'g' | 'x';
 
 export const LEVEL_LABEL: Record<Level, string> = { n: 'لم يبدأ', p: 'قيد التقدم', g: 'أساسي', x: 'متجاوز' };
-export const LEVEL_COLOR: Record<Level, string> = { n: 'var(--t3)', p: 'var(--prog)', g: 'var(--accent)', x: 'var(--st-gold)' };
+export const LEVEL_COLOR: Record<Level, string> = { n: 'var(--t3)', p: 'var(--prog)', g: 'var(--accent)', x: 'var(--gold)' };
 // نقطة الحالة — .navs .dt في النموذج: «لم يبدأ» بـ --idle، لا بلون نص الشارة --t3
 export const DOT_COLOR: Record<Level, string> = { ...LEVEL_COLOR, n: 'var(--idle)' };
 
@@ -156,9 +156,11 @@ function IndicatorNameForm({ title, submitLabel, initialName = '', officialNames
 }
 
 /** نافذة حذف المؤشر المخصص — delInd() في النموذج الأولي */
-function DeleteIndicatorDialog({ indicator, evidenceCount, targets, onCancel, onConfirm }: {
+function DeleteIndicatorDialog({ indicator, evidenceCount, hasLocked, targets, onCancel, onConfirm }: {
   indicator: SectionIndicator;
   evidenceCount: number;
+  /** فيه شاهد من شهر مقفل (isEvidenceLocked) ⇐ لا «حذفها معه»، النقل فقط */
+  hasLocked: boolean;
   /** مؤشرات القسم الأخرى التي تُنقل إليها الشواهد */
   targets: SectionIndicator[];
   onCancel: () => void;
@@ -195,8 +197,18 @@ function DeleteIndicatorDialog({ indicator, evidenceCount, targets, onCancel, on
                 </select>
               </div>
             )}
+            {hasLocked && (
+              <p className="mt-3 flex items-start gap-1.5 text-[length:var(--fs-xs)] text-[var(--t3)] leading-relaxed">
+                <i className="ti ti-lock text-[16px] shrink-0" />
+                {targets.length > 0
+                  ? 'بعض الشواهد من شهر مقفل، فلا تُحذف. يمكنك نقلها إلى مؤشر آخر.'
+                  : 'بعض الشواهد من شهر مقفل، فلا تُحذف، ولا يوجد مؤشر آخر تُنقل إليه.'}
+              </p>
+            )}
             <div className="flex gap-2 mt-4">
-              <button type="button" onClick={() => onConfirm('delete')} className={BTN_DNG}>حذفها معه</button>
+              {hasLocked
+                ? targets.length === 0 && <button type="button" onClick={onCancel} className={BTN_GH}>إلغاء</button>
+                : <button type="button" onClick={() => onConfirm('delete')} className={BTN_DNG}>حذفها معه</button>}
               {targets.length > 0 && (
                 <button type="button" onClick={() => onConfirm('move', toId)} className={BTN_PRI}>نقل وحذف المؤشر</button>
               )}
@@ -227,23 +239,39 @@ export interface EvHighlightActions {
   onToggleGallery: (ev: SupabaseEvidence) => void;
 }
 
+/** المسافة السفلية لكل شاشة فيها الزر العائم (Dashboard، الجوال فقط): bottom 80px
+ *  + ارتفاع الزر 56px + هامش 16px، فوق safe-area — آخر عنصر يُمرَّر فوق الزر */
+export const FAB_CLEARANCE = 'pb-[calc(152px+env(safe-area-inset-bottom))] lg:pb-0';
+
+/** طبقة قائمة ⋯ وغطائها: فوق الزر العائم (z-250) وشريط الجوال (z-300) */
+const MENU_LAYER = 'z-[310]';
+/** أعلى ارتفاع للقائمة: 4 عناصر × 36px + الحشوة */
+const MENU_MAX_H = 152;
+/** على الجوال تفتح القائمة للأعلى إن لم تتسع تحت الزر قبل منطقة الزر العائم وشريط الجوال */
+function menuOpensUp(btn: HTMLElement): boolean {
+  if (window.matchMedia('(min-width: 1024px)').matches) return false;
+  return window.innerHeight - btn.getBoundingClientRect().bottom < MENU_MAX_H + 152;
+}
+
 // زر في قائمة ⋯ للشاهد
 const MENU_ITEM = 'w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer';
 
-export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete, canEdit = true, locked = false, highlight }: {
+export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelete, canEdit = true, highlight }: {
   ev: SupabaseEvidence; menuOpen: boolean; onToggleMenu: () => void; onCloseMenu: () => void; onEdit?: () => void; onDelete: () => void;
   /** false يخفي «تعديل» من القائمة (شواهد الأقسام الخاصة) */
   canEdit?: boolean;
-  /** شهر أرشيف مقفل: يخفي «تعديل» و«حذف»، ويبقى ما هو إعداد عرض (التثبيت واللمحات) */
-  locked?: boolean;
   highlight?: EvHighlightActions;
 }) {
   const url = ev.file_url ?? ev.link_url ?? undefined;
+  const [menuUp, setMenuUp] = useState(false);
   const pinned = !!highlight && highlight.pinnedId === ev.id;
   // الشاهد غير المصنّف لا يظهر في الصفحة العامة، فلا يُثبَّت
   const canPin = !!highlight && ev.section_id !== null;
   // المعرض للصور والفيديو فقط
   const canGallery = !!highlight && (ev.evidence_type === 'image' || ev.evidence_type === 'video');
+  // شاهد شهر مقفل (isEvidenceLocked — قاعدة الأرشيف نفسها): يخفي «تعديل» و«حذف»،
+  // ويبقى ما هو إعداد عرض (التثبيت واللمحات)
+  const locked = isEvidenceLocked(ev.created_at);
   const showEdit = !locked && canEdit && !!onEdit;
   const showDelete = !locked;
   // لا خيار في القائمة ⇐ لا زر ⋯
@@ -257,7 +285,7 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
         <span className="flex items-center gap-1.5 min-w-0">
           <b dir="auto" className="block min-w-0 font-normal text-[length:var(--fs-sm)] text-[var(--t1)] whitespace-nowrap overflow-hidden text-ellipsis">{ev.title}</b>
           {pinned && (
-            <span className="inline-flex items-center gap-1 shrink-0 rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--st-gold)]">
+            <span className="inline-flex items-center gap-1 shrink-0 rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--gold)]">
               <i className="ti ti-pin" />أبرز إنجاز
             </span>
           )}
@@ -266,6 +294,9 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
           {TYPE_LABEL[ev.evidence_type] ?? 'ملف'} · {formatDate(ev.created_at)}{noDesc(ev) && ' · بلا وصف'}
           {ev.hidden_from_gallery && (
             <> · <i className="ti ti-eye-off text-[var(--t3)]" title="مخفي من اللمحات" aria-label="مخفي من اللمحات" /></>
+          )}
+          {locked && (
+            <> · <i className="ti ti-lock text-[var(--t3)]" aria-hidden="true" /> مقفل</>
           )}
         </small>
       </span>
@@ -287,7 +318,7 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
           type="button"
           aria-label="خيارات الشاهد"
           aria-expanded={menuOpen}
-          onClick={onToggleMenu}
+          onClick={e => { if (!menuOpen) setMenuUp(menuOpensUp(e.currentTarget)); onToggleMenu(); }}
           className="relative w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[16px] text-[var(--t2)] shrink-0 cursor-pointer before:absolute before:-inset-1 before:content-['']"
         >
           <i className="ti ti-dots" />
@@ -295,8 +326,8 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
       )}
       {hasMenu && menuOpen && (
         <>
-          <div className="fixed inset-0 z-20" onClick={onCloseMenu} />
-          <div role="menu" className="absolute left-3.5 top-full mt-1 z-30 min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]">
+          <div className={`fixed inset-0 ${MENU_LAYER}`} onClick={onCloseMenu} />
+          <div role="menu" className={`absolute left-3.5 ${menuUp ? 'bottom-full mb-1' : 'top-full mt-1'} ${MENU_LAYER} min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]`}>
             {highlight && canPin && (
               <button
                 type="button"
@@ -407,6 +438,7 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
   const [menuEvId, setMenuEvId] = useState<string | null>(null);
   // المؤشرات المخصصة: قائمة ⋯ المفتوحة، والنموذج المفتوح (إضافة أو تعديل)، ونافذة الحذف
   const [menuIndId, setMenuIndId] = useState<string | null>(null);
+  const [menuIndUp, setMenuIndUp] = useState(false);
   const [addingIndicator, setAddingIndicator] = useState(false);
   const [editIndId, setEditIndId] = useState<string | null>(null);
   const [deleteIndId, setDeleteIndId] = useState<string | null>(null);
@@ -435,8 +467,9 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
   // التحفيز على الوصف — يُحسب من الشواهد الظاهرة في بطاقات المؤشرات، حتى يكون
   // الشاهد الذي يفتحه «أضف وصفاً» ظاهراً في الشاشة دائماً
   const visibleEvidence = section.indicators.flatMap(ind => byIndicator(ind.id));
-  const undescribed = visibleEvidence.filter(noDesc);
-  const describedCount = visibleEvidence.length - undescribed.length;
+  // المقفل لا يُعدَّل، فلا يُعدّ ولا يُفتح من «أضف وصفاً»
+  const undescribed = visibleEvidence.filter(e => noDesc(e) && !isEvidenceLocked(e.created_at));
+  const describedCount = visibleEvidence.filter(e => !noDesc(e)).length;
   const newestUndescribed = undescribed.reduce<SupabaseEvidence | null>(
     (best, e) => (!best || e.created_at > best.created_at ? e : best), null);
 
@@ -446,7 +479,7 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
   const deleteInd = deleteIndId ? customs.find(ind => ind.id === deleteIndId) ?? null : null;
 
   return (
-    <div className="flex flex-col gap-3 pb-24 lg:pb-0">
+    <div className={`flex flex-col gap-3 ${FAB_CLEARANCE}`}>
       <SectionHeader
         onBack={onBack}
         icon={section.icon}
@@ -533,8 +566,8 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
           >
             <div className="relative flex items-center gap-2.5 py-3 px-3.5">
               <span
-                className={`w-[26px] h-[26px] rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[14px] border-[1.5px] ${
-                  st === 'x' ? 'border-[var(--st-gold)] bg-[var(--st-gold)] text-[var(--bg)]'
+                className={`w-[26px] h-[26px] rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[length:var(--fs-sm)] border-[1.5px] ${
+                  st === 'x' ? 'border-[var(--gold)] bg-[var(--gold)] text-[var(--bg)]'
                   : st === 'g' ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--bg)]'
                   : 'border-[var(--idle)] text-[var(--t3)]'
                 }`}
@@ -550,7 +583,10 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
                   type="button"
                   aria-label="خيارات المؤشر"
                   aria-expanded={menuIndId === indicator.id}
-                  onClick={() => setMenuIndId(prev => (prev === indicator.id ? null : indicator.id))}
+                  onClick={e => {
+                    if (menuIndId !== indicator.id) setMenuIndUp(menuOpensUp(e.currentTarget));
+                    setMenuIndId(prev => (prev === indicator.id ? null : indicator.id));
+                  }}
                   className="w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[16px] text-[var(--t2)] shrink-0 cursor-pointer"
                 >
                   <i className="ti ti-dots" />
@@ -558,8 +594,8 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
               )}
               {menuIndId === indicator.id && (
                 <>
-                  <div className="fixed inset-0 z-20" onClick={() => setMenuIndId(null)} />
-                  <div role="menu" className="absolute left-3.5 top-full mt-1 z-30 min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]">
+                  <div className={`fixed inset-0 ${MENU_LAYER}`} onClick={() => setMenuIndId(null)} />
+                  <div role="menu" className={`absolute left-3.5 ${menuIndUp ? 'bottom-full mb-1' : 'top-full mt-1'} ${MENU_LAYER} min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]`}>
                     <button
                       type="button"
                       role="menuitem"
@@ -651,6 +687,7 @@ export default function SectionView({ section, evidence, onBack, onAddEvClick, o
         <DeleteIndicatorDialog
           indicator={deleteInd}
           evidenceCount={byIndicator(deleteInd.id).length}
+          hasLocked={byIndicator(deleteInd.id).some(e => isEvidenceLocked(e.created_at))}
           targets={section.indicators.filter(ind => ind.id !== deleteInd.id)}
           onCancel={() => setDeleteIndId(null)}
           onConfirm={(mode, toId) => {

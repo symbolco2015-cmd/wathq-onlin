@@ -222,7 +222,8 @@ function Label({ children, hint, htmlFor, action }: { children: React.ReactNode;
     <div className="flex items-center gap-1.5 mb-2">
       <label htmlFor={htmlFor} className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">
         {children}
-        {hint && <small className="ms-1.5 text-[length:var(--fs-xs)] font-normal text-[var(--t3)]">{hint}</small>}
+        {/* مسافة حقيقية لا هامش فقط: بدونها تتصل «قالب» بـ«اختياري» */}
+        {hint && <>{' '}<small className="ms-1 text-[length:var(--fs-xs)] font-normal text-[var(--t3)]">{hint}</small></>}
       </label>
       {action && <div className="ms-auto">{action}</div>}
     </div>

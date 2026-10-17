@@ -221,6 +221,7 @@ export const AR_ABSENT: CountForms = { one: 'غائب واحد', two: 'غائب�
 export const AR_ANALYSIS: CountForms = { one: 'تحليل واحد', two: 'تحليلان', twoGen: 'تحليلين', few: 'تحليلات', many: 'تحليلاً', single: 'تحليل' };
 export const AR_EVIDENCE: CountForms = { one: 'شاهد واحد', two: 'شاهدان', twoGen: 'شاهدين', few: 'شواهد', many: 'شاهداً', single: 'شاهد' };
 export const AR_ROW: CountForms = { one: 'صف واحد', two: 'صفان', twoGen: 'صفين', few: 'صفوف', many: 'صفاً', single: 'صف' };
+export const AR_TEST: CountForms = { one: 'اختبار واحد', two: 'اختباران', twoGen: 'اختبارين', few: 'اختبارات', many: 'اختباراً', single: 'اختبار' };
 export const AR_SCORE: CountForms = { one: 'درجة واحدة', two: 'درجتان', twoGen: 'درجتين', few: 'درجات', many: 'درجة', single: 'درجة' };
 export const AR_SHEET: CountForms = { one: 'ورقة واحدة', two: 'ورقتان', twoGen: 'ورقتين', few: 'أوراق', many: 'ورقة', single: 'ورقة' };
 

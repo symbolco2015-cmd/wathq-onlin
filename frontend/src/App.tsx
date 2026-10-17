@@ -226,8 +226,8 @@ export default function App() {
   const isOwnPreview = currentPage === 'public' && !shareUserId && !reportId;
   const ownResultsAnalysis = useResultsAnalysis(isOwnPreview ? user?.id : undefined);
   const ownResultsAnalysisPublic = useMemo(
-    () => ownResultsAnalysis.analyses.map(toPublicResultsAnalysisRow),
-    [ownResultsAnalysis.analyses]
+    () => ownResultsAnalysis.analyses.map(a => toPublicResultsAnalysisRow(a, ownResultsAnalysis.gradeBands)),
+    [ownResultsAnalysis.analyses, ownResultsAnalysis.gradeBands]
   );
 
   // ملخصات الأقسام لمعاينة المالك لملفه — قراءة مباشرة بـRLS (المالك يقرأ

@@ -8,7 +8,7 @@ import ComparisonChart from './ComparisonChart';
 import ConvertToEvidenceFlow from './ConvertToEvidenceFlow';
 import EditAnalysisSheet from './EditAnalysisSheet';
 import {
-  analysisSourceLabel, buildComparisonSeries, classGroupLabel, computeScoreGap, fmtNum, formatScore, fullMarkOf,
+  analysisSourceLabel, bandTextCss, bandTone, buildComparisonSeries, classGroupLabel, computeScoreGap, fmtNum, formatScore, fullMarkOf,
   groupAnalysesByClass, groupRemedialStudents,
 } from './logic';
 import type { GradeBand, ResultsAnalysisRow } from './types';
@@ -332,13 +332,14 @@ function AnalysisTabBody({ analysis, bands, onConvertClick, onEditClick, onDelet
         <div className="rounded-[var(--r-md)] border border-[var(--bd)] overflow-hidden">
           <div className="max-h-64 overflow-y-auto divide-y divide-[var(--bd)]">
             {analysis.summary.students.map((s, i) => {
-              const band = bands.find(b => b.id === s.bandId);
+              const bandIndex = bands.findIndex(b => b.id === s.bandId);
+              const scoreColor = bandIndex >= 0 ? bandTextCss(bandTone(bandIndex, bands.length)) : 'var(--t1)';
               return (
                 <div key={i} className="flex items-center justify-between gap-3 py-2.5 px-3.5 text-[length:var(--fs-sm)]">
                   <span className="text-[var(--t1)] truncate">{s.name}</span>
                   <div className="flex items-center gap-2 shrink-0">
                     {s.inDangerZone && <i className="ti ti-alert-triangle text-[16px] text-[var(--warn)]" title="ضمن منطقة الخطر" />}
-                    <span className="font-bold" style={{ color: band?.color }}>{formatScore(s.score, fullMark)}</span>
+                    <span className="font-bold" style={{ color: scoreColor }}>{formatScore(s.score, fullMark)}</span>
                   </div>
                 </div>
               );

@@ -7,7 +7,7 @@ import { supabase } from '../supabaseClient';
 import { calculatePointsLevelFromTotal, formatDate } from '../utils';
 import type { AcademicDate, AppState, HarvestSnapshot, SectionData } from '../types';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
-import type { ResultsAnalysisRow } from './ResultsAnalysis/types';
+import type { GradeBand, ResultsAnalysisRow } from './ResultsAnalysis/types';
 import { toPublicResultsAnalysisRow, buildPublicComparisons } from './ResultsAnalysis/logic';
 
 interface HarvestReportSheetProps {
@@ -190,7 +190,15 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
         .gte('created_at', fromIso)
         .lte('created_at', toIso);
       if (raErr) throw raErr;
-      const resultsAnalysis = ((analysisRows || []) as ResultsAnalysisRow[]).map(toPublicResultsAnalysisRow);
+      // الفئات لأعداد band_counts في اللقطة (قراءتها عامة). فشلها لا يوقف
+      // التقرير: تُبنى اللقطة بلا أعداد الفئات، ويُخفى شريطها عند العرض.
+      const { data: bandRows, error: bandsErr } = await supabase
+        .from('grade_bands')
+        .select('*')
+        .order('display_order', { ascending: true });
+      if (bandsErr) console.warn('[HarvestReportSheet] تعذّر تحميل فئات التقدير:', bandsErr.message);
+      const gradeBands = (bandRows ?? []) as GradeBand[];
+      const resultsAnalysis = ((analysisRows || []) as ResultsAnalysisRow[]).map(r => toPublicResultsAnalysisRow(r, gradeBands));
       const resultsComparisons = buildPublicComparisons(resultsAnalysis);
 
       // 4) شارة اللقب/النقاط — من مجموع شواهد الفترة فقط، وليس نافذة "آخر 3

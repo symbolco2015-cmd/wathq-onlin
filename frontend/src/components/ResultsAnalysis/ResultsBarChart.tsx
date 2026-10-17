@@ -1,6 +1,6 @@
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { AnalysisSummary, GradeBand } from './types';
-import { DANGER_ZONE_CENTER, DANGER_ZONE_MARGIN, fmtPct, fmtPm } from './logic';
+import { bandTone, DANGER_ZONE_CENTER, DANGER_ZONE_MARGIN, fmtPct, fmtPm, type BandTone } from './logic';
 import { AR_STUDENT, countAr } from '../../utils';
 
 interface ResultsBarChartProps {
@@ -11,16 +11,25 @@ interface ResultsBarChartProps {
 interface BandDatum {
   bandId: string;
   label: string;
+  /** لون صريح (من getComputedStyle) لا var() — يُقرأ في كل المتصفحات وينسخه html-to-image */
   color: string;
+  opacity: number;
   normal: number;
   danger: number;
   total: number;
 }
 
-/** يحوّل hex إلى نفس اللون بشفافية أعلى — يُستخدم لتظليل الجزء الواقع ضمن
- *  منطقة الخطر داخل عمودي "مقبول"/"ضعيف" فقط (نفس الهوية اللونية، وليست
- *  فئة بصرية جديدة). على الخلفية الداكنة يظهر هذا الجزء أغمق من بقية العمود. */
-const withAlpha = (hex: string, alpha: string) => `${hex}${alpha}`;
+/** شفافية جزء منطقة الخطر نسبةً إلى شفافية الفئة، بحد أدنى يبقيه مرئياً.
+ *  على الخلفية الداكنة يظهر هذا الجزء أغمق من بقية العمود. */
+const DANGER_PART_OPACITY = 0.45;
+const DANGER_PART_MIN_OPACITY = 0.3;
+export const dangerPartOpacity = (opacity: number) => Math.max(opacity * DANGER_PART_OPACITY, DANGER_PART_MIN_OPACITY);
+
+/** قيمة متغير اللون صريحةً، وvar() احتياطاً إن لم تُقرأ */
+function resolveTone(t: BandTone): string {
+  const v = typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue(t.base).trim() : '';
+  return v || `var(${t.base})`;
+}
 
 const TOOLTIP_CLS = 'rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)] px-3 py-2';
 // ألوان SVG تُمرَّر خصائص لا أصنافاً؛ المتصفحات تقبل var() في سمات fill/stroke
@@ -30,7 +39,8 @@ const Y_TICK = { fill: 'var(--t3)', fontSize: 12 };
 const CURSOR = { fill: 'var(--bd)' };
 
 function buildChartData(summary: AnalysisSummary, bands: GradeBand[]): BandDatum[] {
-  return bands.map(band => {
+  return bands.map((band, index) => {
+    const tone = bandTone(index, bands.length);
     const total = summary.bandCounts[band.id] ?? 0;
     // التظليل يظهر فقط داخل الفئتين اللتين يتقاطع مداهما فعلياً مع منطقة
     // الخطر [55%,65%] — عملياً "مقبول" (60-69) و"ضعيف" (0-59) بالفئات الافتراضية،
@@ -45,7 +55,8 @@ function buildChartData(summary: AnalysisSummary, bands: GradeBand[]): BandDatum
     return {
       bandId: band.id,
       label: band.label,
-      color: band.color,
+      color: resolveTone(tone),
+      opacity: tone.opacity,
       normal: total - danger,
       danger,
       total,
@@ -59,7 +70,7 @@ function ChartTooltip({ active, payload }: any) {
   return (
     <div className={TOOLTIP_CLS}>
       <div className="flex items-center gap-2 mb-1">
-        <span className="w-2.5 h-2.5 rounded-[var(--r-full)]" style={{ background: d.color }} />
+        <span className="w-2.5 h-2.5 rounded-[var(--r-full)]" style={{ background: d.color, opacity: d.opacity }} />
         <span className="text-[length:var(--fs-xs)] font-bold text-[var(--t1)]">{d.label}</span>
       </div>
       <div className="text-[length:var(--fs-xs)] text-[var(--t2)]">{countAr(d.total, AR_STUDENT)}</div>
@@ -95,11 +106,11 @@ export default function ResultsBarChart({ summary, bands }: ResultsBarChartProps
             <Tooltip content={<ChartTooltip />} cursor={CURSOR} />
             {/* الجزء الواقع ضمن منطقة الخطر — من القاعدة، بلا استدارة */}
             <Bar dataKey="danger" stackId="band" maxBarSize={24} isAnimationActive={false}>
-              {data.map(d => <Cell key={d.bandId} fill={withAlpha(d.color, '55')} />)}
+              {data.map(d => <Cell key={d.bandId} fill={d.color} fillOpacity={dangerPartOpacity(d.opacity)} />)}
             </Bar>
             {/* بقية الفئة فوقه — استدارة علوية 4px فقط */}
             <Bar dataKey="normal" stackId="band" maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive={false}>
-              {data.map(d => <Cell key={d.bandId} fill={d.color} />)}
+              {data.map(d => <Cell key={d.bandId} fill={d.color} fillOpacity={d.opacity} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>

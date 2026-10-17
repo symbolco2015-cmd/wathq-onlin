@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import type { ContinuityData, FrozenPointsLevel, PublicPortfolioState, SectionData, SectionIndicator } from '../types';
-import { AR_ANALYSIS, countAr, formatDate } from '../utils';
+import { formatDate } from '../utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../supabaseClient';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
@@ -21,6 +21,7 @@ import { sectionLevel, nEv, type Level } from './SectionView';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
 import { buildPublicComparisons } from './ResultsAnalysis/logic';
+import PublicResultsSection from './ResultsAnalysis/PublicResultsSection';
 import './Public.print.css';
 
 interface PublicProps {
@@ -346,7 +347,6 @@ export default function Public({ state, sections: allSections, continuity, evide
   // البنود الخاصة الأربعة — تظهر فقط إن كان فيها محتوى، بالعدد وحده (لا مستوى)
   const stratEvCount = stratGroups.reduce((n, g) => n + g.evidence.length, 0) + otherStratEvs.length;
   const analysisEvCount = analysisGroups.reduce((n, g) => n + g.evs.length, 0);
-  const analysisRowCount = sortedAnalysis?.length ?? 0;
   const specialItems: AreaItem[] = [];
   if (stratSection && stratEvCount > 0) {
     specialItems.push({ key: 'strat', open: { kind: 'strat' }, icon: 'ti-bulb', title: 'استراتيجيات التدريس المتنوعة', count: nEv(stratEvCount) });
@@ -354,9 +354,10 @@ export default function Public({ state, sections: allSections, continuity, evide
   if (stratSection && indivDiffSub && indivDiffEvs.length > 0) {
     specialItems.push({ key: 'indiv', open: { kind: 'indiv' }, icon: 'ti-users', title: indivDiffSub, count: nEv(indivDiffEvs.length) });
   }
-  if (analysisSection && (analysisRowCount > 0 || analysisEvCount > 0)) {
-    const parts = [analysisRowCount > 0 ? countAr(analysisRowCount, AR_ANALYSIS) : '', analysisEvCount > 0 ? nEv(analysisEvCount) : ''].filter(Boolean);
-    specialItems.push({ key: 'analysis', open: { kind: 'analysis' }, icon: analysisSection.icon, title: analysisSection.ttl, count: parts.join(' · ') });
+  // التحليلات نفسها في قسم «نتائج المتعلمين» المفتوح أسفل البنود؛ البطاقة هنا
+  // لشواهد البند فقط
+  if (analysisSection && analysisEvCount > 0) {
+    specialItems.push({ key: 'analysis', open: { kind: 'analysis' }, icon: analysisSection.icon, title: analysisSection.ttl, count: nEv(analysisEvCount) });
   }
   if (improvementSection && improvementGroups.length > 0) {
     const n = improvementGroups.reduce((c, g) => c + g.evs.length, 0);
@@ -371,7 +372,7 @@ export default function Public({ state, sections: allSections, continuity, evide
       case 'indiv':
         return <IndivDiffContent evs={indivDiffEvs} onPreview={setViewerItem} eager={forPrint} />;
       case 'analysis':
-        return <AnalysisContent rows={sortedAnalysis} comparisons={resultsComparisons} groups={analysisGroups} onPreview={setViewerItem} eager={forPrint} />;
+        return <AnalysisContent groups={analysisGroups} onPreview={setViewerItem} eager={forPrint} />;
       case 'improvement':
         return <ImprovementContent groups={improvementGroups} onPreview={setViewerItem} eager={forPrint} />;
     }
@@ -539,6 +540,10 @@ export default function Public({ state, sections: allSections, continuity, evide
             totalSections={sectionsWithLevel.length}
             onOpen={openSection}
           />
+
+          {sortedAnalysis && sortedAnalysis.length > 0 && (
+            <PublicResultsSection rows={sortedAnalysis} comparisons={resultsComparisons} expandAll={printAll} />
+          )}
 
           {continuity && (
             <div className="mt-8">

@@ -6,10 +6,9 @@ import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { toEvRow } from '../indicators';
 import { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from './EvidenceViewer';
 import { LevelBadge, nEv, type Level } from './SectionView';
-import { AR_ABSENT, AR_STUDENT, countAr } from '../utils';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
-import { comparisonDelta, fmtSignedPct, formatClass, formatScore, formatTest, publicPcts } from './ResultsAnalysis/logic';
+import { comparisonDelta, fmtSignedPct, formatScore, publicPcts } from './ResultsAnalysis/logic';
 
 /** صف عرض شاهد: صف المؤشرات المعتاد + نوع العرض العام والوصف (لمعاينة الملاحظة). */
 export function toPublicRow(e: SupabaseEvidence) {
@@ -38,9 +37,9 @@ const KIND_ICON: Record<PublicKind, string> = {
   audio: 'ti-microphone', link: 'ti-link', note: 'ti-notes',
 };
 
-const EYEBROW = 'flex items-center gap-1.5 text-[length:var(--fs-xs)] font-bold text-[var(--brand-gold)] print:break-after-avoid';
-const PILL = 'inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] print:bg-transparent print:border px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap';
-const PANEL = 'rounded-[var(--r-md)] bg-[var(--s2)] print:bg-transparent print:break-inside-avoid border border-[var(--bd)] p-4';
+export const EYEBROW = 'flex items-center gap-1.5 text-[length:var(--fs-xs)] font-bold text-[var(--brand-gold)] print:break-after-avoid';
+export const PILL = 'inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] print:bg-transparent print:border px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap';
+export const PANEL = 'rounded-[var(--r-md)] bg-[var(--s2)] print:bg-transparent print:break-inside-avoid border border-[var(--bd)] p-4';
 
 /** اسم الدومين فقط (بدون www.) لعرضه بجانب أيقونة رابط عام غير معروف */
 function getDomain(url: string): string {
@@ -401,13 +400,13 @@ export function IndivDiffContent({ evs, onPreview, eager }: { evs: PublicRow[]; 
   );
 }
 
-/** سطر تحليل واحد ببند 10 — بلا رسم توزيع فئات أو قائمة طلاب (بيانات داخلية
+/** شريط مدى تحليل شعبة واحدة — بلا رسم توزيع فئات أو قائمة طلاب (بيانات داخلية
  *  فقط)، فقط شريط مدى بالنسبة المئوية يوضّح موقع الأدنى/الأعلى، وعلامة لموقع
  *  المتوسط. dir="ltr" مقصود ومعزول عن اتجاه الصفحة: شريط رقمي كهذا يحتاج
  *  تموضعاً مطلقاً (left: min%→max%)، وقيم الدرجات تُقرأ تقليدياً من اليسار
  *  لليمين. الأدنى والأعلى يُحسبان بـ min/max احتياطاً، فلا ينقلب الشريط أياً
  *  كان المصدر. لقطات الحصاد القديمة بلا full_mark تُقرأ من 100. */
-function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
+export function ResultRangeBar({ row }: { row: PublicResultsAnalysisRow }) {
   const clamp = (n: number) => Math.min(100, Math.max(0, n));
   const pcts = publicPcts(row);
   const lo = Math.min(row.min_score, row.max_score);
@@ -416,38 +415,24 @@ function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
   const maxPct = clamp(Math.max(pcts.min, pcts.max));
   const avgPct = clamp(pcts.average);
   const avgText = formatScore(row.average, pcts.fullMark);
-  const meta = [formatClass(row.stage, row.grade_level, row.class_section), formatTest(row.test_type, row.test_seq)].filter(Boolean).join(' · ');
-  const absent = row.absent_count ?? 0;
 
   return (
-    <div className={PANEL}>
-      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-        <div className="min-w-0 flex-1 break-words">
-          <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{row.subject}</span>
-          {/* مسافة حقيقية بين العنصرين: بدونها يصل المتصفح آخر حرف المادة
-              بأول حرف بعدها (رياضيات+ثاني)، فتظهر التاء بصورة الوصل */}
-          {meta && <>{' '}<span className="text-[length:var(--fs-xs)] text-[var(--t3)] mr-1">{meta}</span></>}
-        </div>
-        <span className={`${PILL} shrink-0`}>{countAr(row.total_students, AR_STUDENT)}{absent > 0 ? ` · ${countAr(absent, AR_ABSENT)}` : ''}</span>
+    <div dir="ltr">
+      <div className="print-progress-track relative h-2 rounded-[var(--r-full)] bg-[var(--s3)]">
+        <div
+          className="print-progress-fill absolute top-0 h-2 rounded-[var(--r-full)] bg-[var(--t3)]"
+          style={{ left: `${minPct}%`, width: `${Math.max(1, maxPct - minPct)}%` }}
+        ></div>
+        <div
+          className="absolute top-1/2 w-[3px] h-3 rounded-[var(--r-full)] bg-[var(--t1)] print:bg-black -translate-y-1/2"
+          style={{ left: `${avgPct}%`, marginLeft: '-1.5px' }}
+          title={`المتوسط ${avgText}`}
+        ></div>
       </div>
-
-      <div dir="ltr">
-        <div className="print-progress-track relative h-2 rounded-[var(--r-full)] bg-[var(--s3)]">
-          <div
-            className="print-progress-fill absolute top-0 h-2 rounded-[var(--r-full)] bg-[var(--t3)]"
-            style={{ left: `${minPct}%`, width: `${Math.max(1, maxPct - minPct)}%` }}
-          ></div>
-          <div
-            className="absolute top-1/2 w-[3px] h-3 rounded-[var(--r-full)] bg-[var(--t1)] print:bg-black -translate-y-1/2"
-            style={{ left: `${avgPct}%`, marginLeft: '-1.5px' }}
-            title={`المتوسط ${avgText}`}
-          ></div>
-        </div>
-        <div dir="rtl" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[length:var(--fs-xs)] text-[var(--t3)] font-bold mt-2">
-          <span>أعلى{' '}{formatScore(hi, pcts.fullMark)}</span>
-          <span className="text-[var(--t1)]">متوسط{' '}{avgText}</span>
-          <span>أدنى{' '}{formatScore(lo, pcts.fullMark)}</span>
-        </div>
+      <div dir="rtl" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[length:var(--fs-xs)] text-[var(--t3)] font-bold mt-2">
+        <span>أعلى{' '}{formatScore(hi, pcts.fullMark)}</span>
+        <span className="text-[var(--t1)]">متوسط{' '}{avgText}</span>
+        <span>أدنى{' '}{formatScore(lo, pcts.fullMark)}</span>
       </div>
     </div>
   );
@@ -455,7 +440,7 @@ function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
 
 /** عنصر مقارنة مصغّر لمادة بها تحليلان فأكثر — آخر نقطتين فقط + نص الفرق
  *  (comparisonDelta، نفس منطق ComparisonChart.tsx). لا يُعرض لو أقل من نقطتين. */
-function ResultComparisonMini({ subject, series }: { subject: string; series: ComparisonPoint[] }) {
+export function ResultComparisonMini({ subject, series }: { subject: string; series: ComparisonPoint[] }) {
   const delta = comparisonDelta(series);
   if (!delta) return null;
 
@@ -488,30 +473,17 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
   );
 }
 
-/** «تحليل نتائج المتعلمين» — التحليلات المبسَّطة ثم المقارنات ثم شواهد البند.
- *  rows مرتّبة سلفاً (الأحدث أولاً) في Public.tsx. */
-export function AnalysisContent({ rows, comparisons, groups, onPreview, eager }: {
-  rows: PublicResultsAnalysisRow[] | null | undefined;
-  comparisons: { subject: string; series: ComparisonPoint[] }[];
+/** «تحليل نتائج المتعلمين» في نافذة البند — شواهد البند فقط. التحليلات
+ *  نفسها في قسم «نتائج المتعلمين» المفتوح (ResultsAnalysis/PublicResultsSection). */
+export function AnalysisContent({ groups, onPreview, eager }: {
   groups: EvidenceGroup[];
   onPreview: (e: ViewerItem) => void;
   eager?: boolean;
 }) {
+  if (groups.length === 0) return <EmptyNote icon="ti-ghost" text="لا توجد شواهد موثّقة بعد لهذا البند" />;
   return (
     <div className="mt-2">
-      {rows && (rows.length === 0 ? (
-        <EmptyNote icon="ti-ghost" text="لا توجد تحليلات نتائج موثّقة بعد لهذا البند" />
-      ) : (
-        <div className="flex flex-col gap-3">
-          {rows.map(row => <ResultRangeRow key={row.id} row={row} />)}
-          {comparisons.map(c => <ResultComparisonMini key={c.subject} subject={c.subject} series={c.series} />)}
-        </div>
-      ))}
-      {groups.length > 0 && (
-        <div className={rows ? 'mt-3' : ''}>
-          <IndicatorGroups groups={groups} onPreview={onPreview} eager={eager} />
-        </div>
-      )}
+      <IndicatorGroups groups={groups} onPreview={onPreview} eager={eager} />
     </div>
   );
 }

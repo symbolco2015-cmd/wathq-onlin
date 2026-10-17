@@ -1,4 +1,4 @@
-import type { GradeBand, AnalysisSummary, StudentResult, ResultsAnalysisRow, PublicResultsAnalysisRow, SectionRow, StageCode, TestTypeCode } from './types';
+import type { GradeBand, AnalysisSummary, BandCount, StudentResult, ResultsAnalysisRow, PublicResultsAnalysisRow, SectionRow, StageCode, TestTypeCode } from './types';
 import { AR_STUDENT, countAr, formatDate } from '../../utils';
 import { parseScore } from './fileModel';
 
@@ -11,6 +11,8 @@ export { SECTION_MAX } from './fileModel';
  *  منطقة خطر. ثابت الآن، قابل للتعديل لاحقاً دون تغيير منطق الحساب. */
 export const DANGER_ZONE_MARGIN = 5;
 export const DANGER_ZONE_CENTER = 60;
+/** حد النجاح — pass_count في get_shared_results_analysis يستعمل 60 نفسها */
+export const PASS_PCT = DANGER_ZONE_CENTER;
 
 /** عتبتا كشف "تضخم الدرجات": نسبة الطلاب بنسبة ≥95% تتجاوز 50%، أو الانحراف
  *  المعياري للفصل بأكمله أقل من 5 نقاط مئوية (تكدّس شديد للدرجات).
@@ -615,14 +617,25 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 /** يحوّل صفاً داخلياً كاملاً (يحوي أسماء الطلاب عبر summary.students) إلى
  *  الشكل المبسَّط الآمن للعرض العام — لمعاينة المالك لصفحته فقط، ولبناء
  *  لقطة تقرير الحصاد الفصلي. يحسب الحقول كما تحسبها
- *  get_shared_results_analysis() داخل SQL لنمط ?share=، حتى يتطابق العرض. */
-export function toPublicResultsAnalysisRow(row: ResultsAnalysisRow): PublicResultsAnalysisRow {
+ *  get_shared_results_analysis() داخل SQL لنمط ?share=، حتى يتطابق العرض.
+ *  bands: بها يُحسب band_counts (من الدرجة الخام كما في SQL)؛ بدونها يُترك. */
+export function toPublicResultsAnalysisRow(row: ResultsAnalysisRow, bands?: GradeBand[]): PublicResultsAnalysisRow {
   const fullMark = fullMarkOf(row.full_mark);
   const scores = row.summary.students.map(s => s.score);
   const hasScores = scores.length > 0;
   const avg = mean(scores);
   const min = hasScores ? Math.min(...scores) : 0;
   const max = hasScores ? Math.max(...scores) : 0;
+  let bandCounts: BandCount[] | null = null;
+  if (bands && bands.length > 0) {
+    const ordered = [...bands].sort((a, b) => a.display_order - b.display_order);
+    const counts = new Map<string, number>(ordered.map(b => [b.id, 0]));
+    for (const sc of scores) {
+      const band = matchBand(toPct(sc, fullMark), ordered);
+      if (band) counts.set(band.id, (counts.get(band.id) ?? 0) + 1);
+    }
+    bandCounts = ordered.map(b => ({ label: b.label, count: counts.get(b.id) ?? 0 }));
+  }
   return {
     id: row.id,
     subject: row.subject,
@@ -641,6 +654,8 @@ export function toPublicResultsAnalysisRow(row: ResultsAnalysisRow): PublicResul
     average_pct: round1(toPct(avg, fullMark)),
     min_pct: round1(toPct(min, fullMark)),
     max_pct: round1(toPct(max, fullMark)),
+    pass_count: scores.filter(sc => toPct(sc, fullMark) >= PASS_PCT).length,
+    ...(bandCounts ? { band_counts: bandCounts } : {}),
   };
 }
 
@@ -675,4 +690,171 @@ export function buildPublicComparisons(rows: PublicResultsAnalysisRow[]): { subj
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
         .map(r => ({ id: r.id, label: pointLabel(r), average: publicPcts(r).average, createdAt: r.created_at })),
     }));
+}
+
+// ---------------------------------------------------------------------------
+// الصفحة العامة: الاختبار وحدة العرض، ومقارنة الشعب
+// ---------------------------------------------------------------------------
+
+/** فرق النقاط بين أعلى شعبة وأدناها الذي يُذكر عنده سطر الفرق */
+export const SECTION_GAP_NOTE = 15;
+
+export interface PublicTestSection {
+  row: PublicResultsAnalysisRow;
+  /** متوسط النسب (0-100) */
+  averagePct: number;
+  isTop: boolean;
+  isBottom: boolean;
+}
+
+export interface PublicTestSummary {
+  present: number;
+  absent: number;
+  /** متوسط مرجّح بعدد الحاضرين: Σ(nᵢ × pᵢ) ÷ Σ nᵢ */
+  averagePct: number;
+  /** null إن غاب pass_count عن أي شعبة (لقطة قديمة) */
+  passPct: number | null;
+  /** null إن غاب band_counts عن أي شعبة */
+  bands: BandCount[] | null;
+  /** max(pᵢ) − min(pᵢ) مقرَّباً */
+  gap: number;
+}
+
+export interface PublicTestGroup {
+  key: string;
+  /** المادة كما كُتبت في أحدث شعبة */
+  subject: string;
+  stage: string | null;
+  grade: number | null;
+  testType: string | null;
+  testSeq: number | null;
+  /** الدرجة العظمى إن اتفقت كل الشعب، وإلا null */
+  fullMark: number | null;
+  latest: string;
+  /** مرتبة برقم الشعبة */
+  sections: PublicTestSection[];
+  /** null لاختبار بشعبة واحدة */
+  comparison: PublicTestSummary | null;
+}
+
+const sectionNumber = (r: PublicResultsAnalysisRow) => {
+  const n = Number(r.class_section);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+};
+
+/** أرقام «كل الشعب» لاختبار — مجمّعة من صفوف الشعب وحدها */
+export function summarizeTest(rows: PublicResultsAnalysisRow[]): PublicTestSummary {
+  const present = rows.reduce((n, r) => n + (r.total_students ?? 0), 0);
+  const absent = rows.reduce((n, r) => n + (r.absent_count ?? 0), 0);
+  const pcts = rows.map(r => publicPcts(r).average);
+  const weighted = present > 0
+    ? rows.reduce((s, r, i) => s + (r.total_students ?? 0) * pcts[i], 0) / present
+    : 0;
+  const hasPass = rows.every(r => typeof r.pass_count === 'number');
+  const passPct = hasPass && present > 0
+    ? rows.reduce((n, r) => n + (r.pass_count as number), 0) / present * 100
+    : null;
+  let bands: BandCount[] | null = null;
+  if (rows.every(r => Array.isArray(r.band_counts) && r.band_counts.length > 0)) {
+    const order: string[] = [];
+    const totals = new Map<string, number>();
+    for (const r of rows) {
+      for (const b of r.band_counts as BandCount[]) {
+        if (!totals.has(b.label)) { order.push(b.label); totals.set(b.label, 0); }
+        totals.set(b.label, (totals.get(b.label) ?? 0) + (Number(b.count) || 0));
+      }
+    }
+    bands = order.map(label => ({ label, count: totals.get(label) ?? 0 }));
+  }
+  const gap = pcts.length > 0 ? Math.round(Math.max(...pcts) - Math.min(...pcts)) : 0;
+  return { present, absent, averagePct: weighted, passPct, bands, gap };
+}
+
+/** يجمّع صفوف الصفحة العامة في اختبارات: المادة (normalizeSubject) + المرحلة
+ *  + الصف + نوع الاختبار + رقمه. الأحدث أولاً؛ والشعب برقمها. */
+export function groupPublicTests(rows: PublicResultsAnalysisRow[]): PublicTestGroup[] {
+  const map = new Map<string, PublicResultsAnalysisRow[]>();
+  for (const r of rows) {
+    const key = [normalizeSubject(r.subject), r.stage ?? '', r.grade_level ?? '', r.test_type ?? '', r.test_seq ?? ''].join('|');
+    const list = map.get(key) ?? [];
+    list.push(r);
+    map.set(key, list);
+  }
+  const time = (r: PublicResultsAnalysisRow) => new Date(r.created_at).getTime();
+  return Array.from(map.entries()).map(([key, list]) => {
+    const newest = list.reduce((a, b) => (time(b) > time(a) ? b : a));
+    const sorted = [...list].sort((a, b) => sectionNumber(a) - sectionNumber(b));
+    const marks = new Set(sorted.map(r => fullMarkOf(r.full_mark)));
+    const pcts = sorted.map(r => publicPcts(r).average);
+    const multi = sorted.length >= 2;
+    const hi = Math.max(...pcts);
+    const lo = Math.min(...pcts);
+    const distinct = multi && hi !== lo;
+    return {
+      key,
+      subject: newest.subject,
+      stage: newest.stage,
+      grade: newest.grade_level ?? null,
+      testType: newest.test_type ?? null,
+      testSeq: newest.test_seq ?? null,
+      fullMark: marks.size === 1 ? Array.from(marks)[0] : null,
+      latest: newest.created_at,
+      sections: sorted.map((row, i) => ({
+        row,
+        averagePct: pcts[i],
+        isTop: distinct && pcts[i] === hi,
+        isBottom: distinct && pcts[i] === lo,
+      })),
+      comparison: multi ? summarizeTest(sorted) : null,
+    };
+  }).sort((a, b) => new Date(b.latest).getTime() - new Date(a.latest).getTime());
+}
+
+/** «ثالث ثانوي · الفتري الأول · من 30» — الرأس بعد اسم المادة. «من N» فقط
+ *  إن اتفقت الدرجة العظمى في كل الشعب. */
+export function publicTestMeta(g: PublicTestGroup): string {
+  return [formatClass(g.stage, g.grade, null), formatTest(g.testType, g.testSeq), g.fullMark !== null ? `من ${fmtNum(g.fullMark)}` : '']
+    .filter(Boolean).join(' · ');
+}
+
+/** «مهارات بحث · ثالث ثانوي · الفتري الأول · من 30» */
+export function publicTestTitle(g: PublicTestGroup): string {
+  return [g.subject, publicTestMeta(g)].filter(Boolean).join(' · ');
+}
+
+// ---------------------------------------------------------------------------
+// سلّم ألوان الفئات (DESIGN.md): الأخضر بدرجات، ثم --warn، ثم --danger للأضعف
+// ---------------------------------------------------------------------------
+
+export interface BandTone {
+  /** متغير اللون الكامل */
+  base: '--accent' | '--warn' | '--danger';
+  /** 1 للكامل، وأقل لدرجات الأخضر */
+  opacity: number;
+}
+
+/** أدنى شفافية لدرجات الأخضر */
+const GREEN_MIN_OPACITY = 0.35;
+
+/** لون الفئة بموضعها (0 = الأقوى). الأخيرة --danger، وقبلها --warn، والباقي
+ *  أخضر تتناقص شفافيته بالتساوي من 1 إلى 0.35. */
+export function bandTone(index: number, count: number): BandTone {
+  if (count <= 1) return { base: '--accent', opacity: 1 };
+  if (index >= count - 1) return { base: '--danger', opacity: 1 };
+  if (count >= 3 && index === count - 2) return { base: '--warn', opacity: 1 };
+  const greens = count >= 3 ? count - 2 : count - 1;
+  // الحالة الفعلية (5 فئات): 1 و0.65 و0.35 كما في الخطة
+  if (greens === 3) return { base: '--accent', opacity: [1, 0.65, GREEN_MIN_OPACITY][index] };
+  const step = greens > 1 ? (1 - GREEN_MIN_OPACITY) / (greens - 1) : 0;
+  return { base: '--accent', opacity: Math.round((1 - index * step) * 100) / 100 };
+}
+
+/** للـ HTML: var() أو color-mix */
+export function bandCss(t: BandTone): string {
+  return t.opacity >= 1 ? `var(${t.base})` : `color-mix(in srgb, var(${t.base}) ${Math.round(t.opacity * 100)}%, transparent)`;
+}
+
+/** لون نص الدرجة: درجات الأخضر الخافتة ضعيفة التباين نصاً، فتُكتب بـ --t1 */
+export function bandTextCss(t: BandTone): string {
+  return t.opacity >= 1 ? `var(${t.base})` : 'var(--t1)';
 }

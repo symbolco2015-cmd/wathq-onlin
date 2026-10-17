@@ -183,4 +183,13 @@ export interface PublicResultsAnalysisRow {
   average_pct?: number | null;
   min_pct?: number | null;
   max_pct?: number | null;
+  /** الحاضرون بنسبة ≥ 60% — غائب في اللقطات القبلية لج1 */
+  pass_count?: number | null;
+  /** عدد الطلاب في كل فئة بترتيب display_order — غائب في اللقطات القبلية لج1 */
+  band_counts?: BandCount[] | null;
+}
+
+export interface BandCount {
+  label: string;
+  count: number;
 }

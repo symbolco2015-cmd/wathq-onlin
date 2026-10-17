@@ -422,7 +422,7 @@ function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
   return (
     <div className={PANEL}>
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1 break-words">
           <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{row.subject}</span>
           {meta && (
             <span className="text-[length:var(--fs-xs)] text-[var(--t3)] mr-2">{meta}</span>
@@ -470,9 +470,9 @@ function ResultComparisonMini({ subject, series }: { subject: string; series: Co
 
   return (
     <div className={`${PANEL} flex items-center justify-between gap-4 flex-wrap`}>
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-start gap-2 min-w-0 flex-1">
         <i className="ti ti-chart-line text-[16px] text-[var(--t3)] shrink-0"></i>
-        <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)] truncate">مقارنة — {subject}</span>
+        <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)] break-words min-w-0">مقارنة — {subject}</span>
       </div>
       <div className="flex items-center gap-3 shrink-0" dir="ltr">
         <svg width={w} height={h}>

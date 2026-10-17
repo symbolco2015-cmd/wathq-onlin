@@ -17,6 +17,17 @@ export type SaveAnalysisResult =
 
 export type SaveAnalysisFn = (meta: AnalysisMeta, summary: AnalysisSummary, replaceId?: string) => Promise<SaveAnalysisResult>;
 
+export interface UpdateAnalysisResult {
+  ok: boolean;
+  /** رفضه الفهرس الفريد (23505) */
+  duplicate: boolean;
+  /** حُفظ التحليل، وفشل تطبيق الاسم على البقية */
+  renameFailed: boolean;
+}
+
+export type DeleteAnalysisFn = (id: string) => Promise<boolean>;
+export type UpdateAnalysisFn = (id: string, meta: AnalysisMeta, summary: AnalysisSummary | null, renameIds?: string[]) => Promise<UpdateAnalysisResult>;
+
 export interface SmartCheckResult {
   found: boolean;
   evidenceTitle?: string;
@@ -86,6 +97,50 @@ export function useResultsAnalysis(userId: string | undefined) {
     return { row, duplicate: false };
   }, [userId]);
 
+  /** يحذف تحليلاً. لقطات تقارير الحصاد لا تتأثر (مخبوزة وقت التوليد). */
+  const deleteAnalysis = useCallback(async (id: string): Promise<boolean> => {
+    if (!supabase || !userId) return false;
+    const { error } = await supabase.from('results_analysis').delete().eq('id', id).eq('portfolio_id', userId);
+    if (error) { console.error('[ResultsAnalysis] تعذّر حذف التحليل:', error.message); return false; }
+    setAnalyses(prev => prev.filter(a => a.id !== id));
+    return true;
+  }, [userId]);
+
+  /** يعدّل بيانات تحليل، وsummary إن أُعيد حسابه. renameIds: تحليلات أخرى
+   *  يُطبَّق عليها اسم المادة الجديد بعد نجاح الأول، بجملة UPDATE واحدة. */
+  const updateAnalysis = useCallback(async (
+    id: string,
+    meta: AnalysisMeta,
+    summary: AnalysisSummary | null,
+    renameIds: string[] = [],
+  ): Promise<UpdateAnalysisResult> => {
+    if (!supabase || !userId) return { ok: false, duplicate: false, renameFailed: false };
+    const fields = { ...meta, ...(summary ? { summary } : {}) };
+    const { data, error } = await supabase.from('results_analysis').update(fields).eq('id', id).eq('portfolio_id', userId).select().single();
+    if (error) {
+      console.error('[ResultsAnalysis] تعذّر تعديل التحليل:', error.message);
+      return { ok: false, duplicate: error.code === '23505', renameFailed: false };
+    }
+    const row = data as ResultsAnalysisRow;
+    setAnalyses(prev => prev.map(a => a.id === row.id ? row : a));
+    if (renameIds.length === 0) return { ok: true, duplicate: false, renameFailed: false };
+
+    const { data: renamed, error: renameError } = await supabase
+      .from('results_analysis')
+      .update({ subject: meta.subject })
+      .in('id', renameIds)
+      .eq('portfolio_id', userId)
+      .select();
+    if (renameError) {
+      console.error('[ResultsAnalysis] تعذّر تطبيق اسم المادة على البقية:', renameError.message);
+      await fetchAnalyses();
+      return { ok: true, duplicate: false, renameFailed: true };
+    }
+    const byId = new Map(((renamed ?? []) as ResultsAnalysisRow[]).map(r => [r.id, r]));
+    setAnalyses(prev => prev.map(a => byId.get(a.id) ?? a));
+    return { ok: true, duplicate: false, renameFailed: false };
+  }, [userId, fetchAnalyses]);
+
   /** فحص تقريبي بالكلمات المفتاحية فقط (ILIKE) — لا ذكاء اصطناعي إطلاقاً. */
   const runSmartCheck = useCallback(async (
     analysis: ResultsAnalysisRow,
@@ -120,6 +175,8 @@ export function useResultsAnalysis(userId: string | undefined) {
     analyses,
     loading,
     saveAnalysis,
+    deleteAnalysis,
+    updateAnalysis,
     runSmartCheck,
     refetch: fetchAnalyses,
   };

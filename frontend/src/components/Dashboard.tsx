@@ -1271,6 +1271,8 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               gradeBands={resultsAnalysis.gradeBands}
               analyses={resultsAnalysis.analyses}
               saveAnalysis={resultsAnalysis.saveAnalysis}
+              deleteAnalysis={resultsAnalysis.deleteAnalysis}
+              updateAnalysis={resultsAnalysis.updateAnalysis}
               onEvidenceSaved={onEvidenceSaved}
               onToast={toastKind}
               focusAnalysisId={focusAnalysisId}

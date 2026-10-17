@@ -289,6 +289,135 @@ export function findDuplicateAnalysis(
     (a.test_seq ?? 0) === (key.testSeq ?? 0)) ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// أسماء المواد: الاقتراح والمطابقة القريبة
+// ---------------------------------------------------------------------------
+
+/** للمقارنة فقط، لا للحفظ: بلا تشكيل ولا تطويل، وأ إ آ ٱ ← ا، ى ← ي،
+ *  ة ← ه، و«ال» محذوفة من أول كل كلمة، ومسافة واحدة بين الكلمات. */
+export function normalizeSubject(s: string): string {
+  return s
+    .replace(/[ً-ْٰـ]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => (w.startsWith('ال') && w.length - 2 >= 2 ? w.slice(2) : w))
+    .join(' ')
+    .toLowerCase();
+}
+
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const up = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = up;
+    }
+  }
+  return prev[b.length];
+}
+
+/** أطول اسم مختصر يُقبل أن يبدأ به اسم آخر */
+const SUBJECT_PREFIX_MIN = 4;
+/** أكبر مسافة تحرير كلية بين اسمين قريبين */
+const SUBJECT_MAX_DISTANCE = 2;
+
+/** قريبان إن: تطابقا بعد التطبيع؛ أو بدأ أحدهما بالآخر والأقصر 4 أحرف
+ *  فأكثر؛ أو تساوى عدد الكلمات، والمسافة الكلية ≤ 2، وكل كلمة مختلفة
+ *  مسافتها ≤ ربع طول الأطول منهما (فلا تُخلط «تربية فنية» و«تربية بدنية»). */
+export function isSimilarSubject(a: string, b: string): boolean {
+  const na = normalizeSubject(a);
+  const nb = normalizeSubject(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const [short, long] = na.length <= nb.length ? [na, nb] : [nb, na];
+  if (short.length >= SUBJECT_PREFIX_MIN && long.startsWith(short)) return true;
+  const wa = na.split(' ');
+  const wb = nb.split(' ');
+  if (wa.length !== wb.length) return false;
+  let total = 0;
+  for (let i = 0; i < wa.length; i++) {
+    if (wa[i] === wb[i]) continue;
+    const d = editDistance(wa[i], wb[i]);
+    if (d > Math.floor(Math.max(wa[i].length, wb[i].length) / 4)) return false;
+    total += d;
+  }
+  return total <= SUBJECT_MAX_DISTANCE;
+}
+
+/** المواد التي استعملها المعلم، بلا تكرار، الأحدث أولاً (analyses مرتبة كذلك) */
+export function subjectSuggestions(analyses: { subject: string }[]): string[] {
+  const out: string[] = [];
+  for (const a of analyses) {
+    const s = a.subject.trim();
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+
+/** أول مادة محفوظة قريبة من المكتوب، أو null إن كان فارغاً أو مطابقاً حرفياً لمادة */
+export function findSimilarSubject(input: string, subjects: string[]): string | null {
+  const t = input.trim();
+  if (!t || subjects.some(s => s.trim() === t)) return null;
+  return subjects.find(s => isSimilarSubject(t, s)) ?? null;
+}
+
+/** تحليلات تحمل اسم المادة نفسه (بمطابقة منع التكرار) */
+export function analysesWithSubject(analyses: ResultsAnalysisRow[], subject: string): ResultsAnalysisRow[] {
+  return analyses.filter(a => normSubject(a.subject) === normSubject(subject));
+}
+
+/** تطبيق اسم جديد على مجموعة تحليلات: أي تحليل خارجها يطابق مفتاح أحدها
+ *  بعد التغيير. edited: التحليل المعدَّل بمفتاحه الجديد كاملاً. */
+export function findRenameConflicts(
+  analyses: ResultsAnalysisRow[],
+  group: ResultsAnalysisRow[],
+  newSubject: string,
+  edited: { id: string; stage: string; grade: number; section: number; testType: string; testSeq: number | null },
+): ResultsAnalysisRow[] {
+  const ids = new Set(group.map(g => g.id));
+  ids.add(edited.id);
+  const outside = analyses.filter(a => !ids.has(a.id));
+  const conflicts: ResultsAnalysisRow[] = [];
+  for (const g of group) {
+    const key = g.id === edited.id
+      ? { subject: newSubject, stage: edited.stage, grade: edited.grade, section: edited.section, testType: edited.testType, testSeq: edited.testSeq }
+      : { subject: newSubject, stage: g.stage ?? '', grade: g.grade_level, section: g.class_section ?? 0, testType: g.test_type ?? '', testSeq: g.test_seq };
+    const hit = findDuplicateAnalysis(outside, key);
+    if (hit && !conflicts.includes(hit)) conflicts.push(hit);
+    // بعد التطبيق يحمل الكل الاسم نفسه، فيتعارض عضو يطابق التحليل المعدَّل
+    if (g.id !== edited.id && g.stage === edited.stage && g.grade_level === edited.grade &&
+        g.class_section === edited.section && g.test_type === edited.testType &&
+        (g.test_seq ?? 0) === (edited.testSeq ?? 0) && !conflicts.includes(g)) {
+      conflicts.push(g);
+    }
+  }
+  return conflicts;
+}
+
+/** يعيد حساب التحليل بدرجة عظمى جديدة من الدرجات الخام المحفوظة، عبر
+ *  computeSummary نفسها. يُمنع إن كانت درجة أعلى من القيمة الجديدة. */
+export function recomputeForFullMark(
+  summary: AnalysisSummary,
+  bands: GradeBand[],
+  newFullMark: number,
+): { summary: AnalysisSummary } | { error: string } {
+  const scores = summary.students.map(s => s.score);
+  const maxScore = scores.length > 0 ? Math.max(...scores) : null;
+  if (maxScore !== null && maxScore > newFullMark) {
+    return { error: `أعلى درجة في هذه الشعبة ${fmtNum(maxScore)}، فلا يمكن أن تكون الدرجة العظمى ${fmtNum(newFullMark)}.` };
+  }
+  const rows: SectionRow[] = summary.students.map((s, i) => ({ rowNo: i + 1, sheet: '', name: s.name, scoreRaw: String(s.score) }));
+  for (let i = 0; i < (summary.absentCount ?? 0); i++) rows.push({ rowNo: rows.length + 1, sheet: '', name: '', scoreRaw: '' });
+  const result = computeSummary({ rows, bands, fullMark: newFullMark });
+  return { summary: { ...result.summary, skippedRows: summary.skippedRows } };
+}
+
 /** يبحث عن آخر تحليل للاختبار نفسه (مادة، مرحلة، صف، نوع، ترتيب) في شعبة
  *  أخرى، لملء الدرجة العظمى تلقائياً. analyses مرتبة الأحدث أولاً. */
 export function findSameTestFullMark(

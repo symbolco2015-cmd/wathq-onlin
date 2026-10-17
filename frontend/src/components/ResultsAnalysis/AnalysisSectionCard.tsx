@@ -6,15 +6,16 @@ import UploadAnalysisSheet from './UploadAnalysisSheet';
 import ResultsBarChart from './ResultsBarChart';
 import ComparisonChart from './ComparisonChart';
 import ConvertToEvidenceFlow from './ConvertToEvidenceFlow';
+import EditAnalysisSheet from './EditAnalysisSheet';
 import {
   analysisSourceLabel, buildComparisonSeries, classGroupLabel, computeScoreGap, fmtNum, formatScore, fullMarkOf,
   groupAnalysesByClass, groupRemedialStudents,
 } from './logic';
 import type { GradeBand, ResultsAnalysisRow } from './types';
-import type { SaveAnalysisFn } from './useResultsAnalysis';
+import type { DeleteAnalysisFn, SaveAnalysisFn, UpdateAnalysisFn } from './useResultsAnalysis';
 import type { SectionData } from '../../types';
 import { AR_ABSENT, AR_STUDENT, countWord, formatDate } from '../../utils';
-import type { ToastKind } from '../UI';
+import { Modal, type ToastKind } from '../UI';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('../../hooks/useSupabaseEvidence').useSupabaseEvidence>;
 
@@ -25,6 +26,8 @@ interface AnalysisSectionBodyProps {
   gradeBands: GradeBand[];
   analyses: ResultsAnalysisRow[];
   saveAnalysis: SaveAnalysisFn;
+  deleteAnalysis: DeleteAnalysisFn;
+  updateAnalysis: UpdateAnalysisFn;
   onEvidenceSaved?: EvidenceFormProps['onEvidenceSaved'];
   onToast?: (msg: string, kind: ToastKind) => void;
   /** معرّف تحليل يجب فتح تبويبه مباشرة — يصل من بطاقة "تحسين نتائج المتعلمين"
@@ -44,10 +47,13 @@ type Tab =
  */
 export function AnalysisSectionBody({
   sections, userId, supabaseEv, gradeBands, analyses,
-  saveAnalysis, onEvidenceSaved, onToast, focusAnalysisId, onFocusHandled,
+  saveAnalysis, deleteAnalysis, updateAnalysis, onEvidenceSaved, onToast, focusAnalysisId, onFocusHandled,
 }: AnalysisSectionBodyProps) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<ResultsAnalysisRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ResultsAnalysisRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
   const noToast = () => {};
@@ -86,6 +92,22 @@ export function AnalysisSectionBody({
   }, [focusAnalysisId]);
 
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
+
+  /** بعد الحذف: التحليل في الموضع نفسه، وإلا السابق، وإلا أول تبويب باقٍ
+   *  (مقارنة) أو الحالة الفارغة — يتولاهما المؤثّر أعلاه. */
+  const handleDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    const idx = analyses.findIndex(a => a.id === deleteTarget.id);
+    const rest = analyses.filter(a => a.id !== deleteTarget.id);
+    const ok = await deleteAnalysis(deleteTarget.id);
+    setDeleting(false);
+    if (!ok) { (onToast ?? noToast)('تعذّر حذف التحليل، حاول مجدداً', 'error'); return; }
+    setDeleteTarget(null);
+    setConvertOpen(false);
+    setActiveTabId((rest[idx] ?? rest[idx - 1])?.id ?? null);
+    (onToast ?? noToast)('حُذف التحليل', 'success');
+  };
 
   return (
     <>
@@ -132,6 +154,8 @@ export function AnalysisSectionBody({
           analysis={activeTab.analysis}
           bands={gradeBands}
           onConvertClick={() => setConvertOpen(true)}
+          onEditClick={() => setEditTarget(activeTab.analysis)}
+          onDeleteClick={() => setDeleteTarget(activeTab.analysis)}
         />
       )}
 
@@ -145,6 +169,38 @@ export function AnalysisSectionBody({
           onToast={onToast ?? noToast}
         />
       </BottomSheet>
+
+      <BottomSheet isOpen={!!editTarget} onClose={() => setEditTarget(null)}>
+        {editTarget && (
+          <EditAnalysisSheet
+            key={editTarget.id}
+            analysis={editTarget}
+            analyses={analyses}
+            bands={gradeBands}
+            updateAnalysis={updateAnalysis}
+            onClose={() => setEditTarget(null)}
+            onToast={onToast ?? noToast}
+          />
+        )}
+      </BottomSheet>
+
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        title="حذف التحليل"
+        subtitle=""
+        icon="ti-trash"
+        tone="danger"
+        onConfirm={handleDelete}
+        confirmDisabled={deleting}
+        confirmHelperText="جارٍ الحذف…"
+      >
+        {deleteTarget && (
+          <p className="text-[length:var(--fs-sm)] text-[var(--t1)]">
+            حذف تحليل <b className="font-bold">{analysisSourceLabel(deleteTarget)}</b>؟ لا يمكن التراجع.
+          </p>
+        )}
+      </Modal>
 
       {convertOpen && activeTab?.kind === 'analysis' && userId && supabaseEv && (
         <ConvertToEvidenceFlow
@@ -166,14 +222,19 @@ interface AnalysisTabBodyProps {
   analysis: ResultsAnalysisRow;
   bands: GradeBand[];
   onConvertClick: () => void;
+  onEditClick: () => void;
+  onDeleteClick: () => void;
 }
+
+const MENU_ITEM = 'w-full h-9 px-3 flex items-center gap-2 text-right text-[length:var(--fs-sm)] font-bold whitespace-nowrap cursor-pointer';
 
 const STAT_NUM = 'text-[length:var(--fs-lg)] font-bold text-[var(--t1)]';
 const STAT_TEXT = 'text-[length:var(--fs-sm)] font-bold text-[var(--t1)]';
 const STAT_LABEL = 'text-[length:var(--fs-xs)] text-[var(--t3)] mt-1';
 const BLOCK_TITLE = 'text-[length:var(--fs-xs)] font-bold text-[var(--t3)]';
 
-function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyProps) {
+function AnalysisTabBody({ analysis, bands, onConvertClick, onEditClick, onDeleteClick }: AnalysisTabBodyProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const weakBand = bands[bands.length - 1];
   const fullMark = fullMarkOf(analysis.full_mark);
   const gap = computeScoreGap(analysis.summary.students);
@@ -194,6 +255,31 @@ function AnalysisTabBody({ analysis, bands, onConvertClick }: AnalysisTabBodyPro
           <button type="button" onClick={handlePrint} className={BTN_GH_SM}>
             <i className="ti ti-printer text-[16px]" /> طباعة / تصدير
           </button>
+          {/* نمط قائمة الشاهد في SectionView: 36px بصرياً، ومساحة الضغط 44px */}
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="خيارات التحليل"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(o => !o)}
+              className="relative w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] flex items-center justify-center text-[16px] text-[var(--t2)] shrink-0 cursor-pointer before:absolute before:-inset-1 before:content-['']"
+            >
+              <i className="ti ti-dots" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
+                <div role="menu" className="absolute left-0 top-full mt-1 z-30 min-w-[140px] py-1 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)]">
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onEditClick(); }} className={`${MENU_ITEM} text-[var(--t1)]`}>
+                    <i className="ti ti-pencil text-[16px]" /> تعديل البيانات
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDeleteClick(); }} className={`${MENU_ITEM} text-[var(--danger)]`}>
+                    <i className="ti ti-trash text-[16px]" /> حذف التحليل
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

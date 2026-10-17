@@ -4,18 +4,22 @@ import type { ToastKind } from '../UI';
 import { BTN_GH, BTN_PRI } from '../SectionView';
 import { parseFile } from './parseFile';
 import {
-  buildFileModel, countPresence, fileFullMark, sectionSourceAvailability, sheetStatuses, splitSections,
-  suggestNameColumn, suggestScoreColumn, suggestSectionSource, HEADER_SEARCH_ROWS,
+  buildFileModel, countPresence, fileFullMark, quickEntryModel, quickEntryStatus, sectionSourceAvailability, sheetStatuses,
+  splitSections, suggestNameColumn, suggestScoreColumn, suggestSectionSource, HEADER_SEARCH_ROWS, QUICK_NAME_COL, QUICK_SCORE_COL,
 } from './fileModel';
 import {
   checkSection, computeSummary, findDuplicateAnalysis, findSameTestFullMark, fmtNum, fmtPct, formatClass, formatTest,
-  gradeCountFor, gradeOrdinal, listRows, previousSectionCount, FULL_MARK_PRESETS, INFLATION_WARNING, SECTION_MAX,
-  STAGE_OPTIONS, TEST_SEQ_LABELS, TEST_TYPE_OPTIONS, testNeedsSeq,
+  listRows, previousSectionCount, subjectSuggestions, FULL_MARK_PRESETS, INFLATION_WARNING,
+  testNeedsSeq,
   type ComputeSummaryResult, type SectionCheck,
 } from './logic';
+import {
+  AnalysisMetaFields, sectionOptions, BLOCK_CLS, BLOCK_TITLE_CLS, CHECKBOX_CLS, CHIP_CLS, CHIP_OFF, CHIP_ON, ICON_BTN_SM_CLS,
+  INPUT_CLS, LABEL_CLS, LINE_CLS, SPIN_CLS,
+} from './AnalysisMetaFields';
 import type { SaveAnalysisFn } from './useResultsAnalysis';
 import type { FileModel, GradeBand, ResultsAnalysisRow, SectionGroup, SectionSource, StageCode, TestTypeCode } from './types';
-import { AR_ABSENT, AR_ANALYSIS, AR_ROW, AR_SHEET, AR_STUDENT, countAr } from '../../utils';
+import { AR_ABSENT, AR_ANALYSIS, AR_ROW, AR_SCORE, AR_SHEET, AR_STUDENT, countAr } from '../../utils';
 
 interface UploadAnalysisSheetProps {
   onClose: () => void;
@@ -27,25 +31,10 @@ interface UploadAnalysisSheetProps {
   onToast: (msg: string, kind: ToastKind) => void;
 }
 
-// نفس ثوابت الحقول في EvidenceForm.tsx (نص مكرر، بلا استيراد منه)
-const INPUT_CLS = 'w-full h-11 px-3 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--bg)] text-[length:var(--fs-sm)] text-[var(--t1)] outline-none transition-colors duration-150 placeholder:text-[var(--t3)] focus:border-[var(--accent)]';
-const LABEL_CLS = 'text-[length:var(--fs-sm)] font-bold text-[var(--t1)] mb-2 flex items-center gap-1.5';
-const ICON_BTN_SM_CLS = 'w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] text-[var(--t2)] flex items-center justify-center text-[20px] shrink-0 cursor-pointer hover:text-[var(--t1)]';
-const SPIN_CLS = 'animate-spin motion-reduce:animate-none';
-const NOTE_CLS = 'flex items-start gap-2 text-[length:var(--fs-xs)] bg-[var(--s2)] border rounded-[var(--r-sm)] p-3';
-const BLOCK_CLS = 'bg-[var(--s2)] border border-[var(--bd)] rounded-[var(--r-md)] p-4 space-y-3';
-const BLOCK_TITLE_CLS = 'text-[length:var(--fs-xs)] font-bold text-[var(--t3)] flex items-center gap-1.5';
-const CHIP_CLS = 'h-9 px-3 inline-flex items-center rounded-[var(--r-sm)] border text-[length:var(--fs-sm)] font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
-const CHIP_ON = 'border-[var(--t2)] text-[var(--t1)]';
-const CHIP_OFF = 'border-[var(--bd2)] text-[var(--t2)]';
-const CHIP_INPUT_CLS = 'w-24 h-9 px-3 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--bg)] text-[length:var(--fs-sm)] text-[var(--t1)] outline-none transition-colors duration-150 placeholder:text-[var(--t3)] focus:border-[var(--accent)]';
-const LINE_CLS = 'flex items-start gap-1.5 text-[length:var(--fs-xs)]';
-const CHECKBOX_CLS = 'w-5 h-5 shrink-0 accent-[var(--accent)] cursor-pointer';
+const TEXTAREA_CLS = 'w-full px-3 py-2.5 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--bg)] text-[length:var(--fs-sm)] text-[var(--t1)] outline-none transition-colors duration-150 placeholder:text-[var(--t3)] focus:border-[var(--accent)] resize-y';
 
-const stageOptions = STAGE_OPTIONS.map(s => ({ value: s.value, label: s.label }));
-const testTypeOptions = TEST_TYPE_OPTIONS.map(t => ({ value: t.value, label: t.label }));
-const testSeqOptions = TEST_SEQ_LABELS.map((label, i) => ({ value: String(i + 1), label }));
-const sectionOptions = Array.from({ length: SECTION_MAX }, (_, i) => ({ value: String(i + 1), label: `شعبة ${i + 1}` }));
+type EntryMode = 'file' | 'paste';
+
 const headerRowOptions = Array.from({ length: HEADER_SEARCH_ROWS }, (_, i) => ({ value: String(i + 1), label: `الصف ${i + 1}` }));
 
 const SOURCE_OPTIONS: { value: SectionSource; label: string }[] = [
@@ -62,7 +51,10 @@ interface SectionView {
   absent: number;
   /** فيها درجة واحدة على الأقل — بدونها لا مربع اختيار ولا حفظ */
   hasScores: boolean;
+  /** اختيار المعلم — يبقى محفوظاً ما دامت الشعبة ممنوعة، ويعود بزوال المانع */
   selected: boolean;
+  /** فيها مانع حفظ: المربع غير محدد ومعطّل */
+  blocked: boolean;
   /** يُحسب حين تكون الدرجة العظمى صالحة */
   result: ComputeSummaryResult | null;
   check: SectionCheck | null;
@@ -77,6 +69,10 @@ function columnLabel(key: string, samples: string[]): string {
 }
 
 export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnalysis, onSaved, onToast }: UploadAnalysisSheetProps) {
+  /** «رفع ملف» أو «إدخال الدرجات» — الثاني يبني نموذج الملف نفسه من النص */
+  const [mode, setMode] = useState<EntryMode>('file');
+  const [pasteText, setPasteText] = useState('');
+  const [pasteSection, setPasteSection] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   /** نموذج الملف وحده يبقى في الحالة؛ الشبكة الخام تُرمى بعد القراءة */
@@ -113,7 +109,7 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
   // رقم الاختبار إلزامي للأنواع المرقّمة، ويُحفظ null للنهائي وأعمال السنة
   const needsSeq = testNeedsSeq(testType);
   const seqNumber = needsSeq && testSeq ? Number(testSeq) : null;
-  const gradeOptions = Array.from({ length: gradeCountFor(stage) }, (_, i) => ({ value: String(i + 1), label: gradeOrdinal(i + 1) }));
+  const subjects = useMemo(() => subjectSuggestions(analyses), [analyses]);
   const testKnown = !!subject.trim() && !!stage && gradeNumber !== null && !!testType && (!needsSeq || seqNumber !== null);
 
   // ---- اقتراحات الملف ----
@@ -178,46 +174,62 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
     if (col && col.sectionInNameRatio > 0.5) setSource('name');
   };
 
-  const handleStageChange = (v: string) => {
-    setStage(v);
-    if (gradeNumber !== null && gradeNumber > gradeCountFor(v)) setGrade('');
-  };
-
   const handleFullMarkChange = (v: string, fromInput: boolean) => {
     setFullMarkText(v);
     setFullMarkFromInput(fromInput);
     setFullMarkTouched(true);
   };
 
+  const handleModeChange = (m: EntryMode) => {
+    if (m === mode) return;
+    setMode(m);
+    setUnchecked({});
+    setReplaceChoice({});
+    setSaveErrors({});
+  };
+
+  // الإدخال السريع: نموذج ملف من النص، بعمودَي اسم ودرجة وشعبة واحدة، ثم
+  // المسار نفسه (splitSections ← computeSummary ← الفحص ← الحفظ)
+  const pasteModel = useMemo(() => pasteText.trim() ? quickEntryModel(pasteText) : null, [pasteText]);
+  const pasteStatus = useMemo(() => pasteModel ? quickEntryStatus(pasteModel) : null, [pasteModel]);
+  const isPaste = mode === 'paste';
+  const activeModel = isPaste ? pasteModel : model;
+  const activeScoreCol = isPaste ? QUICK_SCORE_COL : scoreCol;
+  const activeNameCol = isPaste ? QUICK_NAME_COL : nameCol;
+  const activeSingle = isPaste ? pasteSection : singleSection;
+
   const statuses = useMemo(() => model ? sheetStatuses(model, scoreCol || null) : [], [model, scoreCol]);
   const availability = useMemo(() => model ? sectionSourceAvailability(model, scoreCol || null, nameCol || null) : null, [model, scoreCol, nameCol]);
-  const effectiveSource: SectionSource | '' = source && availability?.[source] ? source : '';
+  const effectiveSource: SectionSource | '' = isPaste ? 'single' : source && availability?.[source] ? source : '';
 
   const split = useMemo(() => {
-    if (!model || !scoreCol || !effectiveSource) return null;
+    if (!activeModel || !activeScoreCol || !effectiveSource) return null;
     if (effectiveSource === 'column' && !sectionCol) return null;
     const manualNums: Record<string, number> = {};
     for (const [k, v] of Object.entries(manual)) if (v) manualNums[k] = Number(v);
-    return splitSections(model, {
-      scoreCol,
-      nameCol: nameCol || null,
+    return splitSections(activeModel, {
+      scoreCol: activeScoreCol,
+      nameCol: activeNameCol || null,
       source: effectiveSource,
       sectionCol: sectionCol || null,
-      singleSection: singleSection ? Number(singleSection) : null,
+      singleSection: activeSingle ? Number(activeSingle) : null,
       manual: manualNums,
     });
-  }, [model, scoreCol, nameCol, effectiveSource, sectionCol, singleSection, manual]);
+  }, [activeModel, activeScoreCol, activeNameCol, effectiveSource, sectionCol, activeSingle, manual]);
 
   // ---- الدرجة العظمى: من الملف، أو من تحليل سابق للاختبار نفسه، أو يختارها المعلم ----
 
   const fullMarkSuggestion = useMemo(() => {
-    const fromFile = model ? fileFullMark(model, scoreCol || null) : null;
-    if (fromFile) return { value: fromFile.value, label: fromFile.source === 'header' ? 'من اسم العمود' : 'من صيغة الدرجات في الملف' };
+    const fromFile = activeModel ? fileFullMark(activeModel, activeScoreCol || null) : null;
+    if (fromFile) {
+      const label = isPaste ? 'من صيغة الدرجات المدخلة' : fromFile.source === 'header' ? 'من اسم العمود' : 'من صيغة الدرجات في الملف';
+      return { value: fromFile.value, label };
+    }
     if (!testKnown) return null;
     const prev = findSameTestFullMark(analyses, { subject, stage, grade: gradeNumber, testType, testSeq: seqNumber, section: null });
     if (!prev) return null;
     return { value: prev.fullMark, label: prev.section !== null ? `من تحليل شعبة ${prev.section}` : 'من تحليل سابق للاختبار نفسه' };
-  }, [model, scoreCol, testKnown, analyses, subject, stage, gradeNumber, testType, seqNumber]);
+  }, [activeModel, activeScoreCol, isPaste, testKnown, analyses, subject, stage, gradeNumber, testType, seqNumber]);
 
   const fullMarkStr = fullMarkTouched ? fullMarkText : (fullMarkSuggestion ? String(fullMarkSuggestion.value) : '');
   const fullMarkIsInput = fullMarkTouched ? fullMarkFromInput : (!!fullMarkSuggestion && !FULL_MARK_PRESETS.includes(fullMarkSuggestion.value));
@@ -242,8 +254,9 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
       ? findDuplicateAnalysis(analyses, { subject, stage, grade: gradeNumber, section: group.section, testType, testSeq: seqNumber })
       : null;
     const replace = !!duplicate && !!replaceChoice[group.section];
-    const willSave = selected && metaComplete && !!check && check.blockers.length === 0 && (!duplicate || replace);
-    return { group, present, absent, hasScores, selected, result, check, duplicate, replace, willSave };
+    const blocked = !!check && check.blockers.length > 0;
+    const willSave = selected && metaComplete && !!check && !blocked && (!duplicate || replace);
+    return { group, present, absent, hasScores, selected, blocked, result, check, duplicate, replace, willSave };
   }), [split, unchecked, fullMarkValid, fullMarkNum, bands, testKnown, analyses, subject, stage, gradeNumber, testType, seqNumber, replaceChoice, metaComplete]);
 
   const saveCount = views.filter(v => v.willSave).length;
@@ -308,7 +321,9 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-[length:var(--fs-md)] font-bold text-[var(--t1)]">رفع كشف درجات</div>
-          <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-0.5">CSV أو Excel — يُعالَج بالكامل داخل متصفحك</div>
+          <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-0.5">
+            {isPaste ? 'الصق الدرجات أو اكتبها — تُعالَج بالكامل داخل متصفحك' : 'CSV أو Excel — يُعالَج بالكامل داخل متصفحك'}
+          </div>
         </div>
         <button onClick={onClose} className={ICON_BTN_SM_CLS}>
           <i className="ti ti-x" />
@@ -316,8 +331,40 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
       </div>
 
       <div className="overflow-y-auto flex-1 px-[18px] pt-1 pb-4 space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => handleModeChange('file')} className={`${CHIP_CLS} gap-1.5 ${!isPaste ? CHIP_ON : CHIP_OFF}`}>
+            <i className="ti ti-upload text-[16px]" /> رفع ملف
+          </button>
+          <button type="button" onClick={() => handleModeChange('paste')} className={`${CHIP_CLS} gap-1.5 ${isPaste ? CHIP_ON : CHIP_OFF}`}>
+            <i className="ti ti-keyboard text-[16px]" /> إدخال الدرجات
+          </button>
+        </div>
+
+        {isPaste && (
+          <div className="space-y-3">
+            <div>
+              <div className={LABEL_CLS}>الدرجات <span className="text-[var(--danger)]">*</span></div>
+              <textarea
+                rows={7}
+                className={TEXTAREA_CLS}
+                placeholder={'درجة في كل سطر، أو الاسم ثم الدرجة\nمثال: أحمد، 18'}
+                value={pasteText}
+                onChange={e => setPasteText(e.target.value)}
+              />
+              {pasteStatus && <QuickStatusLine status={pasteStatus} />}
+              {!pasteStatus && (
+                <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">يُقبل اللصق من Excel، و«غ» للغائب</div>
+              )}
+            </div>
+            <div>
+              <div className={LABEL_CLS}>الشعبة <span className="text-[var(--danger)]">*</span></div>
+              <SelectDropdown options={sectionOptions} value={pasteSection} onChange={setPasteSection} placeholder="رقم الشعبة" triggerClassName={INPUT_CLS + ' cursor-pointer'} />
+            </div>
+          </div>
+        )}
+
         {/* اختيار الملف — شكل .drop ثم .picked في نموذج الشاهد */}
-        <div>
+        {!isPaste && <div>
           <div className={LABEL_CLS}><i className="ti ti-upload text-[16px] text-[var(--t2)]" /> الملف <span className="text-[var(--danger)]">*</span></div>
           <input type="file" id="results-analysis-file" className="hidden" accept=".csv,.xlsx" onChange={handleFileChange} />
           <label
@@ -348,10 +395,10 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
               </div>
             )}
           </label>
-        </div>
+        </div>}
 
         {/* ما فهمته الأداة من الملف — يؤكده المعلم أو يصححه */}
-        {model && (
+        {!isPaste && model && (
           <div className={BLOCK_CLS}>
             <div className={BLOCK_TITLE_CLS}>
               <i className="ti ti-file-search text-[16px]" /> ما وجدناه في ملفك
@@ -455,78 +502,32 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
         )}
 
         {/* بيانات الاختبار — مشتركة لكل الشعب، يختارها المعلم مرة واحدة */}
-        {model && (
+        {(isPaste || model) && (
           <div className={BLOCK_CLS}>
             <div className={BLOCK_TITLE_CLS}>
               <i className="ti ti-clipboard-text text-[16px]" /> بيانات الاختبار
             </div>
-
-            <div>
-              <div className={LABEL_CLS}>المادة الدراسية <span className="text-[var(--danger)]">*</span></div>
-              <input type="text" className={INPUT_CLS} placeholder="مثال: الرياضيات" value={subject} onChange={e => setSubject(e.target.value)} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className={LABEL_CLS}>المرحلة <span className="text-[var(--danger)]">*</span></div>
-                <SelectDropdown options={stageOptions} value={stage} onChange={handleStageChange} placeholder="اختر" triggerClassName={INPUT_CLS + ' cursor-pointer'} />
-              </div>
-              <div>
-                <div className={LABEL_CLS}>الصف <span className="text-[var(--danger)]">*</span></div>
-                <SelectDropdown options={gradeOptions} value={grade} onChange={setGrade} placeholder={stage ? 'اختر' : 'المرحلة أولاً'} triggerClassName={INPUT_CLS + ' cursor-pointer'} />
-              </div>
-            </div>
-
-            <div className={`grid ${needsSeq ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
-              <div>
-                <div className={LABEL_CLS}>نوع الاختبار <span className="text-[var(--danger)]">*</span></div>
-                <SelectDropdown options={testTypeOptions} value={testType} onChange={setTestType} placeholder="اختر النوع" triggerClassName={INPUT_CLS + ' cursor-pointer'} />
-              </div>
-              {needsSeq && (
-                <div>
-                  <div className={LABEL_CLS}>رقم الاختبار <span className="text-[var(--danger)]">*</span></div>
-                  <SelectDropdown options={testSeqOptions} value={testSeq} onChange={setTestSeq} placeholder="اختر" triggerClassName={INPUT_CLS + ' cursor-pointer'} />
-                  <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">مثلاً: الفتري الأول أو الثاني</div>
+            <AnalysisMetaFields
+              subject={subject}
+              onSubject={setSubject}
+              subjects={subjects}
+              stage={stage}
+              onStage={setStage}
+              grade={grade}
+              onGrade={setGrade}
+              testType={testType}
+              onTestType={setTestType}
+              testSeq={testSeq}
+              onTestSeq={setTestSeq}
+              fullMarkStr={fullMarkStr}
+              fullMarkIsInput={fullMarkIsInput}
+              onFullMark={handleFullMarkChange}
+              fullMarkHint={!fullMarkTouched && (
+                <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">
+                  {fullMarkSuggestion ? fullMarkSuggestion.label : isPaste ? 'اخترها' : 'لم نجدها في الملف. اخترها'}
                 </div>
               )}
-            </div>
-
-            <div>
-              <div className={LABEL_CLS}>الدرجة العظمى <span className="text-[var(--danger)]">*</span></div>
-              <div className="flex flex-wrap items-center gap-2">
-                {FULL_MARK_PRESETS.map(v => {
-                  const active = !fullMarkIsInput && fullMarkValid && fullMarkNum === v;
-                  return (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => handleFullMarkChange(String(v), false)}
-                      className={`${CHIP_CLS} ${active ? CHIP_ON : CHIP_OFF}`}
-                    >
-                      {v}
-                    </button>
-                  );
-                })}
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  className={CHIP_INPUT_CLS}
-                  placeholder="رقم آخر"
-                  value={fullMarkIsInput ? fullMarkStr : ''}
-                  onChange={e => handleFullMarkChange(e.target.value, true)}
-                />
-              </div>
-              {!fullMarkValid && fullMarkStr.trim() !== '' && (
-                <div className="text-[length:var(--fs-xs)] text-[var(--danger)] mt-1">الدرجة العظمى رقم أكبر من صفر</div>
-              )}
-              {!fullMarkTouched && fullMarkSuggestion && (
-                <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">{fullMarkSuggestion.label}</div>
-              )}
-              {!fullMarkTouched && !fullMarkSuggestion && (
-                <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1">لم نجدها في الملف. اخترها</div>
-              )}
-            </div>
+            />
           </div>
         )}
 
@@ -534,7 +535,7 @@ export default function UploadAnalysisSheet({ onClose, bands, analyses, saveAnal
         {views.length > 0 && (
           <div className={BLOCK_CLS}>
             <div className={BLOCK_TITLE_CLS}>
-              <i className="ti ti-users-group text-[16px]" /> الشعب في الملف
+              <i className="ti ti-users-group text-[16px]" /> {isPaste ? 'الشعبة' : 'الشعب في الملف'}
             </div>
             {views.map(v => (
               <SectionRowView
@@ -596,13 +597,26 @@ function SectionRowView({ view: v, testName, saveError, onToggle, onReplace }: {
   }
   return (
     <div className="rounded-[var(--r-sm)] border border-[var(--bd)] p-3 space-y-2">
-      <label className="flex items-center gap-2.5 cursor-pointer">
-        <input type="checkbox" checked={v.selected} onChange={e => onToggle(e.target.checked)} className={CHECKBOX_CLS} />
+      <label className={`flex items-center gap-2.5 ${v.blocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={v.selected && !v.blocked}
+          disabled={v.blocked}
+          onChange={e => onToggle(e.target.checked)}
+          className={`${CHECKBOX_CLS} disabled:opacity-40 disabled:cursor-not-allowed`}
+        />
         <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">شعبة {section}</span>
         <span className="text-[length:var(--fs-xs)] text-[var(--t2)]">— {presenceText(v)}</span>
       </label>
 
-      {v.selected && v.duplicate && (
+      {/* المانع يظهر ما دام قائماً، اختيرت الشعبة أم لا */}
+      {v.check?.blockers.map(b => (
+        <div key={b} className={`${LINE_CLS} text-[var(--danger)]`}>
+          <i className="ti ti-alert-circle text-[16px] shrink-0" /><span>{b}</span>
+        </div>
+      ))}
+
+      {v.selected && !v.blocked && v.duplicate && (
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <span className="text-[length:var(--fs-xs)] text-[var(--t1)]">{testName} لشعبة {section} محفوظ من قبل.</span>
           <div className="flex gap-2">
@@ -612,17 +626,12 @@ function SectionRowView({ view: v, testName, saveError, onToggle, onReplace }: {
         </div>
       )}
 
-      {v.selected && v.check?.blockers.map(b => (
-        <div key={b} className={`${LINE_CLS} text-[var(--danger)]`}>
-          <i className="ti ti-alert-circle text-[16px] shrink-0" /><span>{b}</span>
-        </div>
-      ))}
-      {v.selected && v.check?.warnings.map(w => (
+      {v.selected && !v.blocked && v.check?.warnings.map(w => (
         <div key={w} className={`${LINE_CLS} text-[var(--warn)]`}>
           <i className="ti ti-alert-triangle text-[16px] shrink-0" /><span>{w}</span>
         </div>
       ))}
-      {v.selected && v.result && v.result.ignoredRows.length > 0 && (
+      {v.selected && !v.blocked && v.result && v.result.ignoredRows.length > 0 && (
         <div className={`${LINE_CLS} text-[var(--t3)]`}>
           <i className="ti ti-info-circle text-[16px] shrink-0" />
           <span>تُجوهل {v.result.ignoredRows.length === 1 ? 'الصف' : 'الصفوف'} {listRows(v.result.ignoredRows)}: الدرجة ليست رقماً</span>
@@ -661,6 +670,23 @@ function SummaryLine({ view: v }: { view: SectionView }) {
         <div className={`${LINE_CLS} text-[var(--warn)]`}>
           <i className="ti ti-alert-triangle text-[16px] shrink-0" /><span>{INFLATION_WARNING}</span>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** «27 درجة · 2 غائبان · تُجوهل السطر 5: ليس رقماً» — تحت مربع الإدخال السريع */
+function QuickStatusLine({ status }: { status: { present: number; absent: number; ignoredLines: string[] } }) {
+  const parts = [countAr(status.present, AR_SCORE)];
+  if (status.absent > 0) parts.push(countAr(status.absent, AR_ABSENT));
+  const ignored = status.ignoredLines;
+  return (
+    <div className="text-[length:var(--fs-xs)] mt-1">
+      <span className="text-[var(--t2)]">{parts.join(' · ')}</span>
+      {ignored.length > 0 && (
+        <span className="text-[var(--warn)]">
+          {' · '}{ignored.length === 1 ? 'تُجوهل السطر' : 'تُجوهلت الأسطر'} {listRows(ignored)}: ليس رقماً
+        </span>
       )}
     </div>
   );

@@ -441,3 +441,62 @@ export function splitSections(model: FileModel, opts: SplitOptions): { groups: S
     unresolved: Array.from(unresolved.values()),
   };
 }
+
+// ---------------------------------------------------------------------------
+// الإدخال السريع (لصق أو كتابة)
+// ---------------------------------------------------------------------------
+
+/** عمودا النموذج الذي يبنيه الإدخال السريع — يمر بعدها بمسار الملف نفسه */
+export const QUICK_NAME_COL = 'الاسم';
+export const QUICK_SCORE_COL = 'الدرجة';
+
+const QUICK_SEP = /[\t,،\-–—\s]/;
+
+/** يقسم سطراً إلى اسم ودرجة. الدرجة: الجزء الأخير الذي تقرؤه parseScore
+ *  كاملاً (رقم أو كلمة غياب)، ويسبقه فاصل (Tab، فاصلة، شرطة، مسافة) وقبله
+ *  حرف. تُجرَّب الفواصل من أول السطر، ويُؤخذ أول فاصل يجعل ما بعده درجة.
+ *  بلا ذلك: Tab أخير بعده فراغ = اسم غائب (لصق Excel)، وإلا السطر كله درجة. */
+export function splitQuickLine(line: string): { name: string; scoreRaw: string } {
+  const text = line.trim();
+  const cleanName = (s: string) => s.split('\t').map(c => c.trim()).filter(c => HAS_LETTER.test(c)).join(' ')
+    .replace(/[\s,،\-–—]+$/, '').replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < text.length; i++) {
+    if (!QUICK_SEP.test(text[i])) continue;
+    const left = text.slice(0, i);
+    const right = text.slice(i + 1).trim();
+    if (!right || !HAS_LETTER.test(left)) continue;
+    if (parseScore(right).kind !== 'invalid') return { name: cleanName(left), scoreRaw: right };
+  }
+  const lastTab = line.lastIndexOf('\t');
+  if (lastTab >= 0 && line.slice(lastTab + 1).trim() === '' && HAS_LETTER.test(line.slice(0, lastTab))) {
+    return { name: cleanName(line.slice(0, lastTab)), scoreRaw: '' };
+  }
+  return { name: '', scoreRaw: text };
+}
+
+/** نموذج ملف من مربع النص: ورقة واحدة، صف عناوين ثم سطر لكل سطر، فرقم
+ *  الصف هو رقم السطر، والسطر الفارغ يسقط في buildFileModel. */
+export function quickEntryModel(text: string): FileModel {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const grid = [[QUICK_NAME_COL, QUICK_SCORE_COL], ...lines.map(l => {
+    if (l.trim() === '') return ['', ''];
+    const { name, scoreRaw } = splitQuickLine(l);
+    return [name, scoreRaw];
+  })];
+  return buildFileModel([{ name: '', firstRow: 0, grid }], 0);
+}
+
+/** سطر الحالة تحت المربع: الدرجات، والغائبون، والأسطر المتجاهلة */
+export function quickEntryStatus(model: FileModel): { present: number; absent: number; ignoredLines: string[] } {
+  let present = 0, absent = 0;
+  const ignoredLines: string[] = [];
+  for (const s of model.sheets) {
+    for (const r of s.rows) {
+      const p = parseScore(r.cells[QUICK_SCORE_COL]);
+      if (p.kind === 'ok') present++;
+      else if (p.kind === 'empty') absent++;
+      else ignoredLines.push(String(r.rowNo));
+    }
+  }
+  return { present, absent, ignoredLines };
+}

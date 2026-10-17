@@ -1,8 +1,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { EYEBROW, PANEL, ResultComparisonMini, ResultRangeBar } from '../PublicSections';
 import {
-  bandCss, bandTone, fmtPct, groupPublicTests, publicPcts, publicTestMeta, SECTION_GAP_NOTE,
-  type ComparisonPoint, type PublicTestGroup, type PublicTestSection,
+  bandCss, bandTone, fmtPct, groupPublicTests, publicPcts, publicTestMeta, SECTION_GAP_NOTE, summarizeTest,
+  type ComparisonPoint, type PublicTestGroup, type PublicTestSection, type PublicTestSummary,
 } from './logic';
 import type { BandCount, PublicResultsAnalysisRow } from './types';
 import { AR_ABSENT, AR_SECTION, AR_STUDENT, AR_TEST, countAr, countWord } from '../../utils';
@@ -134,14 +134,124 @@ function presenceLine(present: number, absent: number): string {
   return `${countAr(present, AR_STUDENT)}${absent > 0 ? ` · ${countAr(absent, AR_ABSENT)}` : ''}`;
 }
 
+/** صف الأرقام في بطاقة الاختبار — multi: أرقام «كل الشعب» في بطاقة المقارنة */
+function TestStats({ s, multi }: { s: PublicTestSummary; multi: boolean }) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+      <div>
+        <div className={STAT_NUM}>{s.present}</div>
+        <div className={STAT_LABEL}>{countWord(s.present, AR_STUDENT)}{multi ? ' في كل الشعب' : ''}</div>
+      </div>
+      {s.absent > 0 && (
+        <div>
+          <div className={STAT_NUM}>{s.absent}</div>
+          <div className={STAT_LABEL}>{countWord(s.absent, AR_ABSENT)}</div>
+        </div>
+      )}
+      <div>
+        <div className={STAT_NUM}>{fmtPct(s.averagePct)}</div>
+        <div className={STAT_LABEL}>{multi ? 'المتوسط العام' : 'المتوسط'}</div>
+      </div>
+      {s.passPct !== null && (
+        <div>
+          <div className={STAT_NUM}>{fmtPct(s.passPct)}</div>
+          <div className={STAT_LABEL}>نسبة النجاح (60% فأكثر)</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** اختبار بشعبة واحدة: الأرقام، ودائرة الفئات ومفتاحها، وشريط المدى، وسطر
+ *  يشرح غياب المقارنة. لقطة قديمة بلا band_counts: بلا دائرة. */
 function SingleSection({ section }: { section: PublicTestSection }) {
   const r = section.row;
   const parts = [r.class_section !== null && r.class_section !== undefined && String(r.class_section) !== '' ? `شعبة ${r.class_section}` : '', presenceLine(r.total_students, r.absent_count ?? 0)];
+  const s = summarizeTest([r]);
+  const bandTotal = s.bands ? s.bands.reduce((n, b) => n + b.count, 0) : 0;
   return (
     <>
-      <div className="mt-1 mb-3 text-[length:var(--fs-xs)] text-[var(--t3)]">{parts.filter(Boolean).join(' · ')}</div>
-      <ResultRangeBar row={r} />
+      <div className="mt-1 text-[length:var(--fs-xs)] text-[var(--t3)]">{parts.filter(Boolean).join(' · ')}</div>
+      <TestStats s={s} multi={false} />
+
+      {s.bands && bandTotal > 0 && (
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-4">
+          <BandDonut
+            bands={s.bands}
+            value={s.passPct ?? s.averagePct}
+            label={s.passPct !== null ? 'نجاح' : 'المتوسط'}
+          />
+          <div className="min-w-0 flex-1">
+            <BandLegend bands={s.bands} />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4">
+        <ResultRangeBar row={r} />
+      </div>
+
+      <p className="mt-3 flex items-start gap-1.5 text-[length:var(--fs-xs)] text-[var(--t3)]">
+        <i className="ti ti-info-circle text-[16px] shrink-0" aria-hidden="true"></i>
+        <span>اختبار لشعبة واحدة، فلا مقارنة بين الشعب. تظهر المقارنة حين يُضاف الاختبار نفسه لشعبة أخرى.</span>
+      </p>
     </>
+  );
+}
+
+const DONUT_SIZE = 120;
+const DONUT_STROKE = 16;
+
+/** دائرة مفرّغة لتوزيع الفئات — SVG يدوي (يُطبع كما هو، بلا recharts). من
+ *  الأعلى مع عقارب الساعة، بترتيب الفئات من الأقوى. الفئة الصفرية لا تُرسم. */
+function BandDonut({ bands, value, label }: { bands: BandCount[]; value: number; label: string }) {
+  const total = bands.reduce((n, b) => n + b.count, 0);
+  const tones = bands.map((_, i) => bandTone(i, bands.length));
+  const c = DONUT_SIZE / 2;
+  const rad = (DONUT_SIZE - DONUT_STROKE) / 2;
+  const circ = 2 * Math.PI * rad;
+  let offset = 0;
+  return (
+    <div className="relative shrink-0 self-center sm:self-auto" style={{ width: DONUT_SIZE, height: DONUT_SIZE }}>
+      <svg
+        width={DONUT_SIZE}
+        height={DONUT_SIZE}
+        viewBox={`0 0 ${DONUT_SIZE} ${DONUT_SIZE}`}
+        className="block"
+        style={{ printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}
+        role="img"
+        aria-label={bands.map(b => `${b.label} ${b.count}`).join('، ')}
+      >
+        <circle cx={c} cy={c} r={rad} fill="none" strokeWidth={DONUT_STROKE} style={{ stroke: 'var(--s3)' }} />
+        <g transform={`rotate(-90 ${c} ${c})`}>
+          {bands.map((b, i) => {
+            if (b.count === 0) return null;
+            const len = (b.count / total) * circ;
+            const seg = (
+              <circle
+                key={b.label}
+                cx={c}
+                cy={c}
+                r={rad}
+                fill="none"
+                strokeWidth={DONUT_STROKE}
+                strokeDasharray={`${len} ${circ - len}`}
+                strokeDashoffset={-offset}
+                style={{ stroke: bandCss(tones[i]) }}
+              >
+                <title>{`${b.label}: ${countAr(b.count, AR_STUDENT)}`}</title>
+              </circle>
+            );
+            offset += len;
+            return seg;
+          })}
+        </g>
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <span className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">{fmtPct(value)}</span>
+        <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">{label}</span>
+      </div>
+    </div>
   );
 }
 
@@ -150,28 +260,7 @@ function SectionsComparison({ g, owner }: { g: PublicTestGroup; owner?: TestCard
   const avgPos = clamp(c.averagePct);
   return (
     <>
-      <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
-        <div>
-          <div className={STAT_NUM}>{c.present}</div>
-          <div className={STAT_LABEL}>{countWord(c.present, AR_STUDENT)} في كل الشعب</div>
-        </div>
-        {c.absent > 0 && (
-          <div>
-            <div className={STAT_NUM}>{c.absent}</div>
-            <div className={STAT_LABEL}>{countWord(c.absent, AR_ABSENT)}</div>
-          </div>
-        )}
-        <div>
-          <div className={STAT_NUM}>{fmtPct(c.averagePct)}</div>
-          <div className={STAT_LABEL}>المتوسط العام</div>
-        </div>
-        {c.passPct !== null && (
-          <div>
-            <div className={STAT_NUM}>{fmtPct(c.passPct)}</div>
-            <div className={STAT_LABEL}>نسبة النجاح (60% فأكثر)</div>
-          </div>
-        )}
-      </div>
+      <TestStats s={c} multi />
 
       {c.bands && <BandDistribution bands={c.bands} />}
 
@@ -252,14 +341,23 @@ function BandDistribution({ bands }: { bands: BandCount[] }) {
           );
         })}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-        {bands.map((b, i) => (
-          <span key={b.label} className="inline-flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--t2)]">
-            <span className="w-2.5 h-2.5 rounded-[var(--r-full)] shrink-0" style={{ background: bandCss(tones[i]) }} aria-hidden="true"></span>
-            <span>{b.label} {b.count}</span>
-          </span>
-        ))}
+      <div className="mt-2">
+        <BandLegend bands={bands} />
       </div>
+    </div>
+  );
+}
+
+/** مفتاح الفئات بالاسم والعدد — الفئة الصفرية تبقى فيه */
+function BandLegend({ bands }: { bands: BandCount[] }) {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1">
+      {bands.map((b, i) => (
+        <span key={b.label} className="inline-flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--t2)]">
+          <span className="w-2.5 h-2.5 rounded-[var(--r-full)] shrink-0" style={{ background: bandCss(bandTone(i, bands.length)) }} aria-hidden="true"></span>
+          <span>{b.label} {b.count}</span>
+        </span>
+      ))}
     </div>
   );
 }

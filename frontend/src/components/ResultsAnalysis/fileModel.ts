@@ -33,13 +33,15 @@ export type ScoreParse =
   | { kind: 'invalid' };
 
 /** يقرأ خانة درجة. الفارغة أو «غ/غائب/غياب» = غياب. تُقبل الأرقام العربية
- *  والفارسية، والفاصلة العشرية (24,5 و٢٤٫٥)، والمسافات، وصيغة «18 / 30»
- *  (الدرجة 18، والعظمى المقترحة 30). غير ذلك (نص، سالب، 1e1) غير صالح. */
+ *  والفارسية، والفاصلة العشرية (24,5 و٢٤٫٥)، وصيغة «18 / 30» (الدرجة 18،
+ *  والعظمى المقترحة 30). المسافات (ومنها NBSP) مقبولة في الطرفين وحول «/»
+ *  فقط: مسافة بين رقمين («91 18») غير صالحة، فلا يُجمعان في رقم واحد.
+ *  غير ذلك (نص، سالب، 1e1) غير صالح. */
 export function parseScore(raw: string | undefined): ScoreParse {
   const trimmed = String(raw ?? '').trim();
   if (trimmed === '' || ABSENT_WORDS.includes(trimmed)) return { kind: 'empty' };
-  const text = normalizeDigits(trimmed).replace(/\s+/g, '').replace(/[٫,]/g, '.');
-  const m = /^(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?$/.exec(text);
+  const text = normalizeDigits(trimmed).replace(/[٫,]/g, '.');
+  const m = /^(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+(?:\.\d+)?))?$/.exec(text);
   if (!m) return { kind: 'invalid' };
   const outOf = m[2] !== undefined ? Number(m[2]) : null;
   if (outOf !== null && outOf <= 0) return { kind: 'invalid' };

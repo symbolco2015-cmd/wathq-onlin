@@ -424,9 +424,9 @@ function ResultRangeRow({ row }: { row: PublicResultsAnalysisRow }) {
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
         <div className="min-w-0 flex-1 break-words">
           <span className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{row.subject}</span>
-          {meta && (
-            <span className="text-[length:var(--fs-xs)] text-[var(--t3)] mr-2">{meta}</span>
-          )}
+          {/* مسافة حقيقية بين العنصرين: بدونها يصل المتصفح آخر حرف المادة
+              بأول حرف بعدها (رياضيات+ثاني)، فتظهر التاء بصورة الوصل */}
+          {meta && <>{' '}<span className="text-[length:var(--fs-xs)] text-[var(--t3)] mr-1">{meta}</span></>}
         </div>
         <span className={`${PILL} shrink-0`}>{countAr(row.total_students, AR_STUDENT)}{absent > 0 ? ` · ${countAr(absent, AR_ABSENT)}` : ''}</span>
       </div>

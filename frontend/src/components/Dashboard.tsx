@@ -1273,6 +1273,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
               saveAnalysis={resultsAnalysis.saveAnalysis}
               deleteAnalysis={resultsAnalysis.deleteAnalysis}
               updateAnalysis={resultsAnalysis.updateAnalysis}
+              setAnalysesHidden={resultsAnalysis.setAnalysesHidden}
               onEvidenceSaved={onEvidenceSaved}
               onToast={toastKind}
               focusAnalysisId={focusAnalysisId}

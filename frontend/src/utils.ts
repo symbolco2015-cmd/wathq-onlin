@@ -223,6 +223,8 @@ export const AR_EVIDENCE: CountForms = { one: 'شاهد واحد', two: 'شاه�
 export const AR_ROW: CountForms = { one: 'صف واحد', two: 'صفان', twoGen: 'صفين', few: 'صفوف', many: 'صفاً', single: 'صف' };
 export const AR_TEST: CountForms = { one: 'اختبار واحد', two: 'اختباران', twoGen: 'اختبارين', few: 'اختبارات', many: 'اختباراً', single: 'اختبار' };
 export const AR_SCORE: CountForms = { one: 'درجة واحدة', two: 'درجتان', twoGen: 'درجتين', few: 'درجات', many: 'درجة', single: 'درجة' };
+export const AR_POINT: CountForms = { one: 'نقطة واحدة', two: 'نقطتان', twoGen: 'نقطتين', few: 'نقاط', many: 'نقطة', single: 'نقطة' };
+export const AR_SECTION: CountForms = { one: 'شعبة واحدة', two: 'شعبتان', twoGen: 'شعبتين', few: 'شعب', many: 'شعبة', single: 'شعبة' };
 export const AR_SHEET: CountForms = { one: 'ورقة واحدة', two: 'ورقتان', twoGen: 'ورقتين', few: 'أوراق', many: 'ورقة', single: 'ورقة' };
 
 /** كلمة المعدود وحدها لعدد يُكتب بجانبها (بطاقة رقم كبير وتحته الكلمة):

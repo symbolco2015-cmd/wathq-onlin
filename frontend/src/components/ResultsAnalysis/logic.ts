@@ -1,5 +1,5 @@
 import type { GradeBand, AnalysisSummary, BandCount, StudentResult, ResultsAnalysisRow, PublicResultsAnalysisRow, SectionRow, StageCode, TestTypeCode } from './types';
-import { AR_STUDENT, countAr, formatDate } from '../../utils';
+import { AR_POINT, AR_STUDENT, countAr, countWord, formatDate } from '../../utils';
 import { parseScore } from './fileModel';
 
 export { SECTION_MAX } from './fileModel';
@@ -513,8 +513,10 @@ export function classGroupLabel(row: LabelSource): string {
   return [row.subject, formatClass(row.stage, row.grade_level, row.class_section)].filter(Boolean).join(' · ');
 }
 
+/** مفتاح الشعبة عبر الزمن: المادة (normalizeSubject) + المرحلة + الصف +
+ *  الشعبة، فـ«الرياضيات» و«رياضيات» شعبة واحدة. */
 export function classGroupKey(row: LabelSource): string {
-  return [row.subject, row.stage ?? '', row.grade_level ?? '', row.class_section ?? ''].join('|');
+  return [normalizeSubject(row.subject), row.stage ?? '', row.grade_level ?? '', row.class_section ?? ''].join('|');
 }
 
 // ---------------------------------------------------------------------------
@@ -570,32 +572,6 @@ export interface ComparisonPoint {
 /** تسمية نقطة المقارنة: اسم الاختبار إن وُجد، وإلا التاريخ */
 function pointLabel(row: { test_type?: string | null; test_seq?: number | null; created_at: string }): string {
   return formatTest(row.test_type, row.test_seq) || formatDate(row.created_at, 'dayMonth');
-}
-
-/** يجمّع التحليلات بالمادة والشعبة معاً (مادة + مرحلة + صف + شعبة) — تبويب
- *  "مقارنة" يظهر لكل مجموعة فيها عنصران فأكثر. */
-export function groupAnalysesByClass(analyses: ResultsAnalysisRow[]): Map<string, ResultsAnalysisRow[]> {
-  const map = new Map<string, ResultsAnalysisRow[]>();
-  for (const a of analyses) {
-    const key = classGroupKey(a);
-    const list = map.get(key) ?? [];
-    list.push(a);
-    map.set(key, list);
-  }
-  return map;
-}
-
-/** سلسلة المقارنة الزمنية لمجموعة واحدة بالنسب — مرتبة تصاعدياً بالتاريخ. */
-export function buildComparisonSeries(group: ResultsAnalysisRow[]): ComparisonPoint[] {
-  return group
-    .slice()
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    .map(a => ({
-      id: a.id,
-      label: pointLabel(a),
-      average: analysisAveragePct(a),
-      createdAt: a.created_at,
-    }));
 }
 
 /** فرق بين آخر نقطتين في سلسلة مقارنة (نقاط مئوية)، أو null لو أقل من نقطتين. */
@@ -770,12 +746,16 @@ export function summarizeTest(rows: PublicResultsAnalysisRow[]): PublicTestSumma
   return { present, absent, averagePct: weighted, passPct, bands, gap };
 }
 
-/** يجمّع صفوف الصفحة العامة في اختبارات: المادة (normalizeSubject) + المرحلة
- *  + الصف + نوع الاختبار + رقمه. الأحدث أولاً؛ والشعب برقمها. */
+/** مفتاح الاختبار: المادة (normalizeSubject) + المرحلة + الصف + نوع الاختبار + رقمه */
+export function testKey(r: LabelSource): string {
+  return [normalizeSubject(r.subject), r.stage ?? '', r.grade_level ?? '', r.test_type ?? '', r.test_seq ?? ''].join('|');
+}
+
+/** يجمّع صفوف الصفحة العامة في اختبارات (testKey). الأحدث أولاً؛ والشعب برقمها. */
 export function groupPublicTests(rows: PublicResultsAnalysisRow[]): PublicTestGroup[] {
   const map = new Map<string, PublicResultsAnalysisRow[]>();
   for (const r of rows) {
-    const key = [normalizeSubject(r.subject), r.stage ?? '', r.grade_level ?? '', r.test_type ?? '', r.test_seq ?? ''].join('|');
+    const key = testKey(r);
     const list = map.get(key) ?? [];
     list.push(r);
     map.set(key, list);
@@ -822,6 +802,165 @@ export function publicTestTitle(g: PublicTestGroup): string {
   return [g.subject, publicTestMeta(g)].filter(Boolean).join(' · ');
 }
 
+/** ما يصل إلى الصفحة العامة: كل تحليل غير مخفي. hidden_public الغائب
+ *  (قبل migration الإخفاء) يعني «ظاهر». */
+export function publicVisibleAnalyses<T extends { hidden_public?: boolean }>(rows: T[]): T[] {
+  return rows.filter(r => r.hidden_public !== true);
+}
+
+// ---------------------------------------------------------------------------
+// لوحة المعلم: التصفية، والقريبون من النجاح، والشعبة عبر الزمن
+// ---------------------------------------------------------------------------
+
+const time = (iso: string) => new Date(iso).getTime();
+
+export interface FilterOption {
+  key: string;
+  label: string;
+}
+
+/** المواد بمفتاح normalizeSubject، الأحدث أولاً، والاسم من أحدث تحليل */
+export function subjectFilterOptions(analyses: ResultsAnalysisRow[]): FilterOption[] {
+  const out: FilterOption[] = [];
+  const sorted = [...analyses].sort((a, b) => time(b.created_at) - time(a.created_at));
+  for (const a of sorted) {
+    const key = normalizeSubject(a.subject);
+    if (key && !out.some(o => o.key === key)) out.push({ key, label: a.subject.trim() });
+  }
+  return out;
+}
+
+export function gradeKey(row: { stage: string | null; grade_level?: number | null }): string {
+  return `${row.stage ?? ''}|${row.grade_level ?? ''}`;
+}
+
+/** المرحلة والصف في تحليلات مادة: ابتدائي ثم متوسط ثم ثانوي، والصف تصاعدياً */
+export function gradeFilterOptions(analyses: ResultsAnalysisRow[]): FilterOption[] {
+  const stageOrder = (s: string | null) => {
+    const i = STAGE_OPTIONS.findIndex(o => o.value === s);
+    return i < 0 ? STAGE_OPTIONS.length : i;
+  };
+  const seen = new Map<string, ResultsAnalysisRow>();
+  for (const a of analyses) if (!seen.has(gradeKey(a))) seen.set(gradeKey(a), a);
+  return Array.from(seen.entries())
+    .sort(([, a], [, b]) => stageOrder(a.stage) - stageOrder(b.stage) || (a.grade_level ?? 0) - (b.grade_level ?? 0))
+    .map(([key, a]) => ({ key, label: formatClass(a.stage, a.grade_level, null) || 'بلا صف' }));
+}
+
+/** مجموع «القريبين من النجاح» في شعب اختبار — groupRemedialStudents نفسها
+ *  التي في بطاقة التجميع العلاجي داخل كل تحليل ([50%, 60%)). */
+export function nearSuccessTotal(rows: ResultsAnalysisRow[], bands: GradeBand[]): number {
+  const weakBandId = bands[bands.length - 1]?.id;
+  return rows.reduce((n, a) => n + groupRemedialStudents(a.summary.students, weakBandId, fullMarkOf(a.full_mark)).nearSuccess.length, 0);
+}
+
+/** نسبة الحاضرين بنسبة ≥ 60% — الشرط نفسه في pass_count */
+export function analysisPassPct(row: ResultsAnalysisRow): number {
+  const students = row.summary.students;
+  if (students.length === 0) return 0;
+  const fullMark = fullMarkOf(row.full_mark);
+  return students.filter(s => studentPct(s, fullMark) >= PASS_PCT).length / students.length * 100;
+}
+
+export interface TimelinePoint {
+  id: string;
+  /** «الفتري الأول»، أو التاريخ لتحليل بلا نوع */
+  label: string;
+  fullMark: number;
+  averagePct: number;
+  passPct: number;
+  createdAt: string;
+  /** المتوسط ناقص متوسط الاختبار السابق (نقاط مئوية)، null للأول */
+  delta: number | null;
+}
+
+export interface SectionTimeline {
+  /** classGroupKey */
+  key: string;
+  /** «رياضيات · ثاني متوسط · شعبة 1» بالاسم من أحدث تحليل */
+  title: string;
+  stage: string | null;
+  grade: number | null;
+  section: number | null;
+  /** تصاعدياً بالترتيب في الفصل */
+  points: TimelinePoint[];
+  latestAveragePct: number;
+}
+
+const testTypeOrder = (t: string | null | undefined) => {
+  const i = TEST_TYPE_OPTIONS.findIndex(o => o.value === t);
+  return i < 0 ? TEST_TYPE_OPTIONS.length : i;
+};
+
+/** ترتيب الاختبارات في الفصل: created_at تصاعدياً. التعادل (نادر) بترتيب
+ *  TEST_TYPE_OPTIONS ثم الرقم، لنتيجة ثابتة فقط. */
+export function compareInTerm(a: ResultsAnalysisRow, b: ResultsAnalysisRow): number {
+  return time(a.created_at) - time(b.created_at)
+    || testTypeOrder(a.test_type) - testTypeOrder(b.test_type)
+    || (a.test_seq ?? 0) - (b.test_seq ?? 0);
+}
+
+/** سلسلة شعبة واحدة بالنسب. rows: تحليلات الشعبة نفسها (classGroupKey). */
+export function buildSectionTimeline(rows: ResultsAnalysisRow[]): TimelinePoint[] {
+  const sorted = [...rows].sort(compareInTerm);
+  let prev: number | null = null;
+  return sorted.map(a => {
+    const averagePct = analysisAveragePct(a);
+    const delta: number | null = prev === null ? null : round1(averagePct - prev);
+    prev = averagePct;
+    return {
+      id: a.id,
+      label: pointLabel(a),
+      fullMark: fullMarkOf(a.full_mark),
+      averagePct,
+      passPct: analysisPassPct(a),
+      createdAt: a.created_at,
+      delta,
+    };
+  });
+}
+
+/** الشعب في تحليلات (بعد التصفية): المرحلة والصف ثم رقم الشعبة. */
+export function groupSectionTimelines(analyses: ResultsAnalysisRow[]): SectionTimeline[] {
+  const map = new Map<string, ResultsAnalysisRow[]>();
+  for (const a of analyses) {
+    const key = classGroupKey(a);
+    const list = map.get(key) ?? [];
+    list.push(a);
+    map.set(key, list);
+  }
+  const stageOrder = (s: string | null) => {
+    const i = STAGE_OPTIONS.findIndex(o => o.value === s);
+    return i < 0 ? STAGE_OPTIONS.length : i;
+  };
+  return Array.from(map.entries()).map(([key, list]) => {
+    const points = buildSectionTimeline(list);
+    const newest = [...list].sort(compareInTerm)[list.length - 1];
+    return {
+      key,
+      title: classGroupLabel(newest),
+      stage: newest.stage,
+      grade: newest.grade_level,
+      section: newest.class_section,
+      points,
+      latestAveragePct: points[points.length - 1].averagePct,
+    };
+  }).sort((a, b) =>
+    a.key.split('|')[0].localeCompare(b.key.split('|')[0], 'ar')
+    || stageOrder(a.stage) - stageOrder(b.stage)
+    || (a.grade ?? 0) - (b.grade ?? 0)
+    || (a.section ?? 0) - (b.section ?? 0));
+}
+
+/** «+6 نقاط» أو «−4 نقاط» أو «+5.5 نقطة» — الرقم والإشارة معزولان الاتجاه */
+export function fmtPointsDelta(d: number): string {
+  const r = round1(d);
+  if (r === 0) return 'دون تغيّر';
+  const abs = Math.abs(r);
+  const word = Number.isInteger(abs) ? countWord(abs, AR_POINT) : 'نقطة';
+  return `${LRI}${r > 0 ? '+' : '−'}${fmtNum(abs)}${PDI} ${word}`;
+}
+
 // ---------------------------------------------------------------------------
 // سلّم ألوان الفئات (DESIGN.md): الأخضر بدرجات، ثم --warn، ثم --danger للأضعف
 // ---------------------------------------------------------------------------
@@ -831,30 +970,36 @@ export interface BandTone {
   base: '--accent' | '--warn' | '--danger';
   /** 1 للكامل، وأقل لدرجات الأخضر */
   opacity: number;
+  /** نسبة --accent في مزج صلب مع --warn (آخر درجة خضراء قبل --warn) */
+  mixWarn?: number;
 }
 
-/** أدنى شفافية لدرجات الأخضر */
-const GREEN_MIN_OPACITY = 0.35;
+/** أدنى شفافية لدرجات الأخضر الشفافة */
+const GREEN_MIN_OPACITY = 0.6;
+/** نسبة --accent في لون آخر درجة خضراء (زيتوني بين الأخضر والكهرماني) */
+const GOOD_MIX_ACCENT = 45;
 
-/** لون الفئة بموضعها (0 = الأقوى). الأخيرة --danger، وقبلها --warn، والباقي
- *  أخضر تتناقص شفافيته بالتساوي من 1 إلى 0.35. */
+/** لون الفئة بموضعها (0 = الأقوى). الأخيرة --danger، وقبلها --warn. ثم آخر
+ *  درجة خضراء مزج صلب بين --accent و--warn، والباقي أخضر تتناقص شفافيته
+ *  من 1 إلى 0.6. الحالة الفعلية (5 فئات): 1، 0.6، الزيتوني، --warn، --danger. */
 export function bandTone(index: number, count: number): BandTone {
   if (count <= 1) return { base: '--accent', opacity: 1 };
   if (index >= count - 1) return { base: '--danger', opacity: 1 };
   if (count >= 3 && index === count - 2) return { base: '--warn', opacity: 1 };
   const greens = count >= 3 ? count - 2 : count - 1;
-  // الحالة الفعلية (5 فئات): 1 و0.65 و0.35 كما في الخطة
-  if (greens === 3) return { base: '--accent', opacity: [1, 0.65, GREEN_MIN_OPACITY][index] };
-  const step = greens > 1 ? (1 - GREEN_MIN_OPACITY) / (greens - 1) : 0;
+  if (greens >= 2 && index === greens - 1) return { base: '--accent', opacity: 1, mixWarn: GOOD_MIX_ACCENT };
+  const fading = greens >= 2 ? greens - 1 : greens;
+  const step = fading > 1 ? (1 - GREEN_MIN_OPACITY) / (fading - 1) : 0;
   return { base: '--accent', opacity: Math.round((1 - index * step) * 100) / 100 };
 }
 
 /** للـ HTML: var() أو color-mix */
 export function bandCss(t: BandTone): string {
+  if (t.mixWarn !== undefined) return `color-mix(in srgb, var(${t.base}) ${t.mixWarn}%, var(--warn))`;
   return t.opacity >= 1 ? `var(${t.base})` : `color-mix(in srgb, var(${t.base}) ${Math.round(t.opacity * 100)}%, transparent)`;
 }
 
-/** لون نص الدرجة: درجات الأخضر الخافتة ضعيفة التباين نصاً، فتُكتب بـ --t1 */
+/** لون نص الدرجة: الدرجات الخافتة والمزج تُكتب بـ --t1 */
 export function bandTextCss(t: BandTone): string {
-  return t.opacity >= 1 ? `var(${t.base})` : 'var(--t1)';
+  return t.opacity >= 1 && t.mixWarn === undefined ? `var(${t.base})` : 'var(--t1)';
 }

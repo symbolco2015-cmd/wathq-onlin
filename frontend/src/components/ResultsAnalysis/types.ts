@@ -69,6 +69,9 @@ export interface ResultsAnalysisRow {
   summary: AnalysisSummary;
   student_names_included: boolean;
   created_at: string;
+  /** مخفي من الصفحة العامة (والمعاينة وتقرير الحصاد الجديد). غيابه قبل
+   *  تنفيذ migration الإخفاء يعني «ظاهر». */
+  hidden_public?: boolean;
 }
 
 /** حقول التعريف التي يكتبها نموذج الرفع مع كل تحليل */

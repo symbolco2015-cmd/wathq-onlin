@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { EYEBROW, PANEL, ResultComparisonMini, ResultRangeBar } from '../PublicSections';
 import {
   bandCss, bandTone, fmtPct, groupPublicTests, publicPcts, publicTestMeta, SECTION_GAP_NOTE,
   type ComparisonPoint, type PublicTestGroup, type PublicTestSection,
 } from './logic';
 import type { BandCount, PublicResultsAnalysisRow } from './types';
-import { AR_ABSENT, AR_STUDENT, AR_TEST, countAr, countWord } from '../../utils';
+import { AR_ABSENT, AR_SECTION, AR_STUDENT, AR_TEST, countAr, countWord } from '../../utils';
 
 /** أحدث كم اختباراً يظهر قبل «عرض كل النتائج» */
 const VISIBLE_TESTS = 3;
@@ -69,17 +69,63 @@ export default function PublicResultsSection({ rows, comparisons, expandAll }: {
   );
 }
 
-function TestCard({ g }: { g: PublicTestGroup }) {
+/** إضافات لوحة المعلم على بطاقة الاختبار — لا تصل إلى الزائر أبداً */
+export interface TestCardOwner {
+  /** يفتح تحليل الشعبة الكامل */
+  onOpen: (analysisId: string) => void;
+  /** تحليلات الاختبار المخفية من الصفحة العامة */
+  hiddenIds: Set<string>;
+  /** زر ⋯ في رأس البطاقة */
+  menu?: ReactNode;
+  /** تحت المقارنة: سطر القريبين من النجاح */
+  footer?: ReactNode;
+}
+
+const OPEN_ROW = 'w-full text-right cursor-pointer rounded-[var(--r-sm)]';
+
+export function HiddenNote({ text = 'مخفي من الصفحة العامة' }: { text?: string }) {
+  return (
+    <span className="flex items-center gap-1 text-[length:var(--fs-xs)] text-[var(--t3)]">
+      <i className="ti ti-eye-off text-[16px] shrink-0" aria-hidden="true"></i>
+      <span>{text}</span>
+    </span>
+  );
+}
+
+/** «الاختبار مخفي…» أو «شعبتان مخفيتان…» — null إن لم يُخفَ شيء */
+function hiddenTestText(hidden: number, total: number): string | null {
+  if (hidden === 0) return null;
+  if (hidden === total) return total === 1 ? 'مخفي من الصفحة العامة' : 'الاختبار مخفي من الصفحة العامة';
+  const adj = hidden === 1 ? 'مخفية' : hidden === 2 ? 'مخفيتان' : 'مخفية';
+  return `${countAr(hidden, AR_SECTION)} ${adj} من الصفحة العامة`;
+}
+
+export function TestCard({ g, owner }: { g: PublicTestGroup; owner?: TestCardOwner }) {
   const meta = publicTestMeta(g);
+  const hiddenCount = owner ? g.sections.filter(s => owner.hiddenIds.has(s.row.id)).length : 0;
+  const hiddenText = hiddenTestText(hiddenCount, g.sections.length);
   return (
     <div className={PANEL}>
-      {/* مسافة حقيقية بين المادة وما بعدها، لا هامش فقط: بدونها تتصل الحروف
-          عبر العنصرين (رياضيات+ثاني) */}
-      <h3 className="text-[length:var(--fs-sm)] text-[var(--t1)] break-words">
-        <span className="font-bold">{g.subject}</span>
-        {meta && <>{' '}<span className="text-[var(--t2)]">· {meta}</span></>}
-      </h3>
-      {g.comparison ? <SectionsComparison g={g} /> : <SingleSection section={g.sections[0]} />}
+      <div className="flex items-start justify-between gap-2">
+        {/* مسافة حقيقية بين المادة وما بعدها، لا هامش فقط: بدونها تتصل الحروف
+            عبر العنصرين (رياضيات+ثاني) */}
+        <h3 className="text-[length:var(--fs-sm)] text-[var(--t1)] break-words min-w-0">
+          <span className="font-bold">{g.subject}</span>
+          {meta && <>{' '}<span className="text-[var(--t2)]">· {meta}</span></>}
+        </h3>
+        {owner?.menu}
+      </div>
+      {hiddenText && <div className="mt-1"><HiddenNote text={hiddenText} /></div>}
+      {g.comparison
+        ? <SectionsComparison g={g} owner={owner} />
+        : owner
+          ? (
+            <button type="button" onClick={() => owner.onOpen(g.sections[0].row.id)} className={`${OPEN_ROW} block`}>
+              <SingleSection section={g.sections[0]} />
+            </button>
+          )
+          : <SingleSection section={g.sections[0]} />}
+      {owner?.footer}
     </div>
   );
 }
@@ -99,7 +145,7 @@ function SingleSection({ section }: { section: PublicTestSection }) {
   );
 }
 
-function SectionsComparison({ g }: { g: PublicTestGroup }) {
+function SectionsComparison({ g, owner }: { g: PublicTestGroup; owner?: TestCardOwner }) {
   const c = g.comparison!;
   const avgPos = clamp(c.averagePct);
   return (
@@ -130,7 +176,17 @@ function SectionsComparison({ g }: { g: PublicTestGroup }) {
       {c.bands && <BandDistribution bands={c.bands} />}
 
       <div className="mt-4 pt-4 border-t border-[var(--bd)] flex flex-col gap-3">
-        {g.sections.map(s => <SectionBar key={s.row.id} s={s} avgPos={avgPos} />)}
+        {g.sections.map(s => owner
+          ? (
+            <button key={s.row.id} type="button" onClick={() => owner.onOpen(s.row.id)} className={`${OPEN_ROW} min-h-11 flex flex-col gap-1`}>
+              <span className="w-full flex items-center gap-2">
+                <span className="flex-1 min-w-0"><SectionBar s={s} avgPos={avgPos} /></span>
+                <i className="ti ti-chevron-left text-[16px] text-[var(--t3)] shrink-0" aria-hidden="true"></i>
+              </span>
+              {owner.hiddenIds.has(s.row.id) && <HiddenNote />}
+            </button>
+          )
+          : <SectionBar key={s.row.id} s={s} avgPos={avgPos} />)}
         <div className="flex items-center gap-2 text-[length:var(--fs-xs)] text-[var(--t3)]">
           <span className="w-0.5 h-3 bg-[var(--brand-gold)] shrink-0" aria-hidden="true"></span>
           <span>المتوسط العام {fmtPct(c.averagePct)}</span>

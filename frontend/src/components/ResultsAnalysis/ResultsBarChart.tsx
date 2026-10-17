@@ -25,10 +25,29 @@ const DANGER_PART_OPACITY = 0.45;
 const DANGER_PART_MIN_OPACITY = 0.3;
 export const dangerPartOpacity = (opacity: number) => Math.max(opacity * DANGER_PART_OPACITY, DANGER_PART_MIN_OPACITY);
 
-/** قيمة متغير اللون صريحةً، وvar() احتياطاً إن لم تُقرأ */
+function readVar(name: string): string {
+  return typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '';
+}
+
+function hexRgb(hex: string): [number, number, number] | null {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** قيمة متغير اللون صريحةً، وvar() احتياطاً إن لم تُقرأ. المزج مع --warn
+ *  (bandTone) يُحسب هنا رقمياً، لأن recharts وhtml-to-image يحتاجان لوناً صريحاً. */
 function resolveTone(t: BandTone): string {
-  const v = typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue(t.base).trim() : '';
-  return v || `var(${t.base})`;
+  const base = readVar(t.base);
+  if (t.mixWarn !== undefined) {
+    const a = hexRgb(base);
+    const b = hexRgb(readVar('--warn'));
+    if (!a || !b) return `color-mix(in srgb, var(${t.base}) ${t.mixWarn}%, var(--warn))`;
+    const p = t.mixWarn / 100;
+    return `rgb(${a.map((c, i) => Math.round(c * p + b[i] * (1 - p))).join(',')})`;
+  }
+  return base || `var(${t.base})`;
 }
 
 const TOOLTIP_CLS = 'rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)] px-3 py-2';

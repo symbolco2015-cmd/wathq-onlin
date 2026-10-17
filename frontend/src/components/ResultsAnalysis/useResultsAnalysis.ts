@@ -26,7 +26,8 @@ export interface UpdateAnalysisResult {
 }
 
 export type DeleteAnalysisFn = (id: string) => Promise<boolean>;
-export type UpdateAnalysisFn = (id: string, meta: AnalysisMeta, summary: AnalysisSummary | null, renameIds?: string[]) => Promise<UpdateAnalysisResult>;
+export type SetAnalysesHiddenFn = (ids: string[], hidden: boolean) => Promise<boolean>;
+export type UpdateAnalysisFn =(id: string, meta: AnalysisMeta, summary: AnalysisSummary | null, renameIds?: string[]) => Promise<UpdateAnalysisResult>;
 
 export interface SmartCheckResult {
   found: boolean;
@@ -141,6 +142,21 @@ export function useResultsAnalysis(userId: string | undefined) {
     return { ok: true, duplicate: false, renameFailed: false };
   }, [userId, fetchAnalyses]);
 
+  /** يخفي تحليلات من الصفحة العامة أو يظهرها، بجملة UPDATE واحدة */
+  const setAnalysesHidden = useCallback(async (ids: string[], hidden: boolean): Promise<boolean> => {
+    if (!supabase || !userId || ids.length === 0) return false;
+    const { data, error } = await supabase
+      .from('results_analysis')
+      .update({ hidden_public: hidden })
+      .in('id', ids)
+      .eq('portfolio_id', userId)
+      .select('id, hidden_public');
+    if (error) { console.error('[ResultsAnalysis] تعذّر تغيير الظهور في الصفحة العامة:', error.message); return false; }
+    const byId = new Map(((data ?? []) as { id: string; hidden_public: boolean }[]).map(r => [r.id, r.hidden_public]));
+    setAnalyses(prev => prev.map(a => byId.has(a.id) ? { ...a, hidden_public: byId.get(a.id) } : a));
+    return true;
+  }, [userId]);
+
   /** فحص تقريبي بالكلمات المفتاحية فقط (ILIKE) — لا ذكاء اصطناعي إطلاقاً. */
   const runSmartCheck = useCallback(async (
     analysis: ResultsAnalysisRow,
@@ -177,6 +193,7 @@ export function useResultsAnalysis(userId: string | undefined) {
     saveAnalysis,
     deleteAnalysis,
     updateAnalysis,
+    setAnalysesHidden,
     runSmartCheck,
     refetch: fetchAnalyses,
   };

@@ -8,7 +8,7 @@ import { calculatePointsLevelFromTotal, formatDate } from '../utils';
 import type { AcademicDate, AppState, HarvestSnapshot, SectionData } from '../types';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import type { GradeBand, ResultsAnalysisRow } from './ResultsAnalysis/types';
-import { toPublicResultsAnalysisRow, buildPublicComparisons } from './ResultsAnalysis/logic';
+import { toPublicResultsAnalysisRow, buildPublicComparisons, publicVisibleAnalyses } from './ResultsAnalysis/logic';
 
 interface HarvestReportSheetProps {
   isOpen: boolean;
@@ -198,7 +198,8 @@ export default function HarvestReportSheet({ isOpen, onClose, userId, state, sec
         .order('display_order', { ascending: true });
       if (bandsErr) console.warn('[HarvestReportSheet] تعذّر تحميل فئات التقدير:', bandsErr.message);
       const gradeBands = (bandRows ?? []) as GradeBand[];
-      const resultsAnalysis = ((analysisRows || []) as ResultsAnalysisRow[]).map(r => toPublicResultsAnalysisRow(r, gradeBands));
+      // المخفي من الصفحة العامة لا يدخل اللقطة (تصفية هنا لا في الاستعلام)
+      const resultsAnalysis = publicVisibleAnalyses((analysisRows || []) as ResultsAnalysisRow[]).map(r => toPublicResultsAnalysisRow(r, gradeBands));
       const resultsComparisons = buildPublicComparisons(resultsAnalysis);
 
       // 4) شارة اللقب/النقاط — من مجموع شواهد الفترة فقط، وليس نافذة "آخر 3

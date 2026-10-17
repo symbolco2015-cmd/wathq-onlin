@@ -10,7 +10,7 @@ import { usePublicResultsAnalysis } from './hooks/usePublicResultsAnalysis';
 import { usePublicSectionSummaries } from './hooks/usePublicSectionSummaries';
 import { useHarvestReport } from './hooks/useHarvestReport';
 import { useResultsAnalysis } from './components/ResultsAnalysis/useResultsAnalysis';
-import { toPublicResultsAnalysisRow } from './components/ResultsAnalysis/logic';
+import { publicVisibleAnalyses, toPublicResultsAnalysisRow } from './components/ResultsAnalysis/logic';
 
 import Nav from './components/Nav';
 import Auth from './components/Auth';
@@ -226,7 +226,7 @@ export default function App() {
   const isOwnPreview = currentPage === 'public' && !shareUserId && !reportId;
   const ownResultsAnalysis = useResultsAnalysis(isOwnPreview ? user?.id : undefined);
   const ownResultsAnalysisPublic = useMemo(
-    () => ownResultsAnalysis.analyses.map(a => toPublicResultsAnalysisRow(a, ownResultsAnalysis.gradeBands)),
+    () => publicVisibleAnalyses(ownResultsAnalysis.analyses).map(a => toPublicResultsAnalysisRow(a, ownResultsAnalysis.gradeBands)),
     [ownResultsAnalysis.analyses, ownResultsAnalysis.gradeBands]
   );
 

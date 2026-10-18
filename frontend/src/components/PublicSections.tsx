@@ -286,7 +286,7 @@ function EvidenceThumb({ e, onClick, eager }: { e: ViewerItem; onClick?: (e: Vie
 
   if (e.kind === 'link' && e.url) {
     return (
-      <a href={e.url} target="_blank" rel="noreferrer" className={`${tileCls} text-[var(--t2)]`}>
+      <a href={e.url} target="_blank" rel="noopener noreferrer" className={`${tileCls} text-[var(--t2)]`}>
         <i className="ti ti-link text-[16px] shrink-0"></i>
         <span className="text-[length:var(--fs-xs)] font-bold truncate" dir="ltr">{getDomain(e.url)}</span>
       </a>

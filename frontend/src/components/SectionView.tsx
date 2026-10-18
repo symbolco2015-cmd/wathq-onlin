@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { SectionData, SectionIndicator } from '../types';
 import type { SupabaseEvidence, EvidenceType } from '../hooks/useSupabaseEvidence';
 import { AR_EVIDENCE, countAr, formatDate, isEvidenceLocked } from '../utils';
+import EvidenceViewer, { publicKind } from './EvidenceViewer';
 import {
   CUSTOM_INDICATOR_LIMIT, CUSTOM_LIMIT_MSG, CUSTOM_NAME_MAX, validateIndicatorName,
   type IndicatorResult,
@@ -264,6 +266,7 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
 }) {
   const url = ev.file_url ?? ev.link_url ?? undefined;
   const [menuUp, setMenuUp] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const pinned = !!highlight && highlight.pinnedId === ev.id;
   // الشاهد غير المصنّف لا يظهر في الصفحة العامة، فلا يُثبَّت
   const canPin = !!highlight && ev.section_id !== null;
@@ -305,12 +308,18 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
 
   return (
     <div className="relative flex items-center gap-2 py-2.5 px-3.5">
-      {url ? (
-        <button type="button" onClick={() => window.open(url, '_blank')} className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer" title="اضغط لعرض الملف">
-          {content}
-        </button>
-      ) : (
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">{content}</div>
+      {/* كل شاهد (ملف، رابط، ملاحظة) يُفتح في نافذة العرض داخل التطبيق، لا
+          بالانتقال إلى رابط الملف: في التطبيق المثبّت لا زر رجوع من خارجه */}
+      <button type="button" onClick={() => setViewing(true)} className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer" title="اضغط لعرض الشاهد">
+        {content}
+      </button>
+      {/* بوابة إلى body: لا يحدّها سياق تكديس في الشاشة */}
+      {viewing && createPortal(
+        <EvidenceViewer
+          item={{ kind: publicKind(ev), name: ev.title, url, description: ev.description, meta: formatDate(ev.created_at, 'long') }}
+          onClose={() => setViewing(false)}
+        />,
+        document.body,
       )}
       {hasMenu && (
         // 36px بصرياً، ومساحة الضغط 44px بحافة غير مرئية 4px من كل جهة

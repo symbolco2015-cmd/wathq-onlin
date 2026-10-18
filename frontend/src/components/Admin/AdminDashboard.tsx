@@ -471,7 +471,7 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
           <a
             href={shareUrl}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className={`${BTN_PRI} min-w-[140px] no-underline transition-opacity duration-150 hover:opacity-90`}
           >
             <i className="ti ti-external-link" /> عرض ملف الإنجاز

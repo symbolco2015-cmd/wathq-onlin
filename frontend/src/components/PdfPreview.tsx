@@ -38,7 +38,7 @@ export function PdfPreviewFallback({ url, name }: { url: string; name: string })
         href={url}
         download={name}
         target="_blank"
-        rel="noreferrer"
+        rel="noopener noreferrer"
         className="h-11 px-4 inline-flex items-center justify-center gap-2 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--accent)] text-[length:var(--fs-sm)] font-bold text-[var(--bg)] no-underline cursor-pointer"
       >
         <i className="ti ti-download text-[20px]"></i>

@@ -142,7 +142,7 @@ export default function NotificationsSheet({ isOpen, onClose, items, unreadAtOpe
                     <a
                       href={ann.attachment_url}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--accent)] no-underline hover:underline"
                     >
                       <i className="ti ti-paperclip text-[16px]" /> تحميل الملف المرفق

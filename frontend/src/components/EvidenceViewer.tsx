@@ -1,5 +1,6 @@
-// نافذة العرض الموحّدة للصفحة العامة — .lb في pub() بـ docs/design/wathq-prototype.html.
-// تستعملها نافذة البند، والبطاقات الخاصة، و«أبرز إنجاز»، ومعرض «لمحات».
+// نافذة العرض الموحّدة — .lb في pub() بـ docs/design/wathq-prototype.html.
+// تستعملها الصفحة العامة (نافذة البند، والبطاقات الخاصة، و«أبرز إنجاز»، ومعرض «لمحات»)،
+// وصفوف الشواهد في لوحة المعلم (EvRow).
 import { useEffect, useRef, useState } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { extensionFromUrl } from '../utils';
@@ -67,7 +68,7 @@ function MediaFailed({ url }: { url: string }) {
       </div>
       <p className="text-[length:var(--fs-sm)] text-[var(--t2)]">تعذّر عرض الملف.</p>
       {url && (
-        <a href={url} target="_blank" rel="noreferrer" className={`${BTN_SM} mt-4 no-underline`}>
+        <a href={url} target="_blank" rel="noopener noreferrer" className={`${BTN_SM} mt-4 no-underline`}>
           <i className="ti ti-external-link text-[16px]"></i>
           فتح الملف
         </a>
@@ -78,6 +79,21 @@ function MediaFailed({ url }: { url: string }) {
 
 const ICON_BTN = 'w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-[var(--r-sm)] border border-[var(--bd2)] text-[var(--t1)] cursor-pointer';
 
+/** علامة مدخل النافذة في history.state — رمز فريد لكل فتح، لا true: مدخل قديم
+ *  بقي بعد تحديث الصفحة (F5) لا يُخلط بالنافذة المفتوحة الآن */
+const VIEWER_STATE_KEY = 'wathqViewer';
+const viewerToken = () => (window.history.state as Record<string, unknown> | null)?.[VIEWER_STATE_KEY];
+/** نسخة من المدخل الحالي (بكل علاماته: الشاشة، والتحليل المفتوح…) مع علامة
+ *  النافذة. wathqDepth (شاشات Dashboard) يزيد واحداً إن وُجد، فيبقى
+ *  «البنود» (go(-depth)) صحيحاً. في الصفحة العامة لا wathqDepth، والرابط
+ *  (?share=) لا يتغير لأن pushState بلا رابط. */
+function pushViewerEntry(token: string) {
+  const st = (window.history.state ?? {}) as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...st, [VIEWER_STATE_KEY]: token };
+  if (typeof st.wathqDepth === 'number') next.wathqDepth = st.wathqDepth + 1;
+  window.history.pushState(next, '');
+}
+
 export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | null; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -85,13 +101,42 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
   const open = item !== null;
   // رابط الوسيط الذي تعذّر تحميله — يسقط تلقائياً إن تغيّر العنصر
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  // رمز مدخل السجل لهذا الفتح؛ null = لا مدخل (مغلقة، أو أُزيل المدخل)
+  const tokenRef = useRef<string | null>(null);
+
+  // مدخل في السجل للنافذة: زر الرجوع (أندرويد أو المتصفح) يغلقها وحدها.
+  // مرة واحدة لكل فتح — StrictMode يكرر الأثر، فالحارس tokenRef
+  useEffect(() => {
+    if (!open) { tokenRef.current = null; return; }
+    if (!tokenRef.current) {
+      tokenRef.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      pushViewerEntry(tokenRef.current);
+    }
+    const onPopState = () => {
+      if (tokenRef.current && viewerToken() !== tokenRef.current) {
+        tokenRef.current = null;
+        onCloseRef.current();
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [open]);
+
+  /** ✕ والضغط خارج المحتوى وEsc: عبر السجل إن كان مدخل النافذة في أعلاه، فلا
+   *  يبقى مدخل يتيم — والإغلاق الفعلي في popstate أعلاه */
+  const requestCloseRef = useRef(() => {});
+  requestCloseRef.current = () => {
+    if (tokenRef.current && viewerToken() === tokenRef.current) window.history.back();
+    else { tokenRef.current = null; onCloseRef.current(); }
+  };
+  const requestClose = () => requestCloseRef.current();
 
   // Esc يغلق، والتركيز يعود للعنصر الذي فتح النافذة
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestCloseRef.current(); };
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
@@ -102,8 +147,9 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
   if (!item) return null;
 
   const url = item.url ?? '';
-  // الرابط الوحيد الذي يصل هنا يوتيوب (غيره يُفتح في تبويب جديد)
+  // رابط يوتيوب يُضمَّن، وأي رابط آخر بطاقة فيها «فتح الرابط» (تبويب جديد)
   const ytId = item.kind !== 'img' && url ? extractYouTubeId(url) : null;
+  const isPlainLink = item.kind === 'link' && !!url && !ytId;
   // kind 'pdf' يشمل PDF وOffice معاً، فيُختار فرعه من الامتداد الحقيقي
   const ext = item.kind === 'pdf' ? extensionFromUrl(url) : '';
   const isPdf = !ytId && ext === 'pdf';
@@ -122,7 +168,7 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
       aria-modal="true"
       aria-labelledby="evidence-viewer-title"
       className="fixed inset-0 z-[450] bg-black/90 flex flex-col overflow-y-auto"
-      onClick={onClose}
+      onClick={requestClose}
     >
       <div className="flex items-center gap-3 px-4 py-3" onClick={e => e.stopPropagation()}>
         <div className="flex-1 min-w-0">
@@ -130,11 +176,11 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
           <p className="text-[length:var(--fs-xs)] text-[var(--t3)]">معاينة الشاهد</p>
         </div>
         {canDownload && (
-          <a href={item.url} download={item.name} target="_blank" rel="noreferrer" className={ICON_BTN} aria-label="تحميل" title="تحميل">
+          <a href={item.url} download={item.name} target="_blank" rel="noopener noreferrer" className={ICON_BTN} aria-label="تحميل" title="تحميل">
             <i className="ti ti-download text-[20px]"></i>
           </a>
         )}
-        <button ref={closeRef} type="button" className={ICON_BTN} onClick={onClose} aria-label="إغلاق">
+        <button ref={closeRef} type="button" className={ICON_BTN} onClick={requestClose} aria-label="إغلاق">
           <i className="ti ti-x text-[20px]"></i>
         </button>
       </div>
@@ -150,6 +196,19 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
 
             {ytId && <YouTubeEmbed ytId={ytId} title={item.name} />}
 
+            {isPlainLink && (
+              <div className="w-full max-w-md text-center p-6 rounded-[var(--r-md)] bg-[var(--s1)] border border-[var(--bd)]">
+                <div className="w-12 h-12 rounded-[var(--r-sm)] bg-[var(--s2)] text-[var(--t2)] flex items-center justify-center mx-auto mb-4">
+                  <i className="ti ti-link text-[24px]"></i>
+                </div>
+                <p dir="ltr" className="text-[length:var(--fs-sm)] text-[var(--t2)] break-all">{url}</p>
+                <a href={url} target="_blank" rel="noopener noreferrer" className={`${BTN_SM} mt-4 no-underline`}>
+                  <i className="ti ti-external-link text-[16px]"></i>
+                  فتح الرابط
+                </a>
+              </div>
+            )}
+
             {isPdf && <PdfPreview url={url} name={item.name} className="w-full h-[65vh]" />}
 
             {isOfficeDoc && (
@@ -162,7 +221,7 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
                   هذا مستند Word أو Excel أو PowerPoint. حمّله لتستعرض محتواه كاملاً على جهازك.
                 </p>
                 <div className="flex justify-center">
-                  <a href={url} download={item.name} target="_blank" rel="noreferrer" className={`${BTN_PRI} flex-none no-underline`}>
+                  <a href={url} download={item.name} target="_blank" rel="noopener noreferrer" className={`${BTN_PRI} flex-none no-underline`}>
                     <i className="ti ti-download text-[20px]"></i>
                     تحميل مستند الشاهد
                   </a>

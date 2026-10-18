@@ -49,6 +49,15 @@ export const pickAppStateFields = (raw: Record<string, any>): Partial<AppState> 
 // القاعدة النظيفة عبر saveState (انظر الـeffect الأول في useAppStore).
 const STORAGE_VERSION = 'v2-2026-08';
 
+// أعمدة portfolios التي يحمّلها التطبيق للمعلم المسجّل. deletion_scheduled_at
+// يُطلب معها، وقبل تنفيذ migration الحذف بمهلة (20261018) لا يوجد العمود
+// فيرجع الطلب 42703، فيُعاد بدونه ويُعامَل الحساب كغير مجدول للحذف.
+const PORTFOLIO_COLUMNS = 'state, share_enabled, ai_summary, ai_top_achievement_evidence_id, pinned_top_evidence_id, ai_top_achievement_approved';
+const UNDEFINED_COLUMN = '42703';
+
+/** نتيجة «استعادة حسابي» (restore_my_account) */
+export type RestoreAccountResult = 'ok' | 'expired' | 'failed';
+
 export function useAppStore() {
   const [state, setState] = useState<AppState>(defaultState);
   const [user, setUser] = useState<any>(null);
@@ -68,6 +77,14 @@ export function useAppStore() {
   // «أبرز إنجاز»: تثبيت المعلم وموافقته على الاقتراح — عمودان مستقلان كذلك، خارج state
   const [pinnedTopEvidenceId, setPinnedTopEvidenceId] = useState<string | null>(null);
   const [aiTopAchievementApproved, setAiTopAchievementApproved] = useState(false);
+  // موعد الحذف النهائي إن جدوله الأدمن (عمود مستقل، خارج state). قائم ⇐ شاشة
+  // المهلة بدل اللوحة (App.tsx). لا يكتبه المعلم إلا عبر restore_my_account.
+  const [deletionScheduledAt, setDeletionScheduledAt] = useState<string | null>(null);
+  // تعذّر تحميل ملف المعلم (شبكة، صلاحية، أي خطأ غير «لا صف») ⇐ شاشة «تعذّر
+  // التحميل». لا إنشاء ملف ولا شاشة إكمال الملف في هذه الحالة.
+  const [portfolioLoadError, setPortfolioLoadError] = useState(false);
+  // يزيده «إعادة المحاولة» فيُعاد تحميل الملف
+  const [loadAttempt, setLoadAttempt] = useState(0);
   // عدّاد طلبات تحميل state — يزيده أي تحميل جديد (الـeffect رقم 2) وأي حفظ
   // يدوي ناجح (saveState). عند رجوع نتيجة SELECT متأخرة، إن لم يعد رقمها
   // المحلي مطابقاً لهذا العدّاد، تُتجاهل تماماً بدل استدعاء setState — يمنع
@@ -120,6 +137,8 @@ export function useAppStore() {
         setAiTopAchievementEvidenceId(null);
         setPinnedTopEvidenceId(null);
         setAiTopAchievementApproved(false);
+        setDeletionScheduledAt(null);
+        setPortfolioLoadError(false);
       }
     });
 
@@ -231,29 +250,45 @@ export function useAppStore() {
     async function loadData() {
       const requestId = ++loadRequestIdRef.current;
       setLoading(true);
+      setPortfolioLoadError(false);
       if (user && supabase) {
+        const client = supabase;
         try {
-          const { data, error } = await supabase
-            .from('portfolios')
-            .select('state, share_enabled, ai_summary, ai_top_achievement_evidence_id, pinned_top_evidence_id, ai_top_achievement_approved')
-            .eq('id', user.id)
-            .single();
+          const selectPortfolio = (columns: string) =>
+            client.from('portfolios').select(columns).eq('id', user.id).maybeSingle();
+
+          let res = await selectPortfolio(`${PORTFOLIO_COLUMNS}, deletion_scheduled_at`);
+          if (res.error?.code === UNDEFINED_COLUMN) res = await selectPortfolio(PORTFOLIO_COLUMNS);
+          const { error } = res;
+          const data = res.data as Record<string, any> | null;
 
           // تجاهل هذه النتيجة إن بدأ تحميل أحدث، أو إن نجح حفظ يدوي (saveState
           // يزيد loadRequestIdRef عند النجاح) أثناء انتظار هذا الـ SELECT
           if (requestId !== loadRequestIdRef.current) return;
 
-          if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows found"
+          // حالتان فقط: لا صف (معلم جديد ⇐ يُنشأ ملفه أدناه)، أو خطأ آخر (شبكة،
+          // عمود، صلاحية) ⇐ «تعذّر التحميل» بلا upsert ولا شاشة إكمال الملف، لأن
+          // الإنشاء هنا كان يكتب ملفاً فارغاً فوق ملف المعلم الحقيقي.
+          // PGRST116 = «لا صفوف» (من single())، ويُعامل كغياب الصف احتياطاً.
+          const noRow = (!error && !data) || error?.code === 'PGRST116';
+          if (error && !noRow) {
             console.error("Error loading portfolio from Supabase:", error);
+            setPortfolioLoadError(true);
+            setLoading(false);
+            return;
           }
 
-          if (data && data.state && Object.keys(data.state).length > 0) {
+          const scheduledAt: string | null = data?.deletion_scheduled_at ?? null;
+          setDeletionScheduledAt(scheduledAt);
+
+          // مجدول للحذف: الصف موجود، فلا إنشاء ولا كتابة قبل «استعادة حسابي»
+          if (data && (scheduledAt || (data.state && Object.keys(data.state).length > 0))) {
             setState({
               ...defaultState,
-              ...pickAppStateFields(data.state),
+              ...pickAppStateFields(data.state || {}),
               profile: {
                 ...defaultState.profile,
-                ...(data.state.profile || {})
+                ...(data.state?.profile || {})
               }
             });
             setShareEnabled(!!data.share_enabled);
@@ -302,6 +337,10 @@ export function useAppStore() {
           }
         } catch (e) {
           console.error("Exception loading data from Supabase:", e);
+          if (requestId !== loadRequestIdRef.current) return;
+          setPortfolioLoadError(true);
+          setLoading(false);
+          return;
         }
       }
 
@@ -332,7 +371,26 @@ export function useAppStore() {
     }
 
     loadData();
-  }, [user?.id]); // يعتمد على ID فقط — لا يُعاد التحميل عند تجديد الـ token (TOKEN_REFRESHED)
+  }, [user?.id, loadAttempt]); // ID و«إعادة المحاولة» فقط — لا يُعاد التحميل عند تجديد الـ token (TOKEN_REFRESHED)
+
+  const retryPortfolioLoad = () => setLoadAttempt(n => n + 1);
+
+  // «استعادة حسابي»: restore_my_account() تعمل على auth.uid() فقط. النجاح يمسح
+  // الموعد محلياً فتختفي شاشة المهلة وتظهر اللوحة.
+  const restoreAccount = async (): Promise<RestoreAccountResult> => {
+    if (!user || !supabase) return 'failed';
+    const { data, error } = await supabase.rpc('restore_my_account');
+    if (error) {
+      console.error('[restore_my_account] تعذّرت الاستعادة:', error.message);
+      return 'failed';
+    }
+    const result = (data ?? {}) as { ok?: boolean; reason?: string };
+    if (result.ok === true) {
+      setDeletionScheduledAt(null);
+      return 'ok';
+    }
+    return result.reason === 'expired' ? 'expired' : 'failed';
+  };
 
   // 3. Save State (local & DB)
   // ترجع Promise<boolean> (true = نجح الحفظ فعلياً) بدل fire-and-forget، حتى
@@ -524,6 +582,10 @@ export function useAppStore() {
     setPinnedTopEvidence,
     approveTopSuggestion,
     dismissTopSuggestion,
+    deletionScheduledAt,
+    restoreAccount,
+    portfolioLoadError,
+    retryPortfolioLoad,
   };
 }
 

@@ -1,53 +1,43 @@
 // Supabase Edge Function: admin-portfolio-action
 //
-// إعادة تعيين ملف معلم أو حذفه، للأدمن فقط.
+// إعادة تعيين ملف معلم، أو حذف حسابه فوراً بلا مهلة (لحسابات التجربة)، للأدمن فقط.
+// الحذف العادي بمهلة 10 أيام لا يمر من هنا: admin_schedule_deletion() تجدوله،
+// و purge-scheduled-accounts تنفّذه.
 //
-// المدخل: { portfolio_id: uuid, mode: 'reset' | 'delete', confirm_name: string, delete_auth?: boolean }
-// الرد الناجح: { ok: true, mode, counts, storage_deleted, storage_errors, auth_deleted, auth_error? }
+// المدخل:
+//   { portfolio_id: uuid, mode: 'reset',  confirm_name: string }
+//   { portfolio_id: uuid, mode: 'delete', confirm_email: string }
+// الرد الناجح:
+//   reset:  { ok: true, mode, counts, storage_deleted, storage_errors }
+//   delete: { ok: true, mode, storage_deleted }
 // الرد الفاشل: { error: <code>, message }
 //
 // - reset: admin_reset_portfolio_data() (معاملة واحدة) ثم حذف ملفات {id}/ في
 //   evidence و evidence-video و evidence-audio. الصورة الشخصية في حاوية
 //   avatars ({id}/avatar.jpg) لا تُلمس. يبقى الملف الشخصي والإعدادات و
 //   ai_usage_log و portfolio_feature_overrides.
-// - delete: حذف صف portfolios (الـ CASCADE يحذف الباقي) ثم ملفات {id}/ في
-//   الحاويات الثلاث و avatars، ثم حساب الدخول إن طُلب delete_auth.
-// قاعدة البيانات أولاً ثم التخزين: فشل التخزين يترك ملفات يتيمة تُنظَّف بإعادة
-// المحاولة، وهذا أهون من شواهد تشير إلى ملفات محذوفة.
+//   قاعدة البيانات أولاً ثم التخزين: فشل التخزين يترك ملفات يتيمة تُنظَّف بإعادة
+//   المحاولة، وهذا أهون من شواهد تشير إلى ملفات محذوفة.
+// - delete: حذف كامل بترتيب الحذف النهائي نفسه (purgeUserAccount): ملفات
+//   الحاويات الأربع، ثم التحقق أن لا شيء بقي، ثم auth.users (الـ CASCADE
+//   يحذف portfolios وما يتبعه). التأكيد بالبريد كاملاً لا بالاسم.
 //
 // هوية المستدعي من JWT فقط (عميل anon + Authorization)، لا من جسم الطلب.
 // كل ما بعد التحقق بعميل SUPABASE_SERVICE_ROLE_KEY.
 
-import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { CONTENT_BUCKETS, deleteUserStorage, purgeUserAccount } from '../_shared/user-storage.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const CONTENT_BUCKETS = ['evidence', 'evidence-video', 'evidence-audio'];
-// الصورة الشخصية: تُحذف مع delete فقط
-const AVATAR_BUCKET = 'avatars';
-const REMOVE_BATCH = 100;
-const LIST_PAGE = 1000;
-const MAX_DEPTH = 6;
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Mode = 'reset' | 'delete';
-
-interface ActionInput {
-  portfolioId: string;
-  mode: Mode;
-  confirmName: string;
-  deleteAuth: boolean;
-}
-
-interface StorageError {
-  bucket: string;
-  stage: 'list' | 'remove';
-  message: string;
-}
+type ActionInput =
+  | { portfolioId: string; mode: 'reset'; confirmName: string }
+  | { portfolioId: string; mode: 'delete'; confirmEmail: string };
 
 class ActionError extends Error {
   constructor(public code: string, message: string, public status = 400) {
@@ -63,25 +53,25 @@ function parseBody(raw: unknown): ActionInput {
   const invalid = (message: string) => new ActionError('invalid_request', message);
   if (!isRecord(raw)) throw invalid('جسم الطلب غير صالح.');
 
-  const { portfolio_id, mode, confirm_name, delete_auth } = raw;
+  const { portfolio_id, mode, confirm_name, confirm_email } = raw;
   if (typeof portfolio_id !== 'string' || !UUID_RE.test(portfolio_id)) {
     throw invalid('معرّف الملف غير صالح.');
   }
-  if (mode !== 'reset' && mode !== 'delete') {
-    throw invalid('نوع العملية غير صالح.');
-  }
-  if (typeof confirm_name !== 'string' || !confirm_name.trim()) {
-    throw invalid('اسم التأكيد مطلوب.');
-  }
-  if (delete_auth !== undefined && typeof delete_auth !== 'boolean') {
-    throw invalid('قيمة delete_auth غير صالحة.');
-  }
-  const deleteAuth = delete_auth === true;
-  if (deleteAuth && mode !== 'delete') {
-    throw invalid('حذف حساب الدخول متاح مع الحذف فقط.');
-  }
+  const portfolioId = portfolio_id.toLowerCase();
 
-  return { portfolioId: portfolio_id.toLowerCase(), mode, confirmName: confirm_name, deleteAuth };
+  if (mode === 'reset') {
+    if (typeof confirm_name !== 'string' || !confirm_name.trim()) {
+      throw invalid('اسم التأكيد مطلوب.');
+    }
+    return { portfolioId, mode, confirmName: confirm_name };
+  }
+  if (mode === 'delete') {
+    if (typeof confirm_email !== 'string' || !confirm_email.trim()) {
+      throw invalid('البريد الإلكتروني للتأكيد مطلوب.');
+    }
+    return { portfolioId, mode, confirmEmail: confirm_email };
+  }
+  throw invalid('نوع العملية غير صالح.');
 }
 
 function readProfileName(state: unknown): string {
@@ -100,70 +90,7 @@ function toCounts(data: unknown): Record<string, number> {
   return counts;
 }
 
-// يسرد كل الملفات تحت prefix مع المجلدات الفرعية. list() يرجع مستوى واحداً،
-// والمجلد يظهر كعنصر بلا id.
-async function listFilesRecursive(
-  admin: SupabaseClient,
-  bucket: string,
-  prefix: string,
-  depth: number,
-): Promise<string[]> {
-  if (depth > MAX_DEPTH) throw new Error(`max depth exceeded at ${prefix}`);
-
-  const files: string[] = [];
-  const folders: string[] = [];
-  for (let offset = 0; ; offset += LIST_PAGE) {
-    const { data, error } = await admin.storage.from(bucket).list(prefix, { limit: LIST_PAGE, offset });
-    if (error) throw new Error(error.message);
-    for (const item of data ?? []) {
-      const path = `${prefix}/${item.name}`;
-      if (item.id) files.push(path);
-      else folders.push(path);
-    }
-    if (!data || data.length < LIST_PAGE) break;
-  }
-
-  for (const folder of folders) {
-    files.push(...await listFilesRecursive(admin, bucket, folder, depth + 1));
-  }
-  return files;
-}
-
-// تسرد كل المسارات أولاً ثم تحذف: الحذف أثناء التصفح بـ offset يُسقط ملفات.
-// keepAvatar حماية إضافية: الصورة الشخصية في avatars أصلاً، و reset لا يمر عليها.
-async function deleteUserStorage(
-  admin: SupabaseClient,
-  userId: string,
-  buckets: string[],
-  keepAvatar: boolean,
-): Promise<{ deleted: number; errors: StorageError[] }> {
-  const avatarPath = `${userId}/avatar.jpg`;
-  let deleted = 0;
-  const errors: StorageError[] = [];
-
-  for (const bucket of buckets) {
-    let paths: string[];
-    try {
-      paths = await listFilesRecursive(admin, bucket, userId, 0);
-    } catch (err) {
-      errors.push({ bucket, stage: 'list', message: err instanceof Error ? err.message : 'list failed' });
-      continue;
-    }
-    if (keepAvatar) paths = paths.filter(p => p !== avatarPath);
-
-    for (let i = 0; i < paths.length; i += REMOVE_BATCH) {
-      const batch = paths.slice(i, i + REMOVE_BATCH);
-      const { data, error } = await admin.storage.from(bucket).remove(batch);
-      if (error) {
-        errors.push({ bucket, stage: 'remove', message: error.message });
-        continue;
-      }
-      deleted += data?.length ?? 0;
-    }
-  }
-
-  return { deleted, errors };
-}
+const normalizeEmail = (s: string) => s.trim().toLowerCase();
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -203,14 +130,14 @@ Deno.serve(async (req: Request) => {
 
     // 2) المدخل
     const input = parseBody(await req.json().catch(() => null));
-    const { portfolioId, mode, confirmName, deleteAuth } = input;
+    const { portfolioId } = input;
 
     // 3) عميل الخدمة لكل ما بعد التحقق
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // 4) الحمايات: الهدف ليس أدمن، والملف موجود، والاسم مطابق
+    // 4) الحمايات: الهدف ليس أدمن، والملف موجود
     const { data: targetAdmin, error: targetAdminErr } = await admin
       .from('admin_users')
       .select('user_id')
@@ -237,77 +164,79 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'not_found', message: 'الملف غير موجود.' }, 404);
     }
 
+    // 5أ) الحذف الفوري: البريد مطابق لحساب الدخول، ثم الحذف الكامل
+    if (input.mode === 'delete') {
+      const { data: target, error: targetErr } = await admin.auth.admin.getUserById(portfolioId);
+      if (targetErr || !target?.user) {
+        console.error('[admin-portfolio-action] auth user lookup error:', targetErr?.message ?? 'no user');
+        return jsonResponse({ error: 'db_failed', message: 'تعذّر قراءة حساب الدخول المستهدف.' }, 500);
+      }
+      const targetEmail = target.user.email ? normalizeEmail(target.user.email) : '';
+      if (!targetEmail || targetEmail !== normalizeEmail(input.confirmEmail)) {
+        return jsonResponse({ error: 'email_mismatch', message: 'البريد المكتوب لا يطابق بريد المعلم.' }, 400);
+      }
+
+      const result = await purgeUserAccount(admin, portfolioId);
+      if (!result.ok) {
+        console.error('[admin-portfolio-action] immediate delete failed:', result.stage, result.message);
+        return jsonResponse({
+          error: 'delete_failed',
+          message: result.stage === 'auth' || result.stage === 'verify_portfolio'
+            ? 'حُذفت الملفات وتعذّر حذف الحساب. أعد المحاولة.'
+            : 'تعذّر حذف الملفات، ولم يُحذف الحساب. أعد المحاولة.',
+        }, 500);
+      }
+
+      // السجل: نوع الفعل فقط، بلا اسم ولا بريد
+      const { error: logErr } = await admin.from('admin_audit_log').insert({
+        admin_id: adminId,
+        action: 'portfolio.immediate_delete',
+        target_portfolio_id: portfolioId,
+        details: { type: 'immediate_delete', scheduled_at: null },
+      });
+      if (logErr) console.error('[admin-portfolio-action] audit log error:', logErr.message);
+
+      return jsonResponse({ ok: true, mode: 'delete', storage_deleted: result.storageDeleted });
+    }
+
+    // 5ب) إعادة التعيين: الاسم مطابق، ثم قاعدة البيانات أولاً. إن فشلت لا يُلمس التخزين.
     const profileName = readProfileName(portfolio.state);
-    if (!profileName || profileName !== confirmName.trim()) {
+    if (!profileName || profileName !== input.confirmName.trim()) {
       return jsonResponse({ error: 'name_mismatch', message: 'اسم التأكيد لا يطابق اسم المعلم.' }, 400);
     }
 
-    // 5) قاعدة البيانات أولاً. إن فشلت لا يُلمس التخزين.
-    let counts: Record<string, number>;
-    if (mode === 'reset') {
-      const { data, error } = await admin.rpc('admin_reset_portfolio_data', { p_portfolio_id: portfolioId });
-      if (error) {
-        console.error('[admin-portfolio-action] reset rpc error:', error.message);
-        return jsonResponse({ error: 'db_failed', message: 'تعذّرت إعادة التعيين في قاعدة البيانات، ولم يُحذف شيء.' }, 500);
-      }
-      counts = toCounts(data);
-    } else {
-      const { data, error } = await admin.from('portfolios').delete().eq('id', portfolioId).select('id');
-      if (error) {
-        console.error('[admin-portfolio-action] delete error:', error.message);
-        return jsonResponse({ error: 'db_failed', message: 'تعذّر حذف الملف من قاعدة البيانات، ولم يُحذف شيء.' }, 500);
-      }
-      if (!data || data.length === 0) {
-        return jsonResponse({ error: 'not_found', message: 'الملف غير موجود.' }, 404);
-      }
-      counts = { portfolios: data.length };
+    const { data, error } = await admin.rpc('admin_reset_portfolio_data', { p_portfolio_id: portfolioId });
+    if (error) {
+      console.error('[admin-portfolio-action] reset rpc error:', error.message);
+      return jsonResponse({ error: 'db_failed', message: 'تعذّرت إعادة التعيين في قاعدة البيانات، ولم يُحذف شيء.' }, 500);
     }
+    const counts = toCounts(data);
 
     // 6) التخزين
-    const storage = mode === 'reset'
-      ? await deleteUserStorage(admin, portfolioId, CONTENT_BUCKETS, true)
-      : await deleteUserStorage(admin, portfolioId, [...CONTENT_BUCKETS, AVATAR_BUCKET], false);
+    const storage = await deleteUserStorage(admin, portfolioId, CONTENT_BUCKETS, true);
     if (storage.errors.length) {
       console.error('[admin-portfolio-action] storage errors:', storage.errors.length);
     }
 
-    // 7) حساب الدخول
-    let authDeleted = false;
-    let authError: string | undefined;
-    if (mode === 'delete' && deleteAuth) {
-      const { error } = await admin.auth.admin.deleteUser(portfolioId);
-      if (error) {
-        console.error('[admin-portfolio-action] auth delete error:', error.message);
-        authError = 'auth_delete_failed';
-      } else {
-        authDeleted = true;
-      }
-    }
-
-    // 8) السجل: بلا اسم ولا بريد. فشله لا يُفشل الرد لأن العملية تمت.
+    // 7) السجل: بلا اسم ولا بريد. فشله لا يُفشل الرد لأن العملية تمت.
     const { error: logErr } = await admin.from('admin_audit_log').insert({
       admin_id: adminId,
-      action: `portfolio.${mode}`,
+      action: 'portfolio.reset',
       target_portfolio_id: portfolioId,
       details: {
         counts,
         storage_deleted: storage.deleted,
         storage_errors_count: storage.errors.length,
-        delete_auth: deleteAuth,
-        auth_deleted: authDeleted,
-        ...(authError ? { auth_error: authError } : {}),
       },
     });
     if (logErr) console.error('[admin-portfolio-action] audit log error:', logErr.message);
 
     return jsonResponse({
       ok: true,
-      mode,
+      mode: 'reset',
       counts,
       storage_deleted: storage.deleted,
       storage_errors: storage.errors,
-      auth_deleted: authDeleted,
-      ...(authError ? { auth_error: authError } : {}),
     });
   } catch (err) {
     if (err instanceof ActionError) {

@@ -15,6 +15,7 @@ import { publicVisibleAnalyses, toPublicResultsAnalysisRow } from './components/
 import Nav from './components/Nav';
 import Auth from './components/Auth';
 import AuthConfirm from './components/AuthConfirm';
+import AccountDeletionScreen from './components/AccountDeletionScreen';
 import Dashboard from './components/Dashboard';
 import Public from './components/Public';
 import { PublicTopBar, PublicUnavailable } from './components/PublicChrome';
@@ -95,6 +96,10 @@ export default function App() {
     setPinnedTopEvidence,
     approveTopSuggestion,
     dismissTopSuggestion,
+    deletionScheduledAt,
+    restoreAccount,
+    portfolioLoadError,
+    retryPortfolioLoad,
   } = useAppStore();
 
   const {
@@ -103,8 +108,10 @@ export default function App() {
     loading: adminLoading,
     error: adminError,
     reload: adminReload,
-    deleteUserPortfolio,
+    deleteUserNow,
     resetUserPortfolio,
+    scheduleDeletion,
+    cancelDeletion,
     exportCSV,
     getShareUrl,
     createAnnouncement,
@@ -1137,6 +1144,29 @@ export default function App() {
     );
   }
 
+  // تعذّر تحميل ملف المعلم (خطأ غير «لا صف»): لا لوحة ولا شاشة مهلة ولا إكمال ملف
+  if (user && !passwordRecovery && currentPage !== 'auth' && portfolioLoadError) {
+    return <SplashScreen key="failed" failed onRetry={retryPortfolioLoad} />;
+  }
+
+  // الحساب مجدول للحذف: شاشة المهلة قبل اللوحة وقبل إكمال الملف، ولا كتابة قبل الاستعادة
+  if (user && !passwordRecovery && currentPage !== 'auth' && deletionScheduledAt) {
+    return (
+      <>
+        <AccountDeletionScreen
+          scheduledAt={deletionScheduledAt}
+          onRestore={restoreAccount}
+          onSignOut={async () => {
+            await signOut();
+            toastKind('تم تسجيل الخروج بنجاح', 'info');
+          }}
+          onToast={toastKind}
+        />
+        <Toast {...toastData} />
+      </>
+    );
+  }
+
   // ملف شخصي ناقص (مستخدم جديد أو حساب قديم لم يُكمل بياناته) — يحجب الواجهة
   // كاملة حتى الحفظ، ولا يُغلق بزر X أو بالضغط خارجه.
   if (user && !passwordRecovery && currentPage !== 'auth' && isProfileIncomplete(state.profile)) {
@@ -1237,8 +1267,10 @@ export default function App() {
             loading={adminLoading}
             error={adminError}
             onReload={adminReload}
-            onDeleteUser={deleteUserPortfolio}
+            onDeleteUserNow={deleteUserNow}
             onResetUser={resetUserPortfolio}
+            onScheduleDeletion={scheduleDeletion}
+            onCancelDeletion={cancelDeletion}
             onExportCSV={exportCSV}
             onToast={toastKind}
             getShareUrl={getShareUrl}

@@ -3,12 +3,21 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import type { AppState, Announcement } from '../types';
 
-// نتيجة إعادة تعيين ملف معلم أو حذفه عبر admin-portfolio-action
+// نتيجة إعادة تعيين ملف معلم أو حذفه فوراً عبر admin-portfolio-action
 export type PortfolioActionResult =
-  | { ok: true; storageErrors: number; authError?: string }
+  | { ok: true; storageErrors: number }
+  | { ok: false; message: string };
+
+// نتيجة جدولة الحذف أو إلغائها (admin_schedule_deletion / admin_cancel_deletion)
+export type DeletionScheduleResult =
+  | { ok: true; scheduledAt: string | null }
   | { ok: false; message: string };
 
 const PORTFOLIO_ACTION_FALLBACK_MESSAGE = 'تعذّر تنفيذ العملية، حاول مجدداً';
+
+// قبل تنفيذ migration الحذف بمهلة لا يوجد deletion_scheduled_at (42703)، فيُعاد
+// طلب الملفات بدونه وتبقى اللوحة تعمل
+const ADMIN_PORTFOLIO_COLUMNS = 'id, state, updated_at, created_at';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -28,6 +37,8 @@ export interface AdminUser {
   strategiesCount: number;
   updated_at: string | null;
   is_banned?: boolean;
+  /** موعد الحذف النهائي إن جُدول، وإلا null */
+  deletionScheduledAt: string | null;
 }
 
 export interface PortfolioFeatureOverride {
@@ -72,17 +83,18 @@ export function useAdminStore(isAdmin: boolean) {
     try {
       // الاستعلامات الأربعة مستقلة فتُشغَّل معاً. admin_list_users يُرجع البريد
       // وتاريخ الإنشاء وآخر دخول فعلي من auth.users — فشله لا يوقف اللوحة.
+      const client = supabase;
+      const selectPortfolios = (columns: string) =>
+        client.from('portfolios').select(columns).order('updated_at', { ascending: false });
+
       const [
-        { data: portfolios, error: portfolioError },
+        portfoliosRes,
         { data: stratEvidenceRows, error: stratEvidenceError },
         { data: evidenceRows, error: evidenceError },
         { data: authUsers, error: authUsersError },
       ] = await Promise.all([
         // Fetch all portfolios (admin RLS policy required in Supabase)
-        supabase
-          .from('portfolios')
-          .select('id, state, updated_at, created_at')
-          .order('updated_at', { ascending: false }),
+        selectPortfolios(`${ADMIN_PORTFOLIO_COLUMNS}, deletion_scheduled_at`),
         // عدد الاستراتيجيات "المفعّلة" (strategiesCount) كان يُحسَب من
         // state.strats.length — مصفوفة نصية مهجورة تماماً بعد إعادة بناء قسم
         // الاستراتيجيات (14 سبتمبر 2026)، ستبقى صفراً دائماً لكل الحسابات
@@ -101,6 +113,10 @@ export function useAdminStore(isAdmin: boolean) {
         supabase.rpc('admin_list_users'),
       ]);
 
+      let { data: portfolios, error: portfolioError } = portfoliosRes;
+      if (portfolioError?.code === '42703') {
+        ({ data: portfolios, error: portfolioError } = await selectPortfolios(ADMIN_PORTFOLIO_COLUMNS));
+      }
       if (portfolioError) throw portfolioError;
       if (stratEvidenceError) throw stratEvidenceError;
       if (evidenceError) throw evidenceError;
@@ -156,6 +172,7 @@ export function useAdminStore(isAdmin: boolean) {
           evidenceCount,
           strategiesCount: strategiesCountByPortfolio.get(p.id) ?? 0,
           updated_at: p.updated_at || null,
+          deletionScheduledAt: p.deletion_scheduled_at ?? null,
         };
       });
 
@@ -350,14 +367,12 @@ export function useAdminStore(isAdmin: boolean) {
     }
   };
 
-  // إعادة التعيين والحذف على الخادم (admin-portfolio-action): الصلاحية ومطابقة
-  // الاسم وحذف الملفات والتسجيل في admin_audit_log كلها هناك، فلا logAdminAction هنا.
-  const invokePortfolioAction = async (body: {
-    portfolio_id: string;
-    mode: 'reset' | 'delete';
-    confirm_name: string;
-    delete_auth?: boolean;
-  }): Promise<PortfolioActionResult> => {
+  // إعادة التعيين والحذف الفوري على الخادم (admin-portfolio-action): الصلاحية
+  // والمطابقة وحذف الملفات والتسجيل في admin_audit_log كلها هناك، فلا logAdminAction هنا.
+  const invokePortfolioAction = async (body:
+    | { portfolio_id: string; mode: 'reset'; confirm_name: string }
+    | { portfolio_id: string; mode: 'delete'; confirm_email: string }
+  ): Promise<PortfolioActionResult> => {
     if (!supabase) return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
     try {
       const { data, error } = await supabase.functions.invoke('admin-portfolio-action', { body });
@@ -376,18 +391,45 @@ export function useAdminStore(isAdmin: boolean) {
         return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
       }
       const storageErrors = Array.isArray(data.storage_errors) ? data.storage_errors.length : 0;
-      const authError = typeof data.auth_error === 'string' ? data.auth_error : undefined;
       await loadAdminData();
-      return { ok: true, storageErrors, authError };
+      return { ok: true, storageErrors };
     } catch (e: unknown) {
       console.error(`[admin-portfolio-action] ${body.mode} error:`, e);
       return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
     }
   };
 
-  // Delete a user's portfolio (admin only)
-  const deleteUserPortfolio = (userId: string, confirmName: string, deleteAuth: boolean): Promise<PortfolioActionResult> =>
-    invokePortfolioAction({ portfolio_id: userId, mode: 'delete', confirm_name: confirmName, delete_auth: deleteAuth });
+  // حذف فوري كامل بلا مهلة، لحسابات التجربة (admin only): الملفات ثم حساب الدخول.
+  // التأكيد بالبريد كاملاً، ويُطابَق على الخادم.
+  const deleteUserNow = (userId: string, confirmEmail: string): Promise<PortfolioActionResult> =>
+    invokePortfolioAction({ portfolio_id: userId, mode: 'delete', confirm_email: confirmEmail });
+
+  // جدولة الحذف بعد 10 أيام وإلغاؤها: دالتا SECURITY DEFINER تتحققان من
+  // is_admin() وترفضان حسابات الأدمن، وتسجّلان في admin_audit_log بنفسيهما.
+  const deletionRpcError = (error: { code?: string; message?: string }): string =>
+    error.message === 'target_is_admin' ? 'لا يمكن حذف حساب أدمن.' : PORTFOLIO_ACTION_FALLBACK_MESSAGE;
+
+  const scheduleDeletion = async (userId: string): Promise<DeletionScheduleResult> => {
+    if (!isAdmin || !supabase) return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
+    const { data, error } = await supabase.rpc('admin_schedule_deletion', { p_portfolio_id: userId });
+    if (error) {
+      console.error('[admin_schedule_deletion]', error.code, error.message);
+      return { ok: false, message: deletionRpcError(error) };
+    }
+    await loadAdminData();
+    return { ok: true, scheduledAt: typeof data === 'string' ? data : null };
+  };
+
+  const cancelDeletion = async (userId: string): Promise<DeletionScheduleResult> => {
+    if (!isAdmin || !supabase) return { ok: false, message: PORTFOLIO_ACTION_FALLBACK_MESSAGE };
+    const { error } = await supabase.rpc('admin_cancel_deletion', { p_portfolio_id: userId });
+    if (error) {
+      console.error('[admin_cancel_deletion]', error.code, error.message);
+      return { ok: false, message: deletionRpcError(error) };
+    }
+    await loadAdminData();
+    return { ok: true, scheduledAt: null };
+  };
 
   // Reset a user's portfolio data (keep profile)
   const resetUserPortfolio = (userId: string, confirmName: string): Promise<PortfolioActionResult> =>
@@ -583,8 +625,10 @@ export function useAdminStore(isAdmin: boolean) {
     loading,
     error,
     reload: loadAdminData,
-    deleteUserPortfolio,
+    deleteUserNow,
     resetUserPortfolio,
+    scheduleDeletion,
+    cancelDeletion,
     exportCSV,
     getShareUrl,
     createAnnouncement,

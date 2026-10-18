@@ -46,6 +46,16 @@ export function CountBadge({ icon, count }: { icon: string; count: number }) {
   );
 }
 
+/** شارة «يُحذف في …»: الحساب مجدول للحذف النهائي */
+export function DeletionBadge({ at }: { at: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-[var(--r-full)] border border-[var(--danger)]/35 px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--danger)] whitespace-nowrap">
+      <span className="w-2 h-2 shrink-0 rounded-[var(--r-full)] bg-[var(--danger)]" aria-hidden="true" />
+      يُحذف في {formatDate(at, 'dayMonth')}
+    </span>
+  );
+}
+
 const ROW = 'flex items-center justify-between gap-3';
 const ROW_LABEL = 'shrink-0 text-[length:var(--fs-xs)] text-[var(--t3)]';
 const ROW_VALUE = 'min-w-0 truncate text-left text-[length:var(--fs-sm)] text-[var(--t2)]';
@@ -59,11 +69,13 @@ const ROW_VALUE = 'min-w-0 truncate text-left text-[length:var(--fs-sm)] text-[v
  * الأخرى — هذا أبسط من تنسيق "بطاقة مفتوحة واحدة" في المكوّن الأب، والنتيجة
  * المقصودة: يمكن فتح أكثر من بطاقة بنفس الوقت.
  */
-export default function UserCard({ user, onView }: {
+export default function UserCard({ user, onView, onCancelDeletion }: {
   user: AdminUser;
   onView: (u: AdminUser) => void;
+  onCancelDeletion: (u: AdminUser) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const lastActive = user.updated_at
     ? formatDate(user.updated_at, 'long')
@@ -79,6 +91,7 @@ export default function UserCard({ user, onView }: {
       >
         <UserAvatar user={user} />
         <span className="flex-1 min-w-0 truncate text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{user.name}</span>
+        {user.deletionScheduledAt && <DeletionBadge at={user.deletionScheduledAt} />}
         <i className={`ti ti-chevron-down shrink-0 text-[length:var(--fs-md)] text-[var(--t3)] transition-transform duration-[250ms] ${expanded ? 'rotate-180' : ''}`} />
       </button>
 
@@ -112,6 +125,20 @@ export default function UserCard({ user, onView }: {
             <span className={ROW_LABEL}>آخر نشاط</span>
             <span className={ROW_VALUE}>{lastActive}</span>
           </div>
+
+          {user.deletionScheduledAt && (
+            <button
+              type="button"
+              className={`${BTN_2ND} w-full mt-1 border-[var(--bd2)] text-[var(--t2)] cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)] disabled:opacity-40 disabled:cursor-not-allowed`}
+              disabled={cancelling}
+              onClick={async () => {
+                setCancelling(true);
+                try { await onCancelDeletion(user); } finally { setCancelling(false); }
+              }}
+            >
+              <i className="ti ti-arrow-back-up" /> إلغاء الحذف
+            </button>
+          )}
 
           <button
             type="button"

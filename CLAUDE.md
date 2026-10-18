@@ -96,7 +96,9 @@ VITE_SUPABASE_ANON_KEY=
 Edge Function secrets (Supabase Dashboard → Edge Functions → Secrets, not
 in any `.env` file, and **not readable back once set** — write-only):
 `GEMINI_API_KEY`, `AI_MODEL_NAME`, `BULK_IMPORT_SERVICE_KEY`,
-`PORTFOLIO_SUMMARY_SERVICE_KEY`, plus `SUPABASE_URL`,
+`PORTFOLIO_SUMMARY_SERVICE_KEY`, `PURGE_ACCOUNTS_KEY` (same value as the
+vault secret `purge_accounts_key` that the `purge-scheduled-accounts`
+cron job sends), plus `SUPABASE_URL`,
 `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (these three are
 auto-provided to every Edge Function by Supabase — never set manually,
 and always prefer `SUPABASE_SERVICE_ROLE_KEY` over any custom secret
@@ -143,6 +145,13 @@ teacher's profile and small settings (`AppState`: `profile`,
 **no evidence**. Older rows or localStorage may still contain the retired
 evidence fields; `pickAppStateFields()` copies only the known fields on
 load, so those old fields are ignored and never written back.
+`loadData` separates two cases. When there is no row (`data` null with no
+error, or PGRST116), it creates the new teacher's portfolio with an upsert.
+Any other error (network, column, permission) shows «تعذّر التحميل» with a
+retry (`portfolioLoadError`). It then does no upsert and shows no
+Onboarding, because the old fallthrough wrote an empty profile over the
+real one. A missing `deletion_scheduled_at` column (42703, before the
+migration runs) is retried without that column.
 
 **Evidence (`evidence` table, via `useSupabaseEvidence.ts` /
 `useSaveEvidence.ts`)**: the single source of truth. Each evidence item
@@ -221,19 +230,58 @@ The admin panel gets real email / `created_at` / `last_sign_in_at` from
 `auth.users` via `admin_list_users()` (SECURITY DEFINER, raises `42501`
 for non-admins).
 
-**Reset / delete a teacher (`admin-portfolio-action` Edge Function).**
+**Deleting a teacher = full deletion after a 10-day grace period**
+(`20261018_account_deletion_grace.sql`). Deletion removes the portfolio,
+the `auth.users` account and every file in Storage. The teacher can only
+come back by registering again.
+
+- **Schedule / cancel**: the admin panel's «حذف الحساب» calls
+  `admin_schedule_deletion(id)`, which sets
+  `portfolios.deletion_scheduled_at = now() + 10 days`. Scheduling an
+  account that is already scheduled keeps its date. «إلغاء الحذف» calls
+  `admin_cancel_deletion(id)`. Both are SECURITY DEFINER, check
+  `is_admin()`, refuse any account in `admin_users`, and write their own
+  `admin_audit_log` row.
+- **Column guard**: the trigger `portfolios_deletion_guard` rejects (42501)
+  any direct INSERT/UPDATE of `deletion_scheduled_at` by `anon` or
+  `authenticated`, admins included. Only those functions
+  (`current_user` = their owner) and `service_role` can write it.
+- **Teacher during the grace period**: `useAppStore` loads
+  `deletion_scheduled_at` with the portfolio row, and `App.tsx` then shows
+  `AccountDeletionScreen` instead of the dashboard and before Onboarding.
+  «استعادة حسابي» calls `restore_my_account()`, which works on
+  `auth.uid()` only, takes no argument, and only works before the date.
+  Once the date has passed it returns `expired`, so a restore can never
+  race the purge.
+- **Public page**: stays visible during the grace period. The moment the
+  date passes, every `get_shared_*` function and `get_harvest_report`
+  return nothing (`deletion_scheduled_at IS NULL OR > now()`), even if the
+  purge is days late.
+- **Final deletion**: the `purge-scheduled-accounts` Edge Function runs
+  daily at 00:30 UTC (`pg_cron` + `net.http_post`, key read from
+  `vault.decrypted_secrets`). It handles at most 20 accounts per run and
+  stops starting new ones after 100 s. For each due account it re-checks
+  the date, skips `admin_users`, then calls `purgeUserAccount` in
+  `_shared/user-storage.ts`. That deletes the files in all four buckets,
+  checks nothing is left, then deletes `auth.users`, and the CASCADE takes
+  `portfolios` and everything under it. Any failed step leaves that
+  account for the next run, so no account is ever deleted while its files
+  remain. The function returns 500 if any account failed, so read the
+  response body, not the cron status. Deploy it with
+  `--no-verify-jwt`. It accepts `X-Purge-Key`, matching
+  `PURGE_ACCOUNTS_KEY`, which must be set and non-empty, or an admin JWT.
+- **Audit details**: `details` holds only `{type, scheduled_at}`, where
+  `type` is `schedule`, `cancel`, `restore`, `purge` or `immediate_delete`.
+  No name or email, so no personal trace remains after deletion.
+
+**Reset / immediate delete (`admin-portfolio-action` Edge Function).**
 Callable only by an admin: the caller is identified from its JWT and
 checked with `is_admin()`. Nothing in the request body is trusted as
 identity. Before touching anything it refuses a target that is in
-`admin_users` (400), a missing portfolio (404), and a `confirm_name` that
-does not match `state.profile.name` after trimming (400). The database
-step runs first. The storage step comes second and deletes everything
-under `{id}/`, recursively. Which buckets it covers depends on the mode
-(below).
-Each call writes one `admin_audit_log` row with counts only, no name or
-email.
+`admin_users` (400) and a missing portfolio (404).
 
-- `reset`: calls `admin_reset_portfolio_data(id)`. That function is
+- `reset`: requires `confirm_name` to match `state.profile.name` after
+  trimming (400 otherwise). It calls `admin_reset_portfolio_data(id)`. That function is
   granted to `service_role` only and runs as one transaction. It deletes
   evidence, `monthly_progress`, results analysis, harvest reports,
   indicator/section AI summaries, lesson plan templates, the bulk import
@@ -244,12 +292,15 @@ email.
   are deleted from `evidence`, `evidence-video` and `evidence-audio`
   only. The profile photo is kept, because it lives in the separate
   `avatars` bucket (`{id}/avatar.jpg`), which reset does not touch.
-- `delete`: deletes the `portfolios` row, and every dependent table
-  cascades (`monthly_progress` was made `ON DELETE CASCADE` in
-  `20260929_admin_portfolio_actions.sql`). Storage files are deleted from
-  all four buckets: the three above plus `avatars`.
-  The `auth.users` account is deleted only when `delete_auth: true` is
-  sent.
+  The database step runs first and Storage second. The audit row holds
+  counts only.
+- `delete` is an immediate full deletion with no grace period, meant for
+  test accounts. The admin panel hides it behind a small link. It requires
+  `confirm_email` to match the target's `auth.users.email`, ignoring case
+  (400 otherwise). It runs the same `purgeUserAccount` as the final
+  deletion: Storage, then the check, then `auth.users`. There is no
+  `delete_auth` option any more, because deletion always removes the
+  login account.
 
 ### RLS
 
@@ -291,7 +342,8 @@ knows Gemini's request shape; swap providers there only).
 | `process-bulk-queue` | immediate (fire-and-forget, no `await`) + daily `pg_cron` backup | Classifies queued bulk-import images |
 | `generate-portfolio-summaries` | weekly GitHub Action + manual refresh button | Generates the public-share-page AI summary + "أبرز إنجاز", and the per-section summaries (writes `section_ai_summaries` with the service role key; teachers cannot write summary text) |
 | `import-from-link` | manual, from evidence form | Imports a file from a public Google Drive/Docs share link into the `evidence` bucket and returns its URL (does not insert evidence rows) |
-| `admin-portfolio-action` | manual, admin panel | Reset or delete a teacher's portfolio (see "Admin Access") |
+| `admin-portfolio-action` | manual, admin panel | Reset a teacher's portfolio, or delete an account immediately (test accounts, `confirm_email`) (see "Admin Access") |
+| `purge-scheduled-accounts` | daily `pg_cron` 00:30 UTC (`X-Purge-Key`) + manual by an admin | Final deletion of accounts whose `deletion_scheduled_at` has passed (see "Admin Access") |
 
 ### Known pitfall — custom secret vs. Supabase API key (learned the hard way, 13 September 2026)
 

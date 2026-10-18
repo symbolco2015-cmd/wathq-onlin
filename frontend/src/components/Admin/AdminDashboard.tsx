@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { AdminUser, PlatformStats, PortfolioFeatureOverride, PortfolioActionResult } from '../../hooks/useAdminStore';
+import type { AdminUser, PlatformStats, PortfolioFeatureOverride, PortfolioActionResult, DeletionScheduleResult } from '../../hooks/useAdminStore';
 import type { Announcement, AcademicDate } from '../../types';
 import { formatDate } from '../../utils';
 import { Modal, SelectDropdown } from '../UI';
 import type { ToastKind } from '../UI';
 import { FIELD, LABEL, HINT, BTN_2ND, toggleBtn } from '../formStyles';
-import { BTN_PRI, BTN_GH, BTN_DNG, BTN_DNGF } from '../SectionView';
-import UserCard, { UserAvatar, ActiveStatus, CountBadge, isUserActive } from './UserCard';
+import { BTN_PRI, BTN_GH, BTN_DNG, BTN_DNGF, BTN_GH_SM } from '../SectionView';
+import UserCard, { UserAvatar, ActiveStatus, CountBadge, DeletionBadge, isUserActive } from './UserCard';
 
 const SEMESTER_BOUNDARY_OPTIONS = [
   { value: 'start', label: 'بداية الفصل' },
@@ -189,9 +189,10 @@ const TD = 'px-3 py-3 align-middle';
 const TH = 'px-3 py-3 text-right text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap';
 const TH_SORT = `${TH} cursor-pointer select-none hover:text-[var(--t1)]`;
 
-function UserRow({ user, onView }: {
-  user: AdminUser; onView: (u: AdminUser) => void;
+function UserRow({ user, onView, onCancelDeletion }: {
+  user: AdminUser; onView: (u: AdminUser) => void; onCancelDeletion: (u: AdminUser) => Promise<void>;
 }) {
+  const [cancelling, setCancelling] = useState(false);
   const lastActive = user.updated_at
     ? formatDate(user.updated_at, 'long')
     : '—';
@@ -204,6 +205,9 @@ function UserRow({ user, onView }: {
       <td className={TD}>
         <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{user.name}</div>
         <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1 text-right" dir="ltr">{user.email || '—'}</div>
+        {user.deletionScheduledAt && (
+          <div className="mt-1"><DeletionBadge at={user.deletionScheduledAt} /></div>
+        )}
       </td>
       <td className={TD}>
         <span className="inline-flex items-center rounded-[var(--r-full)] bg-[var(--s2)] border border-[var(--bd)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap">{user.role}</span>
@@ -222,9 +226,24 @@ function UserRow({ user, onView }: {
       </td>
       <td className={`${TD} text-[length:var(--fs-xs)] text-[var(--t3)] whitespace-nowrap`}>{lastActive}</td>
       <td className={TD}>
-        <button className={ICON_BTN} onClick={() => onView(user)} title="عرض التفاصيل" aria-label="عرض التفاصيل">
-          <i className="ti ti-eye" />
-        </button>
+        <div className="flex items-center gap-2">
+          {user.deletionScheduledAt && (
+            <button
+              type="button"
+              className={`${BTN_GH_SM} border-[var(--bd2)] hover:text-[var(--t1)] disabled:cursor-not-allowed`}
+              disabled={cancelling}
+              onClick={async () => {
+                setCancelling(true);
+                try { await onCancelDeletion(user); } finally { setCancelling(false); }
+              }}
+            >
+              إلغاء الحذف
+            </button>
+          )}
+          <button className={ICON_BTN} onClick={() => onView(user)} title="عرض التفاصيل" aria-label="عرض التفاصيل">
+            <i className="ti ti-eye" />
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -233,27 +252,37 @@ function UserRow({ user, onView }: {
 /* ─────────────────────────────────────────────
    User Detail Modal
 ───────────────────────────────────────────── */
-function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }: {
+/** مهلة الحذف: تطابق interval '10 days' في admin_schedule_deletion. للعرض فقط قبل الجدولة */
+const DELETION_GRACE_DAYS = 10;
+
+function UserDetailModal({ user, onClose, onDeleteNow, onReset, onScheduleDeletion, onCancelDeletion, onToast, shareUrl }: {
   user: AdminUser;
   onClose: () => void;
-  onDelete: (id: string, confirmName: string, deleteAuth: boolean) => Promise<PortfolioActionResult>;
+  onDeleteNow: (id: string, confirmEmail: string) => Promise<PortfolioActionResult>;
   onReset: (id: string, confirmName: string) => Promise<PortfolioActionResult>;
+  onScheduleDeletion: (id: string) => Promise<DeletionScheduleResult>;
+  onCancelDeletion: (id: string) => Promise<DeletionScheduleResult>;
   onToast: (msg: string, kind: ToastKind) => void;
   shareUrl: string;
 }) {
   const [copied, setCopied] = useState(false);
-  // لوحة التأكيد: العملية المفتوحة، والاسم المكتوب، وخيار حذف حساب الدخول
-  const [pending, setPending] = useState<'reset' | 'delete' | null>(null);
+  // لوحة التأكيد المفتوحة: إعادة التعيين (بالاسم)، أو جدولة الحذف، أو الحذف الفوري (بالبريد)
+  const [pending, setPending] = useState<'reset' | 'schedule' | 'deleteNow' | null>(null);
   const [typedName, setTypedName] = useState('');
-  const [deleteAuth, setDeleteAuth] = useState(false);
   const [running, setRunning] = useState(false);
   const [inlineError, setInlineError] = useState('');
   const nameMatches = typedName.trim() !== '' && typedName.trim() === user.name.trim();
+  const emailMatches = typedName.trim() !== '' && !!user.email
+    && typedName.trim().toLowerCase() === user.email.trim().toLowerCase();
+  // التاريخ في نافذة التأكيد قبل الجدولة؛ الموعد الحقيقي من القاعدة بعدها
+  const plannedDeletionDate = useMemo(
+    () => formatDate(new Date(Date.now() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000), 'long'),
+    [pending]
+  );
 
-  const openConfirm = (mode: 'reset' | 'delete') => {
+  const openConfirm = (mode: 'reset' | 'schedule' | 'deleteNow') => {
     setPending(mode);
     setTypedName('');
-    setDeleteAuth(false);
     setInlineError('');
   };
 
@@ -281,23 +310,50 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
     });
   };
 
-  const handleDelete = async () => {
-    if (!nameMatches) return;
+  const handleDeleteNow = async () => {
+    if (!emailMatches) return;
     setInlineError('');
     setRunning(true);
     try {
-      const res = await onDelete(user.id, typedName.trim(), deleteAuth);
+      const res = await onDeleteNow(user.id, typedName.trim());
       if (res.ok) {
-        if (res.authError) onToast('حُذف الملف، لكن تعذّر حذف حساب الدخول', 'error');
-        else if (res.storageErrors > 0) onToast('تم، لكن تعذّر حذف بعض الملفات. أعد المحاولة لاحقاً', 'error');
-        else onToast('تم حذف بيانات المستخدم نهائياً', 'success');
+        onToast('حُذف الحساب وكل ملفاته نهائياً', 'success');
         onClose();
       } else {
         setInlineError('message' in res ? res.message : 'تعذّر تنفيذ العملية، حاول مجدداً');
       }
     } catch (e: unknown) {
-      console.error('Delete portfolio error:', e);
+      console.error('Immediate delete error:', e);
       setInlineError('تعذّر تنفيذ العملية، حاول مجدداً');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleSchedule = async () => {
+    setInlineError('');
+    setRunning(true);
+    try {
+      const res = await onScheduleDeletion(user.id);
+      if (res.ok) {
+        const date = res.scheduledAt ? formatDate(res.scheduledAt, 'long') : plannedDeletionDate;
+        onToast(`جُدول حذف الحساب في ${date}`, 'success');
+        setPending(null);
+      } else {
+        setInlineError('message' in res ? res.message : 'تعذّر تنفيذ العملية، حاول مجدداً');
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleCancelDeletion = async () => {
+    setInlineError('');
+    setRunning(true);
+    try {
+      const res = await onCancelDeletion(user.id);
+      if (res.ok) onToast('أُلغي حذف الحساب', 'success');
+      else setInlineError('message' in res ? res.message : 'تعذّر تنفيذ العملية، حاول مجدداً');
     } finally {
       setRunning(false);
     }
@@ -388,21 +444,73 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
           </div>
         )}
 
-        {/* Confirm Panel — إعادة التعيين أو الحذف بكتابة اسم المعلم */}
-        {pending && (() => {
-          const isDelete = pending === 'delete';
+        {/* مجدول للحذف: الموعد وإلغاء الحذف */}
+        {user.deletionScheduledAt && (
+          <div className="mx-6 mt-4 p-4 flex items-center justify-between gap-3 flex-wrap rounded-[var(--r-md)] border border-[var(--danger)]/35">
+            <div className="flex flex-col gap-1 min-w-0">
+              <DeletionBadge at={user.deletionScheduledAt} />
+              <span className="text-[length:var(--fs-xs)] text-[var(--t3)] leading-relaxed">
+                يستطيع المعلم استعادة حسابه قبل {formatDate(user.deletionScheduledAt, 'long')} بتسجيل الدخول.
+              </span>
+            </div>
+            <button
+              type="button"
+              className={`${BTN_GH_SM} border-[var(--bd2)] hover:text-[var(--t1)] disabled:cursor-not-allowed`}
+              onClick={handleCancelDeletion}
+              disabled={running}
+            >
+              <i className={`ti ${running ? 'ti-loader animate-spin motion-reduce:animate-none' : 'ti-arrow-back-up'}`} /> إلغاء الحذف
+            </button>
+          </div>
+        )}
+
+        {/* لوحة تأكيد جدولة الحذف: قابلة للإلغاء، فلا كتابة */}
+        {pending === 'schedule' && (
+          <div className="mx-6 mt-4 p-4 flex flex-col gap-3 rounded-[var(--r-md)] border border-[var(--danger)]/35">
+            <div className="flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--danger)]">
+              <i className="ti ti-trash text-[length:var(--fs-md)]" />
+              حذف الحساب
+            </div>
+            <p className="text-[length:var(--fs-sm)] text-[var(--t2)] leading-relaxed">
+              سيُحذف حساب <strong className="font-bold text-[var(--t1)]">{user.name}</strong> وكل شواهده وملفاته نهائياً في{' '}
+              <strong className="font-bold text-[var(--t1)]">{plannedDeletionDate}</strong>. يستطيع المعلم استعادة حسابه قبل ذلك بتسجيل الدخول.
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                className={`${BTN_DNGF} min-w-[180px] disabled:opacity-40 disabled:cursor-not-allowed`}
+                onClick={handleSchedule}
+                disabled={running}
+              >
+                <i className={`ti ${running ? 'ti-loader animate-spin motion-reduce:animate-none' : 'ti-calendar-x'}`} />
+                {running ? 'جاري الجدولة...' : 'جدولة الحذف'}
+              </button>
+              <button
+                className={`${BTN_GH} hover:text-[var(--t1)] disabled:opacity-40 disabled:cursor-not-allowed`}
+                onClick={cancelConfirm}
+                disabled={running}
+              >
+                <i className="ti ti-x" /> إلغاء
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* لوحة تأكيد بالكتابة: إعادة التعيين بالاسم، والحذف الفوري بالبريد كاملاً */}
+        {(pending === 'reset' || pending === 'deleteNow') && (() => {
+          const isDelete = pending === 'deleteNow';
+          const matches = isDelete ? emailMatches : nameMatches;
           return (
             <div className="mx-6 mt-4 p-4 flex flex-col gap-3 rounded-[var(--r-md)] border border-[var(--danger)]/35">
               <div className="flex items-center gap-2 text-[length:var(--fs-sm)] font-bold text-[var(--danger)]">
                 <i className={`ti ${isDelete ? 'ti-trash' : 'ti-refresh'} text-[length:var(--fs-md)]`} />
-                {isDelete ? 'حذف الملف نهائياً' : 'إعادة تعيين الملف'}
+                {isDelete ? 'حذف فوري بلا مهلة' : 'إعادة تعيين الملف'}
               </div>
 
               <div className="text-[length:var(--fs-xs)] text-[var(--t2)] leading-relaxed">
                 <div>
                   <strong className="font-bold text-[var(--t1)]">سيُحذف: </strong>
                   {isDelete
-                    ? 'الملف كاملاً، ومعه الأدلة وملفاتها، وعدّاد الشهر، وتحليل النتائج، وتقارير الحصاد، والملخصات، ومعه الصورة الشخصية.'
+                    ? 'الحساب وحساب الدخول الآن، ومعه الأدلة وملفاتها، وعدّاد الشهر، وتحليل النتائج، وتقارير الحصاد، والملخصات، والصورة الشخصية. لا استعادة بعده. لحسابات التجربة فقط.'
                     : 'الأدلة وملفاتها، وعدّاد الشهر، وتحليل النتائج، وتقارير الحصاد، والملخصات.'}
                 </div>
                 {!isDelete && (
@@ -415,10 +523,14 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
 
               <label className="flex flex-col gap-2 text-[length:var(--fs-sm)] text-[var(--t2)]">
                 <span>
-                  اكتب اسم المعلم للتأكيد: <strong className="font-bold text-[var(--t1)]">{user.name}</strong>
+                  {isDelete ? 'اكتب بريد المعلم كاملاً للتأكيد: ' : 'اكتب اسم المعلم للتأكيد: '}
+                  <strong className="font-bold text-[var(--t1)] break-all" dir={isDelete ? 'ltr' : undefined}>
+                    {isDelete ? user.email : user.name}
+                  </strong>
                 </span>
                 <input
-                  type="text"
+                  type={isDelete ? 'email' : 'text'}
+                  dir={isDelete ? 'ltr' : undefined}
                   value={typedName}
                   onChange={e => setTypedName(e.target.value)}
                   disabled={running}
@@ -427,32 +539,16 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
                 />
               </label>
 
-              {isDelete && (
-                <label className={`flex items-start gap-2 py-2 ${running ? 'cursor-default' : 'cursor-pointer'}`}>
-                  <input
-                    type="checkbox"
-                    checked={deleteAuth}
-                    onChange={e => setDeleteAuth(e.target.checked)}
-                    disabled={running}
-                    className="mt-1 w-4 h-4 shrink-0 accent-[var(--danger)]"
-                  />
-                  <span className="flex flex-col gap-1">
-                    <span className="text-[length:var(--fs-sm)] text-[var(--t2)]">حذف حساب الدخول أيضاً</span>
-                    <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">لن يستطيع المعلم تسجيل الدخول بهذا البريد بعدها</span>
-                  </span>
-                </label>
-              )}
-
               <div className="flex gap-2 flex-wrap">
                 <button
-                  className={`${BTN_DNGF} min-w-[180px] disabled:cursor-not-allowed ${!nameMatches && !running ? 'opacity-40' : ''}`}
-                  onClick={isDelete ? handleDelete : handleReset}
-                  disabled={!nameMatches || running}
+                  className={`${BTN_DNGF} min-w-[180px] disabled:cursor-not-allowed ${!matches && !running ? 'opacity-40' : ''}`}
+                  onClick={isDelete ? handleDeleteNow : handleReset}
+                  disabled={!matches || running}
                 >
                   <i className={`ti ${running ? 'ti-loader animate-spin' : 'ti-alert-triangle'}`} />
                   {running
                     ? (isDelete ? 'جاري الحذف...' : 'جاري إعادة التعيين...')
-                    : (isDelete ? 'تأكيد الحذف النهائي' : 'تأكيد إعادة التعيين')}
+                    : (isDelete ? 'تأكيد الحذف الفوري' : 'تأكيد إعادة التعيين')}
                 </button>
                 <button
                   className={`${BTN_GH} hover:text-[var(--t1)] disabled:opacity-40 disabled:cursor-not-allowed`}
@@ -467,7 +563,7 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
         })()}
 
         {/* Actions */}
-        <div className="flex gap-2 flex-wrap p-6">
+        <div className="flex gap-2 flex-wrap p-6 pb-3">
           <a
             href={shareUrl}
             target="_blank"
@@ -490,13 +586,27 @@ function UserDetailModal({ user, onClose, onDelete, onReset, onToast, shareUrl }
             <i className="ti ti-refresh" /> إعادة تعيين
           </button>
 
-          {/* Delete Button — يفتح لوحة التأكيد فقط */}
+          {/* حذف الحساب بمهلة — يفتح لوحة التأكيد فقط. المجدول يُلغى من شارته أعلاه */}
+          {!user.deletionScheduledAt && (
+            <button
+              className={`${BTN_DNG} min-w-[140px] disabled:opacity-40 disabled:cursor-not-allowed ${pending === 'schedule' ? 'bg-[var(--danger)]/10' : 'bg-transparent'}`}
+              onClick={() => openConfirm('schedule')}
+              disabled={running}
+            >
+              <i className="ti ti-trash" /> حذف الحساب
+            </button>
+          )}
+        </div>
+
+        {/* الحذف الفوري: رابط صغير لا زر بارز، لحسابات التجربة */}
+        <div className="px-6 pb-6">
           <button
-            className={`${BTN_DNG} min-w-[140px] disabled:opacity-40 disabled:cursor-not-allowed ${pending === 'delete' ? 'bg-[var(--danger)]/10' : 'bg-transparent'}`}
-            onClick={() => openConfirm('delete')}
+            type="button"
+            className="h-9 inline-flex items-center gap-1 bg-transparent border-0 p-0 text-[length:var(--fs-xs)] text-[var(--t3)] underline cursor-pointer hover:text-[var(--danger)] disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => openConfirm('deleteNow')}
             disabled={running}
           >
-            <i className="ti ti-trash" /> حذف البيانات
+            حذف فوري بلا مهلة (لحسابات التجربة)
           </button>
         </div>
       </div>
@@ -513,8 +623,10 @@ interface AdminDashboardProps {
   loading: boolean;
   error: string | null;
   onReload: () => void;
-  onDeleteUser: (id: string, confirmName: string, deleteAuth: boolean) => Promise<PortfolioActionResult>;
+  onDeleteUserNow: (id: string, confirmEmail: string) => Promise<PortfolioActionResult>;
   onResetUser: (id: string, confirmName: string) => Promise<PortfolioActionResult>;
+  onScheduleDeletion: (id: string) => Promise<DeletionScheduleResult>;
+  onCancelDeletion: (id: string) => Promise<DeletionScheduleResult>;
   onExportCSV: (users: AdminUser[]) => void;
   onToast: (msg: string, kind: ToastKind) => void;
   getShareUrl: (id: string) => string;
@@ -534,7 +646,7 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({
-  users, stats, loading, error, onReload, onDeleteUser, onResetUser, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onUpdateAnnouncement, onDeleteAnnouncement, announcements, onPublishAcademicDate, onUpdateAcademicDate, onDeleteAcademicDate, academicDates,
+  users, stats, loading, error, onReload, onDeleteUserNow, onResetUser, onScheduleDeletion, onCancelDeletion, onExportCSV, onToast, getShareUrl, onPublishAnnouncement, onUpdateAnnouncement, onDeleteAnnouncement, announcements, onPublishAcademicDate, onUpdateAcademicDate, onDeleteAcademicDate, academicDates,
   featureFlags, featureOverrides, onSetGlobalFeatureFlag, onSetPortfolioFeatureOverride, onRemovePortfolioFeatureOverride,
 }: AdminDashboardProps) {
   const [search, setSearch] = useState('');
@@ -542,6 +654,15 @@ export default function AdminDashboard({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  // النافذة تعرض النسخة المحدَّثة بعد إعادة التحميل (الجدولة والإلغاء يغيّران الموعد)
+  const liveSelectedUser = selectedUser ? (users.find(u => u.id === selectedUser.id) ?? selectedUser) : null;
+
+  // «إلغاء الحذف» من القائمة مباشرة
+  const handleCancelDeletion = async (u: AdminUser) => {
+    const res = await onCancelDeletion(u.id);
+    if ('message' in res) onToast(res.message, 'error');
+    else onToast('أُلغي حذف الحساب', 'success');
+  };
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'announcements' | 'academic-dates' | 'features'>('users');
   const [featureSearch, setFeatureSearch] = useState('');
   const [savingGlobalFlag, setSavingGlobalFlag] = useState(false);
@@ -995,7 +1116,7 @@ export default function AdminDashboard({
               </thead>
               <tbody>
                 {filteredUsers.map(u => (
-                    <UserRow key={u.id} user={u} onView={setSelectedUser} />
+                    <UserRow key={u.id} user={u} onView={setSelectedUser} onCancelDeletion={handleCancelDeletion} />
                 ))}
               </tbody>
             </table>
@@ -1010,7 +1131,7 @@ export default function AdminDashboard({
           {/* Cards — mobile only، نفس filteredUsers المستخدمة في الجدول أعلاه */}
           <div className="flex flex-col gap-2 md:hidden">
             {filteredUsers.map(u => (
-              <UserCard key={u.id} user={u} onView={setSelectedUser} />
+              <UserCard key={u.id} user={u} onView={setSelectedUser} onCancelDeletion={handleCancelDeletion} />
             ))}
             {filteredUsers.length === 0 && (
               <div className={EMPTY}>
@@ -1464,12 +1585,12 @@ export default function AdminDashboard({
       )}
 
       {/* User Detail Modal */}
-      {selectedUser && (
+      {liveSelectedUser && (
         <UserDetailModal
-          user={selectedUser}
+          user={liveSelectedUser}
           onClose={() => setSelectedUser(null)}
-          onDelete={async (id, confirmName, deleteAuth) => {
-            const res = await onDeleteUser(id, confirmName, deleteAuth);
+          onDeleteNow={async (id, confirmEmail) => {
+            const res = await onDeleteUserNow(id, confirmEmail);
             if (res.ok) setSelectedUser(null);
             return res;
           }}
@@ -1478,8 +1599,10 @@ export default function AdminDashboard({
             if (res.ok) setSelectedUser(null);
             return res;
           }}
+          onScheduleDeletion={onScheduleDeletion}
+          onCancelDeletion={onCancelDeletion}
           onToast={onToast}
-          shareUrl={getShareUrl(selectedUser.id)}
+          shareUrl={getShareUrl(liveSelectedUser.id)}
         />
       )}
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { uploadAvatar, isDataUrl } from '../avatarUpload';
+import { uploadAvatar, isDataUrl, dataUrlToBlob } from '../avatarUpload';
 import type { AppState, UserProfile, Announcement, AcademicDate } from '../types';
 
 const defaultProfile: UserProfile = {
@@ -402,7 +402,7 @@ export function useAppStore() {
     const original = currentAvatar;
     (async () => {
       try {
-        const blob = await (await fetch(original)).blob();
+        const blob = dataUrlToBlob(original);
         const url = await uploadAvatar(userId, blob);
         if (currentUserIdRef.current !== userId || stateOwnerRef.current !== userId) {
           console.warn('[avatar] تبدّل الحساب أثناء النقل — لا كتابة');

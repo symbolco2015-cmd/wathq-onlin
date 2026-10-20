@@ -12,7 +12,23 @@ const TARGET_BYTES = 100 * 1024;
 export const isDataUrl = (s: string | null | undefined): boolean =>
   typeof s === 'string' && s.startsWith('data:');
 
-const loadImage = (blob: Blob): Promise<HTMLImageElement> =>
+// data:<mime>;base64,<بيانات> ⇐ Blob، بلا fetch: CSP لا تسمح بـ data: في connect-src.
+// يرمي خطأً إن لم يكن النص بهذه الصيغة أو لم تُفك البيانات.
+export function dataUrlToBlob(s: string): Blob {
+  const match = /^data:([^;,]+)((?:;[^;,]+)*);base64,(.*)$/s.exec(s);
+  if (!match) throw new Error('avatar_invalid_data_url');
+  let binary: string;
+  try {
+    binary = atob(match[3].replace(/\s/g, ''));
+  } catch {
+    throw new Error('avatar_invalid_base64');
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: match[1] });
+}
+
+const loadImage =(blob: Blob): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
     const src = URL.createObjectURL(blob);
     const img = new Image();

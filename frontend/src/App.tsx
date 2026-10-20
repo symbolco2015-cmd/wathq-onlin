@@ -44,6 +44,7 @@ import type { ToastAction, ToastKind } from './components/UI';
 import { BTN_DNG } from './components/SectionView';
 // حقول نافذتي «إعدادات الحساب» و«إضافة استراتيجية» — مشتركة مع صفحة الدخول
 import { FIELD, LABEL, HINT, SECTION_TITLE, BTN_2ND, toggleBtn } from './components/formStyles';
+import { uploadAvatar } from './avatarUpload';
 
 /** مهلة «تراجع» بعد حذف مؤشر مخصص — لا شيء يصل إلى القاعدة قبل انتهائها */
 const INDICATOR_UNDO_MS = 6000;
@@ -80,6 +81,7 @@ export default function App() {
     clearPasswordRecovery,
     updateProfile,
     saveState,
+    getLatestState,
     signOut,
     announcements,
     markNotificationsSeen,
@@ -654,13 +656,19 @@ export default function App() {
 
   const openProfileSettings = () => {
     let p = { ...state.profile };
+    // الصورة لحظة الفتح — إن لم يغيّرها المعلم تُؤخذ عند الحفظ من آخر حالة، فلا
+    // يعيد المودال نصاً قديماً (data:) فوق رابط نقله useAppStore أثناء فتحه
+    const openedAvatar = p.avatar;
     let yearStart = state.yearStartMonth ?? 9;
     let yearsOk = isValidYears(String(p.yearsOfExperience ?? 0));
     
     const Body = () => {
       const [localP, setLocalP] = useState(p);
       const [isProcessing, setIsProcessing] = useState(false);
-      const [originalAvatar, setOriginalAvatar] = useState<string | null>(null);
+      // الملف الأصلي قبل تفريغ الخلفية — لـ «تراجع عن التفريغ». يبقى File محلياً ولا يُحفظ
+      const [originalFile, setOriginalFile] = useState<File | null>(null);
+      // معاينة فورية (رابط blob:) أثناء المعالجة والرفع — للعرض فقط، لا تدخل profile.avatar
+      const [previewSrc, setPreviewSrc] = useState<string | null>(null);
       const [localYearStart, setLocalYearStart] = useState(yearStart);
       const [localShareEnabled, setLocalShareEnabled] = useState(shareEnabled);
       const [shareToggleBusy, setShareToggleBusy] = useState(false);
@@ -679,8 +687,10 @@ export default function App() {
         toastKind(next ? 'تم تفعيل المشاركة العامة لملفك' : 'تم إيقاف المشاركة العامة لملفك', next ? 'success' : 'info');
       };
 
+      // يبني من p (آخر قيمة دائماً) لا من localP في الإغلاق — رفع الصورة غير متزامن،
+      // فلا يمحو ما كتبه المعلم في الحقول الأخرى أثناء الرفع
       const handleUpdate = (field: string, value: any) => {
-        const next = { ...localP, [field]: value };
+        const next = { ...p, [field]: value };
         setLocalP(next);
         p = next;
       };
@@ -697,7 +707,7 @@ export default function App() {
 
       // يبثّ isProcessing لأعلى إلى modalConfig نفسه — يعطّل زر "حفظ" بالمودال
       // بالكامل (وليس فقط زر رفع الصورة) طالما رفع/معالجة الصورة لم تكتمل بعد،
-      // حتى لا يحفظ المستخدم رابط avatar مؤقت (base64) قبل اكتمال رفعه لـ Storage
+      // حتى لا يحفظ المستخدم قبل اكتمال رفع الصورة لـ Storage
       const setProcessing = (value: boolean) => {
         setIsProcessing(value);
         setModalConfig(prev => ({
@@ -707,125 +717,87 @@ export default function App() {
         }));
       };
 
+      const showPreview = (blob: Blob) => {
+        setPreviewSrc(prev => {
+          if (prev) URL.revokeObjectURL(prev);
+          return URL.createObjectURL(blob);
+        });
+      };
+      const clearPreview = () => {
+        setPreviewSrc(prev => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+      };
+
+      // خلفية الصورة بعد تفريغها. canvas لا يقرأ var() — القيم من متغيرات DESIGN.md وقت الرسم
+      const avatarGradient = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+        const gradient = ctx.createLinearGradient(0, 0, w, h);
+        const rootStyle = getComputedStyle(document.documentElement);
+        gradient.addColorStop(0, rootStyle.getPropertyValue('--accent').trim());
+        gradient.addColorStop(1, rootStyle.getPropertyValue('--brand').trim());
+        return gradient;
+      };
+
+      // كل رفع يمر بـ uploadAvatar (تصغير 512px وJPEG ثم Storage). profile.avatar لا
+      // يتغير إلا إلى رابط بعد نجاح الرفع؛ عند الفشل تبقى الصورة السابقة كما هي
       const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (!user || !supabase) {
+          toastKind('سجّل الدخول لرفع صورة', 'error');
+          return;
+        }
+        const userId: string = user.id;
 
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-          if (ev.target?.result) {
-            const dataUrl = ev.target.result as string;
-            setOriginalAvatar(dataUrl);
-            handleUpdate('avatar', dataUrl);
+        showPreview(file);
+        setProcessing(true);
+        let cutout: Blob | null = null;
+        try {
+          const imgly = await import('@imgly/background-removal') as any;
+          const removeBg = imgly.default || imgly.removeBackground;
+          cutout = await removeBg(file);
+        } catch (err) {
+          // فشل التفريغ (شائع على الجوال) ⇐ تُرفع الصورة الأصلية بلا تفريغ
+          console.error("BG removal failed", err);
+        }
 
-            setProcessing(true);
-            try {
-              const imgly = await import('@imgly/background-removal') as any;
-              const removeBg = imgly.default || imgly.removeBackground;
-              const blob = await removeBg(file);
-
-              const img = new Image();
-              img.src = URL.createObjectURL(blob);
-              img.onload = () => {
-                // تصغير لأقصى بُعد 512px مع الحفاظ على النسبة، قبل الرفع لـ Storage
-                const scale = Math.min(1, 512 / Math.max(img.width, img.height));
-                const canvas = document.createElement('canvas');
-                canvas.width = Math.round(img.width * scale);
-                canvas.height = Math.round(img.height * scale);
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-                  // canvas لا يقرأ var() — القيم من متغيرات DESIGN.md وقت الرسم
-                  const rootStyle = getComputedStyle(document.documentElement);
-                  gradient.addColorStop(0, rootStyle.getPropertyValue('--accent').trim());
-                  gradient.addColorStop(1, rootStyle.getPropertyValue('--brand').trim());
-                  ctx.fillStyle = gradient;
-                  ctx.fillRect(0, 0, canvas.width, canvas.height);
-                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                  URL.revokeObjectURL(img.src);
-
-                  canvas.toBlob(async (finalBlob) => {
-                    if (finalBlob && user && supabase) {
-                      try {
-                        const filePath = `${user.id}/avatar.jpg`;
-                        const { error: uploadError } = await supabase.storage
-                          .from('avatars')
-                          .upload(filePath, finalBlob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
-                        if (uploadError) throw uploadError;
-                        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-                        // كسر الكاش: نفس المسار يُستبدل بـ upsert فيبقى الرابط ثابتاً بدون هذا
-                        handleUpdate('avatar', `${urlData.publicUrl}?v=${Date.now()}`);
-                      } catch (uploadErr) {
-                        console.error('فشل رفع الصورة الشخصية إلى Storage:', uploadErr);
-                        toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
-                      }
-                    } else if (finalBlob) {
-                      // بلا حساب Supabase — لا يوجد Storage للرفع، fallback لـ base64 محلياً كباقي التطبيق
-                      handleUpdate('avatar', canvas.toDataURL('image/jpeg', 0.95));
-                    }
-                    setProcessing(false);
-                  }, 'image/jpeg', 0.95);
-                } else {
-                  setProcessing(false);
-                }
-              };
-            } catch (err) {
-              console.error("BG removal failed", err);
-              // Fallback to original
-              setProcessing(false);
-            }
-          }
-        };
-        reader.readAsDataURL(file);
+        try {
+          const url = cutout
+            ? await uploadAvatar(userId, cutout, { background: avatarGradient })
+            : await uploadAvatar(userId, file);
+          handleUpdate('avatar', url);
+          // «تراجع عن التفريغ» فقط إن حدث تفريغ فعلاً
+          setOriginalFile(cutout ? file : null);
+        } catch (uploadErr) {
+          console.error('فشل رفع الصورة الشخصية إلى Storage:', uploadErr);
+          toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
+        }
+        clearPreview();
+        setProcessing(false);
       };
 
-      const handleUndo = () => {
-        if (!originalAvatar) return;
-        const original = originalAvatar;
-        // تحديث تفاؤلي فوري بالمعاينة المحلية (نفس نمط handleFile)، يُستبدل
-        // بالرابط النهائي من Storage بعد اكتمال الرفع أدناه
-        handleUpdate('avatar', original);
-        setOriginalAvatar(null);
-
-        const img = new Image();
-        img.onload = () => {
-          setProcessing(true);
-          // نفس تصغير 512px المستخدم بـ handleFile، قبل الرفع لنفس المسار
-          const scale = Math.min(1, 512 / Math.max(img.width, img.height));
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          const ctx = canvas.getContext('2d');
-          if (!ctx) { setProcessing(false); return; }
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-          canvas.toBlob(async (finalBlob) => {
-            if (finalBlob && user && supabase) {
-              try {
-                const filePath = `${user.id}/avatar.jpg`;
-                const { error: uploadError } = await supabase.storage
-                  .from('avatars')
-                  .upload(filePath, finalBlob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
-                if (uploadError) throw uploadError;
-                const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-                handleUpdate('avatar', `${urlData.publicUrl}?v=${Date.now()}`);
-              } catch (uploadErr) {
-                console.error('فشل رفع صورة التراجع إلى Storage:', uploadErr);
-                toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
-              }
-            } else if (finalBlob) {
-              // بلا حساب Supabase — لا يوجد Storage للرفع، fallback لـ base64 محلياً كباقي التطبيق
-              handleUpdate('avatar', canvas.toDataURL('image/jpeg', 0.95));
-            }
-            setProcessing(false);
-          }, 'image/jpeg', 0.95);
-        };
-        img.src = original;
+      const handleUndo = async () => {
+        if (!originalFile || !user || !supabase) return;
+        const file = originalFile;
+        const userId: string = user.id;
+        setOriginalFile(null);
+        showPreview(file);
+        setProcessing(true);
+        try {
+          handleUpdate('avatar', await uploadAvatar(userId, file));
+        } catch (uploadErr) {
+          console.error('فشل رفع صورة التراجع إلى Storage:', uploadErr);
+          toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
+          setOriginalFile(file);
+        }
+        clearPreview();
+        setProcessing(false);
       };
 
       const handleDeleteAvatar = async () => {
         handleUpdate('avatar', '');
-        setOriginalAvatar(null);
+        setOriginalFile(null);
         if (user && supabase) {
           try {
             const { error } = await supabase.storage.from('avatars').remove([`${user.id}/avatar.jpg`]);
@@ -836,14 +808,16 @@ export default function App() {
         }
       };
 
+      const shownAvatar = previewSrc ?? localP.avatar;
+
       return (
         <div className="flex flex-col gap-6 max-h-[min(60vh,calc(100dvh-17rem))] overflow-y-auto">
           <section>
             <div className={SECTION_TITLE}><i className="ti ti-user text-[16px] text-[var(--t3)]"></i> الملف الشخصي</div>
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-4">
-                <div className={`w-16 h-16 rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[length:var(--fs-md)] font-bold text-[var(--t1)] bg-cover bg-center overflow-hidden ${localP.avatar ? '' : 'bg-[var(--s2)] border border-[var(--bd2)]'}`} style={localP.avatar ? { backgroundImage: `url(${localP.avatar})` } : {}}>
-                  {!localP.avatar && localP.name.substring(0, 2)}
+                <div className={`w-16 h-16 rounded-[var(--r-full)] shrink-0 flex items-center justify-center text-[length:var(--fs-md)] font-bold text-[var(--t1)] bg-cover bg-center overflow-hidden ${shownAvatar ? '' : 'bg-[var(--s2)] border border-[var(--bd2)]'}`} style={shownAvatar ? { backgroundImage: `url(${shownAvatar})` } : {}}>
+                  {!shownAvatar && localP.name.substring(0, 2)}
                 </div>
                 <div className="flex flex-col items-start gap-2 min-w-0">
                   <div className="flex flex-wrap gap-2">
@@ -856,7 +830,7 @@ export default function App() {
                         حذف
                       </button>
                     )}
-                    {originalAvatar && !isProcessing && (
+                    {originalFile && !isProcessing && (
                       <button type="button" className={`${BTN_2ND} border-[var(--bd2)] text-[var(--t2)] cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]`} onClick={handleUndo}>
                         <i className="ti ti-arrow-back-up text-[16px]"></i>تراجع عن التفريغ
                       </button>
@@ -997,9 +971,10 @@ export default function App() {
         // استدعاءين منفصلين (updateProfile ثم updateYearStartMonth) — كل واحد
         // منهما كان يبني newState من نسخة state القديمة في الـ closure دون رؤية
         // تعديل الآخر، فيتصارعان على نفس عمود state ويكتب الثاني فوق الأول
+        const avatar = p.avatar === openedAvatar ? getLatestState().profile.avatar : p.avatar;
         const combinedState = {
           ...state,
-          profile: { ...state.profile, ...p },
+          profile: { ...state.profile, ...p, avatar },
           yearStartMonth: yearStart,
         };
         const saved = await saveState(combinedState);

@@ -5,7 +5,8 @@ import type { ToastKind } from '../components/UI';
 
 const MAX_FILES = 30;
 // نفس إعدادات ضغط الصور المستخدمة في useQuickCapture.ts/EvidenceForm.tsx
-const COMPRESSION_OPTIONS = { maxSizeMB: 1, maxWidthOrHeight: 1600, useWebWorker: false };
+// PNG يبقى PNG (المكتبة لا تغيّر النوع)، ويُرفع الأصل إن لم يصغر الملف
+const COMPRESSION_OPTIONS = { maxSizeMB: 0.5, initialQuality: 0.85, maxWidthOrHeight: 1600, useWebWorker: false };
 
 export interface BulkImportProgress {
   done: number;
@@ -64,7 +65,8 @@ export function useBulkImport({ userId, onToast, onClassificationSettled }: UseB
       try {
         let fileToUpload: File = file;
         try {
-          fileToUpload = await imageCompression(file, COMPRESSION_OPTIONS);
+          const compressed = await imageCompression(file, COMPRESSION_OPTIONS);
+          fileToUpload = compressed.size < file.size ? compressed : file;
         } catch (compressErr) {
           console.warn('[BulkImport] فشل ضغط صورة، تم استخدام الملف الأصلي:', compressErr);
         }
@@ -74,7 +76,7 @@ export function useBulkImport({ userId, onToast, onClassificationSettled }: UseB
 
         const { error: upErr } = await supabase.storage
           .from('evidence')
-          .upload(filePath, fileToUpload, { cacheControl: '3600', upsert: false, contentType: 'image/jpeg' });
+          .upload(filePath, fileToUpload, { cacheControl: '3600', upsert: false, contentType: fileToUpload.type || file.type || 'image/jpeg' });
         if (upErr) throw upErr;
 
         const { error: insertErr } = await supabase.from('bulk_import_queue').insert({

@@ -748,8 +748,10 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
 
       if (file.type.startsWith('image/')) {
         try {
-          const options = { maxSizeMB: 1, maxWidthOrHeight: 1600, useWebWorker: false };
-          fileToUpload = await imageCompression(file, options);
+          // PNG يبقى PNG، ويُرفع الأصل إن لم يصغر الملف
+          const options = { maxSizeMB: 0.5, initialQuality: 0.85, maxWidthOrHeight: 1600, useWebWorker: false };
+          const compressed = await imageCompression(file, options);
+          fileToUpload = compressed.size < file.size ? compressed : file;
         } catch (compressErr) {
           console.warn('[EvidenceForm] فشل ضغط الصورة، تم استخدام الملف الأصلي:', compressErr);
           fileToUpload = file;

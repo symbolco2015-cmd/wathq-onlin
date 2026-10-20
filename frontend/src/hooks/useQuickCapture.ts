@@ -139,7 +139,9 @@ export function useQuickCapture({ userId, supabaseEv, onEvidenceSaved, onToast, 
     try {
       let fileToUpload: File = pendingFile;
       try {
-        fileToUpload = await imageCompression(pendingFile, { maxSizeMB: 1, maxWidthOrHeight: 1600, useWebWorker: false });
+        // PNG يبقى PNG، ويُرفع الأصل إن لم يصغر الملف
+        const compressed = await imageCompression(pendingFile, { maxSizeMB: 0.5, initialQuality: 0.85, maxWidthOrHeight: 1600, useWebWorker: false });
+        fileToUpload = compressed.size < pendingFile.size ? compressed : pendingFile;
       } catch (compressErr) {
         console.warn('[QuickCapture] فشل ضغط الصورة، تم استخدام الملف الأصلي:', compressErr);
       }

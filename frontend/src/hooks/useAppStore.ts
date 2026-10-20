@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { uploadAvatar, isDataUrl } from '../avatarUpload';
 import type { AppState, UserProfile, Announcement, AcademicDate } from '../types';
 
 const defaultProfile: UserProfile = {
@@ -95,6 +96,11 @@ export function useAppStore() {
   // محفوظة في الإغلاق حتى لو استُدعيت عدة مرات قبل أي render.
   const latestStateRef = useRef<AppState>(state);
   latestStateRef.current = state;
+  // صاحب الحالة المحمّلة (معرّف المستخدم الذي حُمّل ملفه في state)، والمستخدم
+  // الحالي. null أثناء التحميل وبعد الخروج. يحميان النقل من تبديل الحساب.
+  const stateOwnerRef = useRef<string | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
+  currentUserIdRef.current = user?.id ?? null;
 
   // 0. ترحيل/إبطال localStorage — يجب أن يعمل قبل أي قراءة لمفتاح 'w4' (يقع
   // في الـeffect رقم 2 أدناه، ضمن fallback عدم وجود مستخدم/Supabase). React
@@ -131,6 +137,7 @@ export function useAppStore() {
       setUser(session?.user ?? null);
       if (!session?.user) {
         // Reset state on logout
+        stateOwnerRef.current = null;
         setState(defaultState);
         setShareEnabled(false);
         setAiSummary(null);
@@ -249,6 +256,7 @@ export function useAppStore() {
   useEffect(() => {
     async function loadData() {
       const requestId = ++loadRequestIdRef.current;
+      stateOwnerRef.current = null;
       setLoading(true);
       setPortfolioLoadError(false);
       if (user && supabase) {
@@ -283,6 +291,7 @@ export function useAppStore() {
 
           // مجدول للحذف: الصف موجود، فلا إنشاء ولا كتابة قبل «استعادة حسابي»
           if (data && (scheduledAt || (data.state && Object.keys(data.state).length > 0))) {
+            stateOwnerRef.current = user.id;
             setState({
               ...defaultState,
               ...pickAppStateFields(data.state || {}),
@@ -309,6 +318,7 @@ export function useAppStore() {
               ...defaultState,
               profile: initialProfile
             };
+            stateOwnerRef.current = user.id;
             setState(initialStateWithProfile);
             setShareEnabled(false); // ملف جديد دائماً غير مفعّل للمشاركة العامة افتراضياً
             setAiSummary(null);
@@ -375,6 +385,39 @@ export function useAppStore() {
 
   const retryPortfolioLoad = () => setLoadAttempt(n => n + 1);
 
+  // 2b. نقل صامت لصورة شخصية محفوظة نصاً (data:) إلى حاوية avatars. مرة واحدة
+  // لكل تحميل صفحة (الـ ref)، بلا تنبيه. أي فشل يترك الصورة كما هي فتُعاد
+  // المحاولة في التحميل التالي — لا تتغير الحالة إلا بعد نجاح الرفع. قبل الكتابة
+  // يُتحقق أن الصورة لم تتغير أثناء الرفع، ويُبنى الحفظ من latestStateRef.
+  // المعرّف يُحفظ عند البدء: الرفع إلى مجلده، ولا كتابة إن تبدّل المستخدم أو لم
+  // تعد الحالة المحمّلة لملفه.
+  const avatarMigratedForRef = useRef<string | null>(null);
+  const currentAvatar = state.profile.avatar;
+  useEffect(() => {
+    if (!user?.id || !supabase || loading || portfolioLoadError || deletionScheduledAt) return;
+    if (!isDataUrl(currentAvatar) || avatarMigratedForRef.current === user.id) return;
+    const userId: string = user.id;
+    if (stateOwnerRef.current !== userId) return;
+    avatarMigratedForRef.current = userId;
+    const original = currentAvatar;
+    (async () => {
+      try {
+        const blob = await (await fetch(original)).blob();
+        const url = await uploadAvatar(userId, blob);
+        if (currentUserIdRef.current !== userId || stateOwnerRef.current !== userId) {
+          console.warn('[avatar] تبدّل الحساب أثناء النقل — لا كتابة');
+          return;
+        }
+        const prev = latestStateRef.current;
+        if (prev.profile.avatar !== original) return;
+        const saved = await saveState({ ...prev, profile: { ...prev.profile, avatar: url } });
+        if (!saved) console.warn('[avatar] رُفعت الصورة ولم يُحفظ الرابط — يُعاد النقل في التحميل التالي');
+      } catch (err) {
+        console.warn('[avatar] تعذّر نقل الصورة الشخصية إلى Storage:', err);
+      }
+    })();
+  }, [user?.id, loading, portfolioLoadError, deletionScheduledAt, currentAvatar]);
+
   // «استعادة حسابي»: restore_my_account() تعمل على auth.uid() فقط. النجاح يمسح
   // الموعد محلياً فتختفي شاشة المهلة وتظهر اللوحة.
   const restoreAccount = async (): Promise<RestoreAccountResult> => {
@@ -435,6 +478,9 @@ export function useAppStore() {
     return true;
   };
 
+  // آخر حالة معروفة، لمن يبني حفظاً من إغلاق قديم (مودال الإعدادات)
+  const getLatestState = () => latestStateRef.current;
+
   const updateProfile = (profileUpdate: Partial<UserProfile>) => {
     return saveState({ ...state, profile: { ...state.profile, ...profileUpdate } });
   };
@@ -461,6 +507,7 @@ export function useAppStore() {
       await supabase.auth.signOut();
     }
     localStorage.removeItem('w4');
+    stateOwnerRef.current = null;
     setState(defaultState);
     setShareEnabled(false);
   };
@@ -563,6 +610,7 @@ export function useAppStore() {
     clearPasswordRecovery,
     updateProfile,
     saveState,
+    getLatestState,
     signOut,
     announcements,
     markAnnouncementAsRead,

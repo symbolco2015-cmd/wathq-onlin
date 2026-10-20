@@ -45,14 +45,9 @@ const canvasToJpeg = (canvas: HTMLCanvasElement, quality: number): Promise<Blob>
 /**
  * يصغّر الصورة إلى 512px كحد أقصى للضلع الأطول، ويحوّلها JPEG (0.85، ثم 0.7
  * مرة واحدة إن تجاوزت 100KB)، ويرفعها إلى avatars/{userId}/avatar.jpg.
- * background: خلفية تُرسم قبل الصورة (التدرّج بعد تفريغ الخلفية).
  * يرجع الرابط العام مع ?v= لكسر الكاش، ويرمي خطأً عند أي فشل.
  */
-export async function uploadAvatar(
-  userId: string,
-  source: Blob,
-  opts?: { background?: (ctx: CanvasRenderingContext2D, w: number, h: number) => CanvasGradient | string },
-): Promise<string> {
+export async function uploadAvatar(userId: string, source: Blob): Promise<string> {
   if (!supabase) throw new Error('avatar_no_storage');
 
   const img = await loadImage(source);
@@ -62,10 +57,6 @@ export async function uploadAvatar(
   canvas.height = Math.max(1, Math.round(img.height * scale));
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('avatar_canvas_unavailable');
-  if (opts?.background) {
-    ctx.fillStyle = opts.background(ctx, canvas.width, canvas.height);
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
   let blob = await canvasToJpeg(canvas, QUALITY);

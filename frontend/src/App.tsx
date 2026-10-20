@@ -664,10 +664,8 @@ export default function App() {
     
     const Body = () => {
       const [localP, setLocalP] = useState(p);
-      const [isProcessing, setIsProcessing] = useState(false);
-      // الملف الأصلي قبل تفريغ الخلفية — لـ «تراجع عن التفريغ». يبقى File محلياً ولا يُحفظ
-      const [originalFile, setOriginalFile] = useState<File | null>(null);
-      // معاينة فورية (رابط blob:) أثناء المعالجة والرفع — للعرض فقط، لا تدخل profile.avatar
+      const [isUploading, setIsUploading] = useState(false);
+      // معاينة فورية (رابط blob:) أثناء الرفع — للعرض فقط، لا تدخل profile.avatar
       const [previewSrc, setPreviewSrc] = useState<string | null>(null);
       const [localYearStart, setLocalYearStart] = useState(yearStart);
       const [localShareEnabled, setLocalShareEnabled] = useState(shareEnabled);
@@ -705,15 +703,15 @@ export default function App() {
         if (yearsOk) handleUpdate('yearsOfExperience', Number(value));
       };
 
-      // يبثّ isProcessing لأعلى إلى modalConfig نفسه — يعطّل زر "حفظ" بالمودال
-      // بالكامل (وليس فقط زر رفع الصورة) طالما رفع/معالجة الصورة لم تكتمل بعد،
-      // حتى لا يحفظ المستخدم قبل اكتمال رفع الصورة لـ Storage
-      const setProcessing = (value: boolean) => {
-        setIsProcessing(value);
+      // يبثّ isUploading لأعلى إلى modalConfig نفسه — يعطّل زر "حفظ" بالمودال
+      // بالكامل (وليس فقط زر رفع الصورة) حتى لا يحفظ المستخدم قبل اكتمال رفع
+      // الصورة لـ Storage
+      const setUploading = (value: boolean) => {
+        setIsUploading(value);
         setModalConfig(prev => ({
           ...prev,
           confirmDisabled: value,
-          confirmHelperText: value ? 'بانتظار اكتمال معالجة الصورة...' : undefined,
+          confirmHelperText: value ? 'بانتظار اكتمال رفع الصورة...' : undefined,
         }));
       };
 
@@ -730,15 +728,6 @@ export default function App() {
         });
       };
 
-      // خلفية الصورة بعد تفريغها. canvas لا يقرأ var() — القيم من متغيرات DESIGN.md وقت الرسم
-      const avatarGradient = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
-        const gradient = ctx.createLinearGradient(0, 0, w, h);
-        const rootStyle = getComputedStyle(document.documentElement);
-        gradient.addColorStop(0, rootStyle.getPropertyValue('--accent').trim());
-        gradient.addColorStop(1, rootStyle.getPropertyValue('--brand').trim());
-        return gradient;
-      };
-
       // كل رفع يمر بـ uploadAvatar (تصغير 512px وJPEG ثم Storage). profile.avatar لا
       // يتغير إلا إلى رابط بعد نجاح الرفع؛ عند الفشل تبقى الصورة السابقة كما هي
       const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -751,53 +740,19 @@ export default function App() {
         const userId: string = user.id;
 
         showPreview(file);
-        setProcessing(true);
-        let cutout: Blob | null = null;
+        setUploading(true);
         try {
-          const imgly = await import('@imgly/background-removal') as any;
-          const removeBg = imgly.default || imgly.removeBackground;
-          cutout = await removeBg(file);
-        } catch (err) {
-          // فشل التفريغ (شائع على الجوال) ⇐ تُرفع الصورة الأصلية بلا تفريغ
-          console.error("BG removal failed", err);
-        }
-
-        try {
-          const url = cutout
-            ? await uploadAvatar(userId, cutout, { background: avatarGradient })
-            : await uploadAvatar(userId, file);
-          handleUpdate('avatar', url);
-          // «تراجع عن التفريغ» فقط إن حدث تفريغ فعلاً
-          setOriginalFile(cutout ? file : null);
+          handleUpdate('avatar', await uploadAvatar(userId, file));
         } catch (uploadErr) {
           console.error('فشل رفع الصورة الشخصية إلى Storage:', uploadErr);
           toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
         }
         clearPreview();
-        setProcessing(false);
-      };
-
-      const handleUndo = async () => {
-        if (!originalFile || !user || !supabase) return;
-        const file = originalFile;
-        const userId: string = user.id;
-        setOriginalFile(null);
-        showPreview(file);
-        setProcessing(true);
-        try {
-          handleUpdate('avatar', await uploadAvatar(userId, file));
-        } catch (uploadErr) {
-          console.error('فشل رفع صورة التراجع إلى Storage:', uploadErr);
-          toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
-          setOriginalFile(file);
-        }
-        clearPreview();
-        setProcessing(false);
+        setUploading(false);
       };
 
       const handleDeleteAvatar = async () => {
         handleUpdate('avatar', '');
-        setOriginalFile(null);
         if (user && supabase) {
           try {
             const { error } = await supabase.storage.from('avatars').remove([`${user.id}/avatar.jpg`]);
@@ -821,24 +776,19 @@ export default function App() {
                 </div>
                 <div className="flex flex-col items-start gap-2 min-w-0">
                   <div className="flex flex-wrap gap-2">
-                    <label className={`${BTN_2ND} border-[var(--bd2)] text-[var(--t2)] ${isProcessing ? 'opacity-40 cursor-wait' : 'cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]'}`}>
+                    <label className={`${BTN_2ND} border-[var(--bd2)] text-[var(--t2)] ${isUploading ? 'opacity-40 cursor-wait' : 'cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]'}`}>
                       <i className="ti ti-upload text-[16px]"></i>رفع صورة
-                      <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isProcessing} />
+                      <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isUploading} />
                     </label>
                     {localP.avatar && (
                       <button type="button" className={`${BTN_2ND} border-[var(--danger)]/35 text-[var(--danger)] cursor-pointer hover:bg-[var(--s2)]`} onClick={handleDeleteAvatar}>
                         حذف
                       </button>
                     )}
-                    {originalFile && !isProcessing && (
-                      <button type="button" className={`${BTN_2ND} border-[var(--bd2)] text-[var(--t2)] cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]`} onClick={handleUndo}>
-                        <i className="ti ti-arrow-back-up text-[16px]"></i>تراجع عن التفريغ
-                      </button>
-                    )}
                   </div>
-                  {isProcessing && (
+                  {isUploading && (
                     <div className="text-[length:var(--fs-xs)] text-[var(--t3)] flex items-center gap-2">
-                      <i className="ti ti-loader animate-spin"></i> جاري معالجة الصورة وتفريغ الخلفية...
+                      <i className="ti ti-loader animate-spin"></i> جاري رفع الصورة...
                     </div>
                   )}
                 </div>

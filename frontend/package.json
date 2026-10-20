@@ -11,7 +11,6 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@imgly/background-removal": "^1.7.0",
     "@supabase/supabase-js": "^2.107.0",
     "@tabler/icons-webfont": "^3.44.0",
     "@tailwindcss/vite": "^4.1.14",

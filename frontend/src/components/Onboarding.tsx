@@ -5,6 +5,15 @@ import { FIELD, LABEL, HINT } from './formStyles';
 
 const UNSET_PLACEHOLDER = 'غير محدد';
 
+// حد سنوات الخبرة في كل إدخال (إكمال الملف وإعدادات الحساب). القيم المحفوظة لا تُمس
+export const YEARS_MAX = 50;
+export const isValidYears = (value: string): boolean => {
+  const v = value.trim();
+  if (v === '') return false;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= YEARS_MAX;
+};
+
 interface OnboardingProps {
   profile: UserProfile;
   onComplete: (update: Partial<UserProfile>) => void;
@@ -17,7 +26,7 @@ export default function Onboarding({ profile, onComplete }: OnboardingProps) {
   const [yearsOfExperience, setYearsOfExperience] = useState(profile.yearsOfExperience > 0 ? String(profile.yearsOfExperience) : '');
   const [touched, setTouched] = useState(false);
 
-  const yearsValid = yearsOfExperience.trim() !== '' && !Number.isNaN(Number(yearsOfExperience)) && Number(yearsOfExperience) >= 0;
+  const yearsValid = isValidYears(yearsOfExperience);
   const nameValid = name.trim().length > 0;
   const roleValid = role.trim().length > 0 && role.trim() !== UNSET_PLACEHOLDER;
   const schoolValid = school.trim().length > 0 && school.trim() !== UNSET_PLACEHOLDER;
@@ -78,8 +87,8 @@ export default function Onboarding({ profile, onComplete }: OnboardingProps) {
           </div>
           <div>
             <label htmlFor="ob-years" className={LABEL}>سنوات الخبرة</label>
-            <input id="ob-years" type="number" min={0} value={yearsOfExperience} onChange={e => setYearsOfExperience(e.target.value)} className={fieldCls(yearsValid)} placeholder="مثال: 5" />
-            {touched && !yearsValid && <div className={ERROR}>أدخل عدد سنوات صحيح (0 أو أكثر)</div>}
+            <input id="ob-years" type="number" min={0} max={YEARS_MAX} value={yearsOfExperience} onChange={e => setYearsOfExperience(e.target.value)} className={fieldCls(yearsValid)} placeholder="مثال: 5" />
+            {(touched || yearsOfExperience.trim() !== '') && !yearsValid && <div className={ERROR}>أدخل رقماً صحيحاً من 0 إلى {YEARS_MAX}</div>}
           </div>
         </div>
 

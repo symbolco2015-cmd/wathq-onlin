@@ -20,7 +20,7 @@ import Dashboard from './components/Dashboard';
 import Public from './components/Public';
 import { PublicTopBar, PublicUnavailable } from './components/PublicChrome';
 import AdminDashboard from './components/Admin/AdminDashboard';
-import Onboarding from './components/Onboarding';
+import Onboarding, { YEARS_MAX, isValidYears } from './components/Onboarding';
 import SplashScreen from './components/SplashScreen';
 import DashboardSkeleton from './components/DashboardSkeleton';
 import { Modal, Toast, SelectDropdown } from './components/UI';
@@ -286,6 +286,15 @@ export default function App() {
       }
     }
   }, [user, loading, currentPage, shareUserId, reportId, passwordRecovery, confirmLink]);
+
+  // ترحيب الدخول: يطلبه Auth، ويُعرض بعد تحميل الملف فقط، ولا يُعرض مع شاشة المهلة
+  // (مجدول للحذف أو انتهت مهلته) ولا مع تعذّر التحميل
+  const [welcomePending, setWelcomePending] = useState(false);
+  useEffect(() => {
+    if (!welcomePending || !user || loading) return;
+    setWelcomePending(false);
+    if (!deletionScheduledAt && !portfolioLoadError) toastKind('مرحباً بك في منصة وثّق!', 'success');
+  }, [welcomePending, user, loading, deletionScheduledAt, portfolioLoadError]);
 
   // ── visibilitychange: تحديث خلفي عند العودة بعد 5 دقائق + حفظ موقع التمرير ──
   const lastRefreshRef = useRef<number>(Date.now());
@@ -646,6 +655,7 @@ export default function App() {
   const openProfileSettings = () => {
     let p = { ...state.profile };
     let yearStart = state.yearStartMonth ?? 9;
+    let yearsOk = isValidYears(String(p.yearsOfExperience ?? 0));
     
     const Body = () => {
       const [localP, setLocalP] = useState(p);
@@ -673,6 +683,16 @@ export default function App() {
         const next = { ...localP, [field]: value };
         setLocalP(next);
         p = next;
+      };
+
+      // سنوات الخبرة نصاً حتى يُرى الإدخال كما كُتب؛ لا تصل p إلا قيمة صالحة،
+      // وyearsOk يمنع الحفظ ما دام الحقل خارج الحد
+      const [yearsText, setYearsText] = useState(String(localP.yearsOfExperience ?? 0));
+      const yearsValid = isValidYears(yearsText);
+      const handleYearsChange = (value: string) => {
+        setYearsText(value);
+        yearsOk = isValidYears(value);
+        if (yearsOk) handleUpdate('yearsOfExperience', Number(value));
       };
 
       // يبثّ isProcessing لأعلى إلى modalConfig نفسه — يعطّل زر "حفظ" بالمودال
@@ -867,7 +887,8 @@ export default function App() {
                 </div>
                 <div>
                   <div className={LABEL}>سنوات الخبرة</div>
-                  <input type="number" value={localP.yearsOfExperience} onChange={e => handleUpdate('yearsOfExperience', parseInt(e.target.value) || 0)} className={FIELD} />
+                  <input type="number" min={0} max={YEARS_MAX} value={yearsText} onChange={e => handleYearsChange(e.target.value)} className={`${FIELD} ${yearsValid ? '' : 'border-[var(--danger)]! focus:border-[var(--danger)]!'}`} />
+                  {!yearsValid && <div className={`${HINT} text-[var(--danger)]!`}>أدخل رقماً صحيحاً من 0 إلى {YEARS_MAX}</div>}
                 </div>
               </div>
             </div>
@@ -971,6 +992,7 @@ export default function App() {
       icon: 'ti-settings',
       body: <Body />,
       onConfirm: async () => {
+        if (!yearsOk) return; // الرسالة تحت حقل سنوات الخبرة، والمودال يبقى مفتوحاً
         // ندمج تعديلي profile وyearStartMonth في استدعاء saveState واحد بدل
         // استدعاءين منفصلين (updateProfile ثم updateYearStartMonth) — كل واحد
         // منهما كان يبني newState من نسخة state القديمة في الـ closure دون رؤية
@@ -1195,6 +1217,7 @@ export default function App() {
         {currentPage === 'auth' && (
           <Auth
             onLoginSuccess={() => setCurrentPage('dashboard')}
+            onLoginWelcome={() => setWelcomePending(true)}
             onToast={toastKind}
             recovery={passwordRecovery}
             onRecoveryComplete={() => {

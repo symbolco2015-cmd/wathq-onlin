@@ -18,6 +18,8 @@ const BTN_OAUTH = `${BTN_2ND} w-full border-[var(--bd2)] text-[var(--t1)] cursor
 
 interface AuthProps {
   onLoginSuccess: () => void;
+  /** دخول بكلمة المرور نجح: يقرر App عرض الترحيب بعد تحميل الملف */
+  onLoginWelcome: () => void;
   onToast: (msg: string, kind: ToastKind) => void;
   // True when the user arrived through a password-recovery email link
   recovery?: boolean;
@@ -52,7 +54,7 @@ function mapAuthError(err: any, fallback: string): string {
   return fallback;
 }
 
-export default function Auth({ onLoginSuccess, onToast, recovery, onRecoveryComplete }: AuthProps) {
+export default function Auth({ onLoginSuccess, onLoginWelcome, onToast, recovery, onRecoveryComplete }: AuthProps) {
   const [mode, setMode] = useState<AuthMode>(recovery ? 'update' : 'login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -102,8 +104,9 @@ export default function Auth({ onLoginSuccess, onToast, recovery, onRecoveryComp
 
         if (error) throw error;
 
-        onToast('مرحباً بك في منصة وثّق!', 'success');
+        // الترحيب يظهره App بعد تحميل الملف، لأنه لا يُعرض لحساب مجدول للحذف
         setTimeout(() => {
+          onLoginWelcome();
           onLoginSuccess();
         }, 700);
       } else {

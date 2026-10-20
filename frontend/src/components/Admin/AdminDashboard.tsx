@@ -268,6 +268,7 @@ function UserDetailModal({ user, onClose, onDeleteNow, onReset, onScheduleDeleti
   const [copied, setCopied] = useState(false);
   // لوحة التأكيد المفتوحة: إعادة التعيين (بالاسم)، أو جدولة الحذف، أو الحذف الفوري (بالبريد)
   const [pending, setPending] = useState<'reset' | 'schedule' | 'deleteNow' | null>(null);
+  const deleteConfirmOpen = pending === 'schedule' || pending === 'deleteNow';
   const [typedName, setTypedName] = useState('');
   const [running, setRunning] = useState(false);
   const [inlineError, setInlineError] = useState('');
@@ -586,10 +587,11 @@ function UserDetailModal({ user, onClose, onDeleteNow, onReset, onScheduleDeleti
             <i className="ti ti-refresh" /> إعادة تعيين
           </button>
 
-          {/* حذف الحساب بمهلة — يفتح لوحة التأكيد فقط. المجدول يُلغى من شارته أعلاه */}
-          {!user.deletionScheduledAt && (
+          {/* حذف الحساب بمهلة — يفتح لوحة التأكيد فقط. المجدول يُلغى من شارته أعلاه،
+              ويختفي ما دامت لوحة تأكيد حذف مفتوحة، فلا يُظن الضغط عليه معطّلاً */}
+          {!user.deletionScheduledAt && !deleteConfirmOpen && (
             <button
-              className={`${BTN_DNG} min-w-[140px] disabled:opacity-40 disabled:cursor-not-allowed ${pending === 'schedule' ? 'bg-[var(--danger)]/10' : 'bg-transparent'}`}
+              className={`${BTN_DNG} min-w-[140px] disabled:opacity-40 disabled:cursor-not-allowed bg-transparent`}
               onClick={() => openConfirm('schedule')}
               disabled={running}
             >
@@ -599,16 +601,20 @@ function UserDetailModal({ user, onClose, onDeleteNow, onReset, onScheduleDeleti
         </div>
 
         {/* الحذف الفوري: رابط صغير لا زر بارز، لحسابات التجربة */}
-        <div className="px-6 pb-6">
-          <button
-            type="button"
-            className="h-9 inline-flex items-center gap-1 bg-transparent border-0 p-0 text-[length:var(--fs-xs)] text-[var(--t3)] underline cursor-pointer hover:text-[var(--danger)] disabled:opacity-40 disabled:cursor-not-allowed"
-            onClick={() => openConfirm('deleteNow')}
-            disabled={running}
-          >
-            حذف فوري بلا مهلة (لحسابات التجربة)
-          </button>
-        </div>
+        {deleteConfirmOpen ? (
+          <div className="pb-3" />
+        ) : (
+          <div className="px-6 pb-6">
+            <button
+              type="button"
+              className="h-9 inline-flex items-center gap-1 bg-transparent border-0 p-0 text-[length:var(--fs-xs)] text-[var(--t3)] underline cursor-pointer hover:text-[var(--danger)] disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => openConfirm('deleteNow')}
+              disabled={running}
+            >
+              حذف فوري بلا مهلة (لحسابات التجربة)
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,13 +1,19 @@
 // «لمحات من الممارسة الصفية»: فسيفساء صورة كبيرة وصغيرة حولها، تتبدل صورها
 // بمؤقت واحد (منطق الاختيار في galleryImages.ts، والتلاشي في .gal-* في index.css).
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type AnimationEvent, type FocusEvent, type PointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEvent, type PointerEvent, type TransitionEvent } from 'react';
 import { gallerySlotCount, pickNextMove, type GalleryImage, type GalleryLayout, type GalleryMove } from './galleryImages';
 
 /** الفاصل بين تبديلين */
 const CYCLE_MS = 3500;
 
-/** طبقة صورة في خانة. الخانة طبقة واحدة، أو اثنتان أثناء التلاشي (الجديدة آخراً) */
-type Layer = { img: GalleryImage; id: number; fading: boolean };
+/** مدة التلاشي المتقاطع في .gal-layer (index.css)، والمؤقت الاحتياطي بعدها إن لم يصل transitionend */
+const FADE_FALLBACK_MS = 1300;
+
+/** طبقة صورة في خانة. الخانة طبقة واحدة، أو اثنتان أثناء التلاشي (الجديدة آخراً).
+ *  pending: رُكّبت بشفافية 0 تنتظر فكّ صورتها. fading: تظهر فوق القديمة، والقديمة
+ *  ثابتة بشفافية 1 تحتها. done: وحدها في الخانة.
+ *  zoom: اتجاه التكبير البطيء (للكبيرة فقط)، يتناوب مع كل صورة جديدة فيها. */
+type Layer = { img: GalleryImage; id: number; stage: 'pending' | 'fading' | 'done'; zoom: 'in' | 'out' };
 
 const top = (slot: Layer[]) => slot[slot.length - 1];
 
@@ -43,7 +49,7 @@ function Mosaic({ images, count, layout, reduced, sectionName, onOpen }: {
   onOpen: (img: GalleryImage) => void;
 }) {
   // أول عرض: أول صور المجمّع بترتيب pickGalleryImages (الأحدث)
-  const [slots, setSlots] = useState<Layer[][]>(() => images.slice(0, count).map((img, i) => [{ img, id: i, fading: false }]));
+  const [slots, setSlots] = useState<Layer[][]>(() => images.slice(0, count).map((img, i): Layer[] => [{ img, id: i, stage: 'done', zoom: 'in' }]));
   const nextId = useRef(count);
   // مفاتيح الصور التي تعذّر تحميلها — تخرج من المجمّع
   const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
@@ -87,10 +93,12 @@ function Mosaic({ images, count, layout, reduced, sectionName, onOpen }: {
       const shown = prev.map(s => top(s).img);
       if (move.kind === 'replace' && shown.some(img => img.key === move.image.key)) return prev;
       const put = (slot: Layer[], img: GalleryImage): Layer[] => {
-        const layer = { img, id: nextId.current++, fading: !reduced };
+        // الجديدة تبدأ من الحجم الذي انتهت إليه القديمة تقريباً، فلا قفز أثناء التداخل
+        const zoom = top(slot).zoom === 'in' ? 'out' : 'in';
+        const layer: Layer = { img, id: nextId.current++, stage: reduced ? 'done' : 'pending', zoom };
         // الصورة التي تعذّر تحميلها لا تبقى تحت الجديدة
         const keepOld = !reduced && !failedRef.current.has(top(slot).img.key);
-        return keepOld ? [{ ...top(slot), fading: false }, layer] : [layer];
+        return keepOld ? [{ ...top(slot), stage: 'done' }, layer] : [layer];
       };
       return prev.map((s, i) => {
         if (move.kind === 'replace') return i === move.slot ? put(s, move.image) : s;
@@ -141,10 +149,56 @@ function Mosaic({ images, count, layout, reduced, sectionName, onOpen }: {
     return () => { cancelled = true; };
   }, [slots, failed, images, apply, markFailed]);
 
-  /** انتهى التلاشي: تُحذف الطبقة القديمة ومعها will-change */
-  const onFadeEnd = (slotIdx: number, layerId: number) => (e: AnimationEvent) => {
-    if (e.target !== e.currentTarget || e.animationName !== 'wathq-gal-fade') return;
-    setSlots(prev => prev.map((s, i) => (i === slotIdx && top(s).id === layerId ? [{ ...top(s), fading: false }] : s)));
+  // إطارات ومؤقتات التلاشي المعلّقة — تُلغى إن أُزيلت الفسيفساء
+  const pendingFrames = useRef(new Set<number>());
+  const pendingTimers = useRef(new Set<number>());
+  const startedLayers = useRef(new Set<number>());
+  useEffect(() => {
+    const frames = pendingFrames.current;
+    const timers = pendingTimers.current;
+    return () => {
+      frames.forEach(id => cancelAnimationFrame(id));
+      timers.forEach(id => window.clearTimeout(id));
+    };
+  }, []);
+
+  /** انتهى التلاشي: تُحذف الطبقة القديمة ومعها will-change. يُستدعى مرتين
+   *  (transitionend والمؤقت الاحتياطي)، والثاني لا يغيّر شيئاً */
+  const finishFade = useCallback((slotIdx: number, layerId: number) => {
+    setSlots(prev => prev.map((s, i) => (i === slotIdx && top(s).id === layerId && top(s).stage !== 'done' ? [{ ...top(s), stage: 'done' }] : s)));
+  }, []);
+
+  /** الطبقة الجديدة رُكّبت بشفافية 0 وفُكّت صورتها في عنصرها نفسه: بعد إطارين
+   *  (ليرسم المتصفح حالة 0 أولاً) تبدأ بالظهور فوق القديمة */
+  const startFade = (slotIdx: number, layerId: number) => {
+    if (startedLayers.current.has(layerId)) return;
+    startedLayers.current.add(layerId);
+    const outer = requestAnimationFrame(() => {
+      pendingFrames.current.delete(outer);
+      const inner = requestAnimationFrame(() => {
+        pendingFrames.current.delete(inner);
+        setSlots(prev => prev.map((s, i) => (i === slotIdx && top(s).id === layerId && top(s).stage === 'pending' ? [...s.slice(0, -1), { ...top(s), stage: 'fading' }] : s)));
+        const timer = window.setTimeout(() => {
+          pendingTimers.current.delete(timer);
+          finishFade(slotIdx, layerId);
+        }, FADE_FALLBACK_MS);
+        pendingTimers.current.add(timer);
+      });
+      pendingFrames.current.add(inner);
+    });
+    pendingFrames.current.add(outer);
+  };
+
+  const onFadeEnd = (slotIdx: number, layerId: number) => (e: TransitionEvent) => {
+    if (e.target !== e.currentTarget || e.propertyName !== 'opacity') return;
+    finishFade(slotIdx, layerId);
+  };
+
+  /** عنصر صورة الطبقة الجديدة: decode() عليه نفسه يضمن أنها جاهزة للرسم قبل أن
+   *  يبدأ التلاشي، فلا يمضي جزء منه والطبقة فارغة */
+  const decodeThenFade = (slotIdx: number, layerId: number) => (el: HTMLImageElement | null) => {
+    if (!el || startedLayers.current.has(layerId)) return;
+    el.decode().catch(() => {}).finally(() => startFade(slotIdx, layerId));
   };
 
   const onPointerEnter = (e: PointerEvent) => { if (e.pointerType === 'mouse') setHover(true); };
@@ -194,19 +248,24 @@ function Mosaic({ images, count, layout, reduced, sectionName, onOpen }: {
               <>
                 {layers.map((layer, li) => {
                   const isTop = li === layers.length - 1;
+                  // الجديدة وحدها تتحرك من 0 إلى 1، والقديمة تحتها بشفافية 1 حتى تُحذف،
+                  // فلا تظهر خلفية الخانة في منتصف التلاشي
+                  const out = isTop && layer.stage === 'pending';
+                  const anim = isTop && layer.stage !== 'done';
                   return (
                     <span
                       key={layer.id}
                       aria-hidden={isTop ? undefined : true}
-                      className={`absolute inset-0 ${layer.fading ? 'gal-fade' : ''}`}
-                      onAnimationEnd={layer.fading ? onFadeEnd(slotIdx, layer.id) : undefined}
+                      className={`gal-layer absolute inset-0 ${out ? 'gal-layer--out' : ''} ${anim ? 'gal-layer--anim' : ''}`}
+                      onTransitionEnd={isTop && layer.stage === 'fading' ? onFadeEnd(slotIdx, layer.id) : undefined}
                     >
                       <img
+                        ref={isTop && layer.stage === 'pending' ? decodeThenFade(slotIdx, layer.id) : undefined}
                         src={layer.img.url}
                         alt={isTop ? layer.img.ev.title : ''}
                         loading={big ? 'eager' : 'lazy'}
                         decoding="async"
-                        className={`absolute inset-0 w-full h-full object-cover ${big ? 'gal-kb' : ''}`}
+                        className={`absolute inset-0 w-full h-full object-cover ${big ? `gal-kb-${layer.zoom}` : ''}`}
                         onError={() => markFailed(layer.img.key)}
                       />
                     </span>

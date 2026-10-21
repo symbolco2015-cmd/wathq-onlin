@@ -73,17 +73,24 @@ body{
   100% { transform: translateX(60vw) skewX(-14deg); opacity: 0; }
 }
 
-/* فسيفساء «لمحات» (PublicGallery): الطبقة الجديدة في الخانة تظهر بتلاشٍ فوق
-   القديمة، وwill-change عليها أثناء التلاشي فقط (يُزال الصنف عند انتهائه).
-   الكبيرة تُكبَّر ببطء من 1 إلى 1.04 خلال 24 ثانية ثم تثبت، وتتجمّد مع أي توقف.
-   الاستثناء من مدد الحركة موثّق في DESIGN.md. */
-@keyframes wathq-gal-fade{from{opacity:0}to{opacity:1}}
-@keyframes wathq-kenburns{from{transform:scale(1)}to{transform:scale(1.04)}}
-.gal-fade{animation:wathq-gal-fade 700ms var(--sp) both;will-change:opacity}
-.gal-kb{animation:wathq-kenburns 24s linear forwards}
-.gal--paused .gal-kb{animation-play-state:paused}
+/* فسيفساء «لمحات» (PublicGallery): الجديدة تُركَّب بـ --out (شفافية 0) فوق
+   القديمة، ثم يُزال عنها فتظهر وحدها (easeInOutQuad، متماثل وبطيء الطرفين)،
+   والقديمة تحتها بشفافية 1 حتى تُحذف، فلا تظهر خلفية الخانة. will-change على
+   الجديدة أثناء التلاشي فقط. الكبيرة تُكبَّر ببطء خلال 24 ثانية ثم تثبت، ويتناوب
+   الاتجاه (in: من 1 إلى 1.04، out: العكس) مع كل صورة جديدة، وتتجمّد مع أي توقف.
+   الاستثناء موثّق في DESIGN.md. */
+@keyframes wathq-kenburns-in{from{transform:scale(1)}to{transform:scale(1.04)}}
+@keyframes wathq-kenburns-out{from{transform:scale(1.04)}to{transform:scale(1)}}
+.gal-layer{opacity:1;transition:opacity 1200ms cubic-bezier(.45,0,.55,1)}
+.gal-layer--out{opacity:0}
+.gal-layer--anim{will-change:opacity}
+.gal-kb-in{animation:wathq-kenburns-in 24s linear forwards}
+.gal-kb-out{animation:wathq-kenburns-out 24s linear forwards}
+.gal--paused :is(.gal-kb-in,.gal-kb-out){animation-play-state:paused}
 @media (prefers-reduced-motion:reduce){
-  .gal-fade,.gal-kb{animation:none;will-change:auto}
+  .gal-layer{transition:none}
+  .gal-layer--anim{will-change:auto}
+  .gal-kb-in,.gal-kb-out{animation:none}
 }
 
 /*──────────────────────────────────────────────

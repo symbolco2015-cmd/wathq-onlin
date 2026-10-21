@@ -4,7 +4,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { toEvRow } from '../indicators';
-import { extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from './EvidenceViewer';
+import { ExtraFilesBadge, ExtraFilesPrintLine, extractYouTubeId, publicKind, type PublicKind, type ViewerItem } from './EvidenceViewer';
 import { LevelBadge, nEv, type Level } from './SectionView';
 import type { PublicResultsAnalysisRow } from './ResultsAnalysis/types';
 import type { ComparisonPoint } from './ResultsAnalysis/logic';
@@ -222,6 +222,7 @@ export function CoreSectionBody({ groups, summary, onActivate }: {
                   )}
                 </span>
                 <span className="shrink-0 flex items-center gap-1 text-[length:var(--fs-xs)] text-[var(--t3)] whitespace-nowrap">
+                  <ExtraFilesBadge n={e.extraCount} />
                   {isLink && <i className="ti ti-external-link text-[16px]"></i>}
                   {e.date}
                 </span>
@@ -252,6 +253,8 @@ export function CoreSectionBody({ groups, summary, onActivate }: {
  *  رابط+دومين / ملاحظة. القابل للمعاينة <button>، والرابط العادي <a> في تبويب جديد.
  *  eager: نسخة الطباعة، حتى تُحمَّل الصور قبل حوار الطباعة. */
 function EvidenceThumb({ e, onClick, eager }: { e: ViewerItem; onClick?: (e: ViewerItem) => void; eager?: boolean }) {
+  // ملفات بعد الغلاف: شارة على الشاشة، وسطر «+N ملفات» في الطباعة
+  const extra = Math.max(0, (e.files?.length ?? 0) - 1);
   const loading = eager ? 'eager' : 'lazy';
   const activate = (ev: React.MouseEvent<HTMLButtonElement>) => {
     ev.currentTarget.focus();
@@ -261,10 +264,16 @@ function EvidenceThumb({ e, onClick, eager }: { e: ViewerItem; onClick?: (e: Vie
   const nameCls = 'text-[length:var(--fs-xs)] font-bold text-[var(--t1)] truncate';
 
   if (e.kind === 'img' && e.url) {
-    const img = <img src={e.url} alt={e.name} loading={loading} className="w-full h-[88px] object-cover rounded-[var(--r-sm)] border border-[var(--bd)]" />;
+    const img = (
+      <>
+        <img src={e.url} alt={e.name} loading={loading} className="w-full h-[88px] object-cover rounded-[var(--r-sm)] border border-[var(--bd)]" />
+        <ExtraFilesBadge n={extra} overlay />
+        <ExtraFilesPrintLine n={extra} />
+      </>
+    );
     return onClick
-      ? <button type="button" onClick={activate} aria-label={e.name} className="block w-full cursor-pointer">{img}</button>
-      : img;
+      ? <button type="button" onClick={activate} aria-label={e.name} className="relative block w-full cursor-pointer">{img}</button>
+      : <div className="relative">{img}</div>;
   }
 
   const ytId = e.url ? extractYouTubeId(e.url) : null;
@@ -300,7 +309,11 @@ function EvidenceThumb({ e, onClick, eager }: { e: ViewerItem; onClick?: (e: Vie
       <span className="w-8 h-8 shrink-0 flex items-center justify-center rounded-[var(--r-sm)] bg-[var(--s1)] text-[var(--t2)] text-[16px] print:hidden">
         <i className={`ti ${KIND_ICON[e.kind]}`}></i>
       </span>
-      <span className={nameCls}>{e.name}</span>
+      <span className="min-w-0 flex-1">
+        <span className={`block ${nameCls}`}>{e.name}</span>
+        <ExtraFilesPrintLine n={extra} />
+      </span>
+      <ExtraFilesBadge n={extra} />
     </>
   );
   return clickable

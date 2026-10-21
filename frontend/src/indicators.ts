@@ -1,5 +1,6 @@
 import type { SectionData, SectionIndicator } from './types';
-import type { SupabaseEvidence } from './hooks/useSupabaseEvidence';
+import { evidenceFiles, type SupabaseEvidence } from './hooks/useSupabaseEvidence';
+import type { ViewerFile } from './components/EvidenceViewer';
 import { supabaseEvidenceTypeToLocal, formatDate } from './utils';
 
 // شكل العرض الذي كانت تستخدمه صفوف المؤشرات مع ev القديم في portfolios.state، مشتقّاً الآن
@@ -11,6 +12,10 @@ export function toEvRow(e: SupabaseEvidence) {
     name: e.title,
     date: formatDate(e.created_at, 'long'),
     url: e.file_url ?? e.link_url ?? undefined,
+    /** كل ملفات الشاهد (الغلاف أولاً) لنافذة العرض */
+    files: evidenceFiles(e).map((f): ViewerFile => ({ kind: f.type === 'image' ? 'img' : 'pdf', url: f.url, name: f.name })),
+    /** عدد الملفات بعد الغلاف — شارة «+N» */
+    extraCount: e.extra_files?.length ?? 0,
   };
 }
 

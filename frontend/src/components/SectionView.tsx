@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import type { SectionData, SectionIndicator } from '../types';
 import type { SupabaseEvidence, EvidenceType } from '../hooks/useSupabaseEvidence';
 import { AR_EVIDENCE, countAr, formatDate, isEvidenceLocked } from '../utils';
-import EvidenceViewer, { publicKind } from './EvidenceViewer';
+import EvidenceViewer, { ExtraFilesBadge, publicKind } from './EvidenceViewer';
+import { toEvRow } from '../indicators';
 import {
   CUSTOM_INDICATOR_LIMIT, CUSTOM_LIMIT_MSG, CUSTOM_NAME_MAX, validateIndicatorName,
   type IndicatorResult,
@@ -287,6 +288,7 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
       <span className="min-w-0 flex-1 text-right">
         <span className="flex items-center gap-1.5 min-w-0">
           <b dir="auto" className="block min-w-0 font-normal text-[length:var(--fs-sm)] text-[var(--t1)] whitespace-nowrap overflow-hidden text-ellipsis">{ev.title}</b>
+          <ExtraFilesBadge n={ev.extra_files?.length ?? 0} />
           {pinned && (
             <span className="inline-flex items-center gap-1 shrink-0 rounded-[var(--r-full)] bg-[var(--s2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold whitespace-nowrap text-[var(--gold)]">
               <i className="ti ti-pin" />أبرز إنجاز
@@ -316,7 +318,7 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
       {/* بوابة إلى body: لا يحدّها سياق تكديس في الشاشة */}
       {viewing && createPortal(
         <EvidenceViewer
-          item={{ kind: publicKind(ev), name: ev.title, url, description: ev.description, meta: formatDate(ev.created_at, 'long') }}
+          item={{ kind: publicKind(ev), name: ev.title, url, files: toEvRow(ev).files, description: ev.description, meta: formatDate(ev.created_at, 'long') }}
           onClose={() => setViewing(false)}
         />,
         document.body,

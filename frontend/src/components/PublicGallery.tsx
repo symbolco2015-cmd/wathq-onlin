@@ -1,6 +1,7 @@
 // معرض «لمحات من الممارسة الصفية» — .gal في pub() بـ docs/design/wathq-prototype.html.
 import { useState } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
+import { ExtraFilesBadge } from './EvidenceViewer';
 
 /** سطح المكتب يعرض 5، والجوال يُخفي الخامس بـ CSS (4) */
 const GALLERY_MAX = 5;
@@ -53,6 +54,7 @@ function TileMedia({ e, onFail }: { e: SupabaseEvidence; onFail: () => void }) {
           <i className="ti ti-player-play text-[16px]"></i>
         </span>
       )}
+      <ExtraFilesBadge n={e.extra_files?.length ?? 0} overlay />
     </>
   );
 }

@@ -3,6 +3,18 @@ import { supabase } from '../supabaseClient';
 
 export type EvidenceType = 'file' | 'image' | 'link' | 'note' | 'audio' | 'video';
 
+/** ملف في الشاهد: الغلاف (file_url + evidence_type) أو أحد extra_files.
+ *  type بقيم evidence_type نفسها، للصور والمستندات فقط. */
+export interface EvidenceFile {
+  url: string;
+  type: 'image' | 'file';
+  name?: string;
+  size?: number;
+}
+
+/** أقصى عدد ملفات في الشاهد الواحد: الغلاف + 4 في extra_files (قيد في القاعدة) */
+export const MAX_EVIDENCE_FILES = 5;
+
 export interface SupabaseEvidence {
   id: string;
   portfolio_id: string;
@@ -27,9 +39,19 @@ export interface SupabaseEvidence {
   strategy_id: string | null;
   /** المعلم أخفى الشاهد من معرض «لمحات» — للصور والفيديو */
   hidden_from_gallery?: boolean;
+  /** الملفات بعد الغلاف (0..4). اختياري: لقطات تقرير الحصاد القديمة بلا الحقل */
+  extra_files?: EvidenceFile[];
 }
 
-/** الحقول التي يسمح نموذج التعديل بتغييرها — لا ملف ولا نوع ولا قسم */
+/** كل ملفات الشاهد بالترتيب، الغلاف أولاً. [] لشاهد غلافه ليس صورة ولا ملفاً
+ *  (رابط، ملاحظة، فيديو، صوت). */
+export function evidenceFiles(e: Pick<SupabaseEvidence, 'file_url' | 'evidence_type' | 'extra_files'>): EvidenceFile[] {
+  if (!e.file_url || (e.evidence_type !== 'image' && e.evidence_type !== 'file')) return [];
+  return [{ url: e.file_url, type: e.evidence_type }, ...(e.extra_files ?? [])];
+}
+
+/** الحقول التي يسمح نموذج التعديل بتغييرها — لا قسم. الملفات والنوع لشاهد
+ *  الصور والملفات فقط، والنوع يتبع الغلاف. */
 export interface EvidenceUpdatePatch {
   title?: string;
   description?: string | null;
@@ -41,11 +63,15 @@ export interface EvidenceUpdatePatch {
   frequency?: 'weekly' | 'semester' | null;
   /** NOT NULL في القاعدة */
   indicator_id?: string;
+  file_url?: string;
+  evidence_type?: 'image' | 'file';
+  extra_files?: EvidenceFile[];
 }
 
 const EDITABLE_FIELDS: (keyof EvidenceUpdatePatch)[] = [
   'title', 'description', 'impact', 'context_grade', 'context_subject',
   'academic_term', 'self_reflection', 'frequency', 'indicator_id',
+  'file_url', 'evidence_type', 'extra_files',
 ];
 
 // روابط Supabase العلنية تتبع الصيغة: .../storage/v1/object/public/<bucket>/<path>
@@ -53,7 +79,7 @@ const EDITABLE_FIELDS: (keyof EvidenceUpdatePatch)[] = [
 // شواهد مختلفة (مثل 'video') تُخزَّن في bucket مستقل (evidence-video).
 const PUBLIC_URL_MARKER = '/storage/v1/object/public/';
 
-const getBucketAndPathFromUrl = (publicUrl: string): { bucket: string; path: string } | null => {
+export const getBucketAndPathFromUrl = (publicUrl: string): { bucket: string; path: string } | null => {
   if (!publicUrl) return null;
   const markerIdx = publicUrl.indexOf(PUBLIC_URL_MARKER);
   if (markerIdx === -1) return null;
@@ -98,6 +124,7 @@ export function useSupabaseEvidence(
     academic_term?: string;
     evidence_type: EvidenceType;
     file_url?: string;
+    extra_files?: EvidenceFile[];
     link_url?: string;
     self_reflection?: string;
     frequency?: 'weekly' | 'semester';
@@ -184,11 +211,16 @@ export function useSupabaseEvidence(
       throw new Error('لم يُحذف الشاهد من قاعدة البيانات');
     }
 
+    // الغلاف والملفات الإضافية، مجمّعة حسب الحاوية
     if (evItem?.file_url) {
-      const parsed = getBucketAndPathFromUrl(evItem.file_url);
-      if (parsed) {
+      const byBucket = new Map<string, string[]>();
+      for (const url of [evItem.file_url, ...(evItem.extra_files ?? []).map(f => f.url)]) {
+        const parsed = getBucketAndPathFromUrl(url);
+        if (parsed) byBucket.set(parsed.bucket, [...(byBucket.get(parsed.bucket) ?? []), parsed.path]);
+      }
+      for (const [bucket, paths] of byBucket) {
         try {
-          const { error: storageError } = await supabase.storage.from(parsed.bucket).remove([parsed.path]);
+          const { error: storageError } = await supabase.storage.from(bucket).remove(paths);
           if (storageError) {
             console.error('[Supabase Evidence] فشل حذف الملف من Storage:', storageError.message, storageError);
           }

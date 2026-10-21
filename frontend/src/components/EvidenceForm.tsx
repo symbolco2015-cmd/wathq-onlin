@@ -1,7 +1,8 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../supabaseClient';
-import type { EvidenceType, SupabaseEvidence } from '../hooks/useSupabaseEvidence';
+import { evidenceFiles, getBucketAndPathFromUrl, MAX_EVIDENCE_FILES } from '../hooks/useSupabaseEvidence';
+import type { EvidenceFile, EvidenceType, SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import { useSaveEvidence } from '../hooks/useSaveEvidence';
 import type { OnEvidenceSavedFn } from '../hooks/useSaveEvidence';
@@ -65,15 +66,17 @@ export interface EvidenceFormProps {
   /** يُمرَّر من زر «+» على بطاقة مؤشر في شاشة القسم — يُضبط قيمةً ابتدائية
    *  للمؤشر بعد تحميل مؤشرات القسم إن كان ضمنها، وإلا يبقى فارغاً. */
   indicatorId?: string;
-  /** 'edit' يفتح النموذج على شاهد موجود (initial): لا رفع ولا حذف لأي ملف،
-   *  والنوع والمرفق للعرض فقط. الافتراضي 'add'. */
+  /** 'edit' يفتح النموذج على شاهد موجود (initial). شاهد الصور والملفات تُضاف
+   *  إليه ملفات وتُحذف ويتغير غلافه، والملف المحذوف يُحذف من Storage بعد نجاح
+   *  الحفظ فقط. غيره (فيديو، رابط، ملاحظة، صوت) نوعه ومرفقه للعرض فقط.
+   *  الافتراضي 'add'. */
   mode?: 'add' | 'edit';
   initial?: ExistingEvidence;
 }
 
 /** الشاهد الموجود الذي يُفتح عليه وضع التعديل */
 export type ExistingEvidence = Pick<SupabaseEvidence,
-  'id' | 'evidence_type' | 'file_url' | 'link_url' | 'title' | 'description' | 'impact' |
+  'id' | 'evidence_type' | 'file_url' | 'extra_files' | 'link_url' | 'title' | 'description' | 'impact' |
   'context_grade' | 'context_subject' | 'academic_term' | 'self_reflection' | 'frequency' | 'indicator_id' | 'strategy_id'>;
 
 /** ما تكشفه EvidenceForm لحاويتها (EvidenceModal / BottomSheet): كل طرق
@@ -120,6 +123,67 @@ const FILE_ACCEPT = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ].join(',');
 
+/** نوعا «صورة» و«ملف» يقبلان الصور والمستندات معاً في الشاهد الواحد */
+const MULTI_ACCEPT = `image/*,${FILE_ACCEPT}`;
+/** حاوية الصور والمستندات وحد حجم الملف — كما لنوعي «صورة» و«ملف» */
+const MULTI_BUCKET = 'evidence';
+const MULTI_MAX_MB = 10;
+
+/** نوعا الشاهد اللذان يحملان عدة ملفات */
+const isMultiFileType = (t: EvidenceType): t is 'image' | 'file' => t === 'image' || t === 'file';
+
+/** ملف في قائمة ملفات الشاهد داخل النموذج. العنصر الأول هو الغلاف.
+ *  existing: موجود قبل فتح النموذج (ملف الشاهد في التعديل، أو ملف prefill) —
+ *  لا يحذفه النموذج من Storage إلا بعد نجاح حفظ التعديل.
+ *  stored: رفعه النموذج في هذه الجلسة. */
+interface FileItem {
+  key: string;
+  status: 'uploading' | 'done' | 'failed';
+  url: string;
+  type: 'image' | 'file';
+  name: string;
+  size: number;
+  /** معاينة الصورة — object URL محلي أو الرابط العام */
+  thumb: string;
+  /** الملف المحلي: لإعادة المحاولة وللاقتراح من الصورة */
+  file?: File;
+  stored?: StoredFile;
+  existing: boolean;
+}
+
+const newKey = () => `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+/** أيقونة الملف من امتداد اسمه */
+const fileIconFor = (name: string): string => {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'pdf') return 'ti-file-type-pdf';
+  if (ext === 'doc' || ext === 'docx') return 'ti-file-type-doc';
+  if (ext === 'xls' || ext === 'xlsx') return 'ti-file-type-xls';
+  if (ext === 'ppt' || ext === 'pptx') return 'ti-file-type-ppt';
+  return 'ti-file';
+};
+
+/** اسم الملف من رابطه العام (لملفات الشاهد الموجودة بلا name) */
+const nameFromUrl = (url: string): string => {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '') || 'ملف';
+  } catch {
+    return 'ملف';
+  }
+};
+
+const itemsFromFiles = (files: EvidenceFile[]): FileItem[] => files.map(f => ({
+  key: newKey(), status: 'done', url: f.url, type: f.type, name: f.name || nameFromUrl(f.url),
+  size: f.size ?? 0, thumb: f.type === 'image' ? f.url : '', existing: true,
+}));
+
+const toEvidenceFile = (it: FileItem): EvidenceFile => ({
+  url: it.url, type: it.type, name: it.name, ...(it.size > 0 ? { size: it.size } : {}),
+});
+
+/** بصمة القائمة لمقارنة «التسخ»: الروابط بترتيبها */
+const filesSignature = (items: FileItem[]): string => items.map(i => i.url || i.key).join('|');
+
 // الترتيب مطابق لـ TYPES في النموذج الأولي
 const TYPE_CONFIG: {
   id: EvidenceType;
@@ -136,8 +200,8 @@ const TYPE_CONFIG: {
    *  (evidence-video، 50MB) دون التأثير على حد bucket evidence الأصلي (10MB). */
   bucket: string;
 }[] = [
-  { id: 'image', icon: 'ti-photo',         label: 'صورة',   accept: 'image/*',                   hint: 'JPG · PNG · WEBP · حتى 10MB',            pickLabel: 'اختر صورة',  hasFile: true,  hasLink: false, maxSizeMB: 10, bucket: 'evidence' },
-  { id: 'file',  icon: 'ti-file-type-pdf', label: 'ملف',    accept: FILE_ACCEPT,                 hint: 'PDF · Word · Excel · PowerPoint · حتى 10MB', pickLabel: 'اختر ملفاً', hasFile: true,  hasLink: false, maxSizeMB: 10, bucket: 'evidence' },
+  { id: 'image', icon: 'ti-photo',         label: 'صورة',   accept: MULTI_ACCEPT,                hint: 'JPG · PNG · WEBP، ومعها PDF وOffice · حتى 5 ملفات · 10MB للملف', pickLabel: 'اختر صوراً', hasFile: true,  hasLink: false, maxSizeMB: 10, bucket: 'evidence' },
+  { id: 'file',  icon: 'ti-file-type-pdf', label: 'ملف',    accept: MULTI_ACCEPT,                hint: 'PDF · Word · Excel · PowerPoint، ومعها الصور · حتى 5 ملفات · 10MB للملف', pickLabel: 'اختر ملفات', hasFile: true,  hasLink: false, maxSizeMB: 10, bucket: 'evidence' },
   { id: 'link',  icon: 'ti-link',          label: 'رابط',   accept: undefined,                   hint: '',                                        pickLabel: '',          hasFile: false, hasLink: true,  maxSizeMB: 0,  bucket: '' },
   { id: 'video', icon: 'ti-video',         label: 'فيديو',  accept: 'video/mp4,video/quicktime', hint: 'MP4 · MOV · حتى 50MB',                   pickLabel: 'اختر فيديو', hasFile: true,  hasLink: false, maxSizeMB: 50, bucket: 'evidence-video' },
   { id: 'note',  icon: 'ti-notes',         label: 'ملاحظة', accept: undefined,                   hint: '',                                        pickLabel: '',          hasFile: false, hasLink: false, maxSizeMB: 0,  bucket: '' },
@@ -204,6 +268,8 @@ interface FormValues {
   frequency: 'weekly' | 'semester' | '';
   writeFromScratch: boolean;
   fileUrl: string;
+  /** ملفات الصور والمستندات (filesSignature) */
+  filesSig: string;
 }
 
 // ── عناصر عرض صغيرة ───────────────────────────────────────────────
@@ -276,6 +342,22 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   const [uploading,      setUploading]      = useState(false);
   const [uploadSuccess,  setUploadSuccess]  = useState(false);
 
+  // ── ملفات الصور والمستندات (حتى 5، الأول غلاف) — الفيديو بالحالة أعلاه ──
+  const [items,     setItemsState] = useState<FileItem[]>([]);
+  /** أحدث قائمة للدوال غير المتزامنة (الرفع يكتمل بعد تغيّرها) */
+  const itemsRef = useRef<FileItem[]>([]);
+  const setItems = (fn: (prev: FileItem[]) => FileItem[]) => setItemsState(prev => {
+    const next = fn(prev);
+    itemsRef.current = next;
+    return next;
+  });
+  /** تقدّم دفعة الرفع الحالية («جارٍ رفع 2 من 3») */
+  const [batch,     setBatch]     = useState<{ done: number; total: number } | null>(null);
+  const [limitHit,  setLimitHit]  = useState(false);
+  /** ملف prefill: ملف واحد كما اليوم، فلا إضافة */
+  const [singleOnly, setSingleOnly] = useState(false);
+  const multiInputRef = useRef<HTMLInputElement>(null);
+
   // ── استيراد من رابط (Beta) — بديل لاختيار ملف من الجهاز ──
   const [linkImportFeatureEnabled, setLinkImportFeatureEnabled] = useState(false);
   const [showLinkImport,           setShowLinkImport]           = useState(false);
@@ -289,7 +371,6 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   const [indicatorsStatus, setIndicatorsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   // ── اقتراح تلقائي من الصورة (Beta) — قرار مستقل لكل حقل ─────
-  const [aiSelectedFile,          setAiSelectedFile]          = useState<File | null>(null);
   const [aiConsentPromptOpen,     setAiConsentPromptOpen]     = useState(false);
   const [aiLoading,               setAiLoading]               = useState(false);
   const [aiTitleSuggestion,       setAiTitleSuggestion]       = useState('');
@@ -335,7 +416,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   const revokeThumb = (url: string) => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
 
   const resetAiSuggestion = () => {
-    setAiSelectedFile(null); setAiConsentPromptOpen(false); setAiLoading(false);
+    setAiConsentPromptOpen(false); setAiLoading(false);
     setAiTitleSuggestion(''); setAiIndicatorSuggestion(null); setAiDescriptionSuggestion(''); setAiSuggestionAttempted(false);
   };
 
@@ -345,16 +426,23 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     const pf = opts.usePrefill ? prefill : undefined;
     // وضع التعديل: القيم الابتدائية من الشاهد نفسه، فلا يُعدّ النموذج «متسخاً» قبل أي تغيير
     const ex = isEdit ? initial : undefined;
+    // ملفات الصور والمستندات: ملفات الشاهد في التعديل، أو ملف prefill (يملكه من رفعه)
+    const initItems: FileItem[] = ex
+      ? itemsFromFiles(evidenceFiles(ex))
+      : pf ? itemsFromFiles([{ url: pf.fileUrl, type: 'image', name: pf.fileName }]) : [];
     const init: FormValues = ex ? {
       title: ex.title ?? '', indicatorId: ex.indicator_id ?? '', evidenceType: ex.evidence_type,
       description: ex.description ?? '', impact: ex.impact ?? '', contextGrade: ex.context_grade ?? '',
       academicTerm: ex.academic_term ?? '', selfReflection: ex.self_reflection ?? '', linkUrl: ex.link_url ?? '',
       contextSubject: ex.context_subject ?? '', frequency: ex.frequency ?? '', writeFromScratch: false,
-      fileUrl: ex.file_url ?? '',
+      // fileUrl لمرفق الفيديو والصوت فقط؛ الصور والمستندات في filesSig
+      fileUrl: isMultiFileType(ex.evidence_type) ? '' : ex.file_url ?? '',
+      filesSig: filesSignature(initItems),
     } : {
       title: pf?.title ?? '', indicatorId: opts.keepIndicatorId ?? '', evidenceType: 'image',
       description: '', impact: '', contextGrade: '', academicTerm: '', selfReflection: '', linkUrl: '',
-      contextSubject: '', frequency: '', writeFromScratch: false, fileUrl: pf?.fileUrl ?? '',
+      contextSubject: '', frequency: '', writeFromScratch: false, fileUrl: '',
+      filesSig: filesSignature(initItems),
     };
     initialRef.current = init;
     sessionSeqRef.current += 1;
@@ -364,10 +452,13 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     setTitle(init.title); setIndicatorId(init.indicatorId); setEvidenceType(init.evidenceType);
     setDescription(init.description); setImpact(init.impact); setContextGrade(init.contextGrade);
     setAcademicTerm(init.academicTerm); setSelfReflection(init.selfReflection); setLinkUrl(init.linkUrl);
-    setThumbUrl(prev => { revokeThumb(prev); return pf?.fileUrl ?? ''; });
-    setFileUrl(init.fileUrl); setFileName(pf?.fileName ?? ''); setFileSize(0);
-    setUploadSuccess(!!pf); setUploading(false);
+    setThumbUrl(prev => { revokeThumb(prev); return ''; });
+    setFileUrl(init.fileUrl); setFileName(''); setFileSize(0);
+    setUploadSuccess(false); setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    setItems(prev => { prev.forEach(i => revokeThumb(i.thumb)); return initItems; });
+    setBatch(null); setLimitHit(false); setSingleOnly(!ex && !!pf);
+    if (multiInputRef.current) multiInputRef.current.value = '';
     setContextSubject(init.contextSubject); setFrequency(init.frequency); setWriteFromScratch(false); setSelectedTemplateId('');
     setShowLinkImport(false); setLinkImportUrl(''); setLinkImportLoading(false);
     resetAiSuggestion();
@@ -497,7 +588,17 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       : { icon: 'ti-file-text', label: 'ملف' };
   const currentIndicator = indicators.find(ind => ind.id === indicatorId) ?? null;
 
-  const isAiSuggestionEligible = aiFeatureEnabled && evidenceType === 'image';
+  /** شاهد صور ومستندات: قائمة ملفات بدل مرفق واحد. في التعديل: شاهد له غلاف فقط */
+  const isMulti = !writeFromScratch && isMultiFileType(evidenceType) && (!isEdit || !!initial?.file_url);
+  const maxFiles = singleOnly ? 1 : MAX_EVIDENCE_FILES;
+  const doneItems = items.filter(i => i.status === 'done');
+  const failedItem = items.find(i => i.status === 'failed');
+  const multiBusy = items.some(i => i.status === 'uploading');
+  const canAddMore = items.length < maxFiles;
+  /** أول صورة رُفعت في هذه الجلسة، بترتيب القائمة — للاقتراح من الصورة */
+  const aiImageFile = isMulti ? items.find(i => i.type === 'image' && i.status === 'done' && i.file)?.file ?? null : null;
+
+  const isAiSuggestionEligible = aiFeatureEnabled && isMulti && !isEdit;
 
   // ── الملفات اليتيمة ──────────────────────────────────────────
   /** يحذف الملف المرفق حالياً من Storage إن رفعه النموذج في هذه الجلسة.
@@ -510,9 +611,20 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     removeFromStorage([cur]);
   };
 
-  /** يفك المرفق الحالي عن النموذج (ويحذفه إن كان يتيماً) */
+  /** يُخرج ملفاً رفعه النموذج من قائمة الجلسة ويحذفه من Storage */
+  const discardStored = (f: StoredFile) => {
+    sessionUploadsRef.current = sessionUploadsRef.current.filter(s => !(s.bucket === f.bucket && s.path === f.path));
+    removeFromStorage([f]);
+  };
+
+  /** يفك المرفق الحالي عن النموذج (ويحذفه إن كان يتيماً): مرفق الفيديو، وكل
+   *  ملفات القائمة. ما رُفع في الجلسة يُحذف، والموجود (existing) لا يُمس. */
   const clearAttachment = () => {
     discardCurrentUpload();
+    itemsRef.current.forEach(i => { if (i.stored) discardStored(i.stored); revokeThumb(i.thumb); });
+    setItems(() => []);
+    setBatch(null); setLimitHit(false);
+    if (multiInputRef.current) multiInputRef.current.value = '';
     setFileUrl(''); setFileName(''); setFileSize(0); setUploadSuccess(false);
     setThumbUrl(prev => { revokeThumb(prev); return ''; });
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -528,10 +640,11 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   const isDirty = (): boolean => {
     const init = initialRef.current;
     if (!init) return false;
-    if (uploading || linkImportLoading || sessionUploadsRef.current.length > 0) return true;
+    if (uploading || multiBusy || linkImportLoading || sessionUploadsRef.current.length > 0) return true;
     const now: FormValues = {
       title, indicatorId, evidenceType, description, impact, contextGrade, academicTerm,
       selfReflection, linkUrl, contextSubject, frequency, writeFromScratch, fileUrl,
+      filesSig: filesSignature(items),
     };
     return (Object.keys(now) as (keyof FormValues)[]).some(k => now[k] !== init[k]);
   };
@@ -556,6 +669,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
 
   // ── اقتراح تلقائي من الصورة (Beta) ───────────────────────────
   const runAiSuggestion = async () => {
+    const aiSelectedFile = aiImageFile;
     if (!aiSelectedFile || !supabase) return;
     setAiLoading(true);
     setAiTitleSuggestion('');
@@ -702,6 +816,8 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
 
   const changeType = (type: EvidenceType) => {
     if (type === evidenceType) return;
+    // «صورة» و«ملف» يتشاركان القائمة نفسها، فالتنقل بينهما لا يمسح الملفات
+    if (isMultiFileType(type) && isMultiFileType(evidenceType)) { setEvidenceType(type); return; }
     clearAttachment();
     setEvidenceType(type);
     setLinkUrl('');
@@ -723,7 +839,125 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     setWriteFromScratch(w => !w);
   };
 
-  // ── File upload ───────────────────────────────────────────────
+  // ── ملفات الصور والمستندات ────────────────────────────────────
+  const patchItem = (key: string, patch: Partial<FileItem>) =>
+    setItems(prev => prev.map(i => (i.key === key ? { ...i, ...patch } : i)));
+
+  /** يرفع ملف عنصر واحد إلى evidence/{uid}/. عنصر أُزيل أو نموذج أُغلق أثناء
+   *  الرفع ⇐ الملف يتيم من لحظته فيُحذف. */
+  const uploadItem = async (key: string, original: File, seq: number) => {
+    try {
+      let fileToUpload: File = original;
+      if (original.type.startsWith('image/')) {
+        try {
+          // خيارات الضغط نفسها في handleFileChange
+          const options = { maxSizeMB: 0.5, initialQuality: 0.85, maxWidthOrHeight: 1600, useWebWorker: false };
+          const compressed = await imageCompression(original, options);
+          fileToUpload = compressed.size < original.size ? compressed : original;
+        } catch (compressErr) {
+          console.warn('[EvidenceForm] فشل ضغط الصورة، تم استخدام الملف الأصلي:', compressErr);
+        }
+      }
+
+      const ext      = original.name.split('.').pop();
+      const rand     = Math.random().toString(36).substring(2, 9);
+      const filePath = `${userId ?? 'guest'}/${Date.now()}_${rand}.${ext}`;
+      const gone = () => seq !== sessionSeqRef.current || !itemsRef.current.some(i => i.key === key);
+
+      let publicUrl: string;
+      let stored: StoredFile | undefined;
+      if (userId && supabase) {
+        const { error } = await supabase.storage
+          .from(MULTI_BUCKET)
+          .upload(filePath, fileToUpload, { cacheControl: '3600', upsert: false });
+        if (error) throw error;
+        stored = { bucket: MULTI_BUCKET, path: filePath };
+        if (gone()) { removeFromStorage([stored]); return; }
+        sessionUploadsRef.current = [...sessionUploadsRef.current, stored];
+        publicUrl = supabase.storage.from(MULTI_BUCKET).getPublicUrl(filePath).data.publicUrl;
+      } else {
+        await new Promise(r => setTimeout(r, 1200));
+        if (gone()) return;
+        publicUrl = URL.createObjectURL(fileToUpload);
+      }
+
+      const thumb = fileToUpload.type.startsWith('image/') ? URL.createObjectURL(fileToUpload) : '';
+      patchItem(key, { status: 'done', url: publicUrl, size: fileToUpload.size, thumb, file: fileToUpload, stored });
+    } catch (err) {
+      if (seq !== sessionSeqRef.current) return;
+      console.warn('[EvidenceForm] تعذّر رفع الملف:', original.name, err);
+      patchItem(key, { status: 'failed' });
+    }
+  };
+
+  /** يرفع عناصر بالتتابع، مع تقدّم واحد للدفعة */
+  const uploadBatch = async (batchItems: { key: string; file: File }[]) => {
+    const seq = sessionSeqRef.current;
+    setBatch({ done: 0, total: batchItems.length });
+    for (let n = 0; n < batchItems.length; n++) {
+      if (seq !== sessionSeqRef.current) return;
+      await uploadItem(batchItems[n].key, batchItems[n].file, seq);
+      if (seq === sessionSeqRef.current) setBatch({ done: n + 1, total: batchItems.length });
+    }
+    if (seq === sessionSeqRef.current) setBatch(null);
+  };
+
+  const handleMultiChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    if (multiInputRef.current) multiInputRef.current.value = '';
+    if (picked.length === 0) return;
+
+    clearErr('file');
+    const tooBig = picked.filter(f => f.size > MULTI_MAX_MB * 1024 * 1024);
+    const fits = picked.filter(f => f.size <= MULTI_MAX_MB * 1024 * 1024);
+    const room = Math.max(0, maxFiles - itemsRef.current.length);
+    const accepted = fits.slice(0, room);
+    setLimitHit(fits.length > room && maxFiles > 1);
+    if (tooBig.length > 0) {
+      setErrors(prev => ({ ...prev, file: `حجم الملف يتجاوز ${MULTI_MAX_MB}MB: ${tooBig.map(f => f.name).join('، ')}` }));
+    }
+    if (accepted.length === 0) return;
+
+    const added: FileItem[] = accepted.map(f => ({
+      key: newKey(), status: 'uploading', url: '', type: f.type.startsWith('image/') ? 'image' : 'file',
+      name: f.name, size: f.size, thumb: '', file: f, existing: false,
+    }));
+    setItems(prev => [...prev, ...added]);
+    // العنوان من اسم أول ملف فقط إن كان فارغاً وكان الاسم ذا معنى
+    const suggestedTitle = titleFromFileName(accepted[0].name);
+    if (suggestedTitle) {
+      setTitle(prev => prev.trim() ? prev : suggestedTitle);
+      clearErr('title');
+    }
+    void uploadBatch(added.map(i => ({ key: i.key, file: i.file as File })));
+  };
+
+  const retryItem = (key: string) => {
+    const it = itemsRef.current.find(i => i.key === key);
+    if (!it?.file || it.status !== 'failed') return;
+    clearErr('file');
+    patchItem(key, { status: 'uploading' });
+    void uploadBatch([{ key, file: it.file }]);
+  };
+
+  /** ✕: ما رُفع في الجلسة يُحذف من Storage فوراً. الموجود (existing) يُزال من
+   *  القائمة فقط، ويُحذف من Storage بعد نجاح حفظ التعديل. */
+  const removeItem = (key: string) => {
+    const it = itemsRef.current.find(i => i.key === key);
+    if (!it) return;
+    if (it.stored) discardStored(it.stored);
+    revokeThumb(it.thumb);
+    setItems(prev => prev.filter(i => i.key !== key));
+    setLimitHit(false);
+    clearErr('file');
+  };
+
+  const makeCover = (key: string) => setItems(prev => {
+    const it = prev.find(i => i.key === key);
+    return it ? [it, ...prev.filter(i => i.key !== key)] : prev;
+  });
+
+  // ── File upload (الفيديو) ─────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -781,7 +1015,6 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       setFileUrl(publicUrl);
       setFileSize(fileToUpload.size);
       if (fileToUpload.type.startsWith('image/')) {
-        setAiSelectedFile(fileToUpload);
         setThumbUrl(prev => { revokeThumb(prev); return URL.createObjectURL(fileToUpload); });
       }
       setUploadSuccess(true);
@@ -826,6 +1059,32 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
         return;
       }
 
+      // الصور والمستندات: الملف المستورد عنصر جديد في القائمة
+      if (isMulti) {
+        clearErr('file');
+        if (itemsRef.current.length >= maxFiles) {
+          if (importedPath) removeFromStorage([{ bucket: LINK_IMPORT_BUCKET, path: importedPath }]);
+          setLimitHit(maxFiles > 1);
+          return;
+        }
+        const stored = importedPath ? { bucket: LINK_IMPORT_BUCKET, path: importedPath } : undefined;
+        if (stored) sessionUploadsRef.current = [...sessionUploadsRef.current, stored];
+        const isImage = typeof data.mime === 'string' && data.mime.startsWith('image/');
+        const name = typeof data.file_name === 'string' ? data.file_name : nameFromUrl(data.file_url);
+        setItems(prev => [...prev, {
+          key: newKey(), status: 'done', url: data.file_url, type: isImage ? 'image' : 'file', name,
+          size: typeof data.size === 'number' ? data.size : 0, thumb: isImage ? data.file_url : '', stored, existing: false,
+        }]);
+        setShowLinkImport(false);
+        setLinkImportUrl('');
+        const importedTitle = titleFromFileName(name);
+        if (importedTitle) {
+          setTitle(prev => prev.trim() ? prev : importedTitle);
+          clearErr('title');
+        }
+        return;
+      }
+
       // الاستيراد فوق ملف موجود: السابق يُحذف
       clearAttachment();
       clearErr('file');
@@ -853,8 +1112,12 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   const validate = (): Partial<Record<ErrKey, string>> => {
     const e: Partial<Record<ErrKey, string>> = {};
     if (!indicatorId) e.indicator = 'اختر المؤشر';
-    if (isEdit) {
-      // الملف والرابط لا يتغيّران في وضع التعديل
+    if (isMulti) {
+      // لا يُحفظ الشاهد ناقصاً بصمت: الملف الفاشل يُذكر باسمه
+      if (failedItem) e.file = `تعذّر رفع «${failedItem.name}». أعد المحاولة أو احذفه`;
+      else if (doneItems.length === 0) e.file = 'أرفق الملف أولاً';
+    } else if (isEdit) {
+      // الفيديو والرابط والملاحظة لا تتغيّر في وضع التعديل
     } else if (writeFromScratch) {
       if (!description.trim()) e.description = 'اكتب نص الخطة';
     } else {
@@ -875,9 +1138,21 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     }
 
     if (isEdit && initial) {
+      // ملفات شاهد الصور والمستندات: الغلاف والنوع والإضافية. كل حقل يُرسل فقط
+      // إن تغيّر (أو كانت فيه إضافية)، فتعديل النص لا يمس أعمدة الملفات
+      const oldFiles = evidenceFiles(initial);
+      const filesPatch: { file_url?: string; evidence_type?: 'image' | 'file'; extra_files?: EvidenceFile[] } = {};
+      if (isMulti) {
+        const cover = doneItems[0];
+        const extras = doneItems.slice(1).map(toEvidenceFile);
+        if (cover.url !== initial.file_url) filesPatch.file_url = cover.url;
+        if (cover.type !== initial.evidence_type) filesPatch.evidence_type = cover.type;
+        if (extras.length > 0 || (initial.extra_files?.length ?? 0) > 0) filesPatch.extra_files = extras;
+      }
       setSaving(true);
       try {
         const ok = await supabaseEv.updateEvidence(initial.id, {
+          ...filesPatch,
           title:           title.trim(),
           description:     description.trim()    || null,
           impact:          impact.trim()         || null,
@@ -890,6 +1165,17 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
           frequency:       isDistributionIndicator ? (frequency || null) : null,
         });
         if (ok) {
+          // بعد نجاح الحفظ فقط: ملفات الشاهد التي أُزيلت تُحذف من Storage،
+          // وما رُفع في الجلسة صار من ملفات الشاهد
+          if (isMulti) {
+            const kept = new Set(doneItems.map(i => i.url));
+            removeFromStorage(oldFiles
+              .filter(f => !kept.has(f.url))
+              .map(f => getBucketAndPathFromUrl(f.url))
+              .filter((f): f is StoredFile => f !== null));
+          }
+          sessionUploadsRef.current = [];
+          currentUploadRef.current = null;
           onToast('حُفظت التعديلات', 'success');
           onClose();
         } else {
@@ -901,8 +1187,12 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       return;
     }
 
-    // الكتابة من الصفر تُنتج دائماً دليل "ملاحظة" بلا ملف مرفق
-    const effectiveEvidenceType: EvidenceType = writeFromScratch ? 'note' : evidenceType;
+    // الكتابة من الصفر تُنتج دائماً دليل "ملاحظة" بلا ملف مرفق. الصور
+    // والمستندات: النوع والرابط من الغلاف (العنصر الأول)، والبقية extra_files
+    const cover = isMulti ? doneItems[0] : undefined;
+    const extras = isMulti ? doneItems.slice(1).map(toEvidenceFile) : [];
+    const effectiveEvidenceType: EvidenceType = writeFromScratch ? 'note' : cover ? cover.type : evidenceType;
+    const effectiveFileUrl = writeFromScratch ? undefined : cover ? cover.url : (fileUrl || undefined);
     setSaving(true);
     try {
       const result = await saveEvidence({
@@ -915,7 +1205,9 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
         context_subject: isLessonPlanSection ? (contextSubject.trim() || undefined) : undefined,
         academic_term:   academicTerm          || undefined,
         evidence_type:   effectiveEvidenceType,
-        file_url:        writeFromScratch ? undefined : (fileUrl || undefined),
+        file_url:        effectiveFileUrl,
+        // لا يُرسل الحقل فارغاً: شاهد بملف واحد يبقى كما كان قبل العمود
+        ...(extras.length > 0 ? { extra_files: extras } : {}),
         link_url:        writeFromScratch ? undefined : (linkUrl.trim() || undefined),
         self_reflection: selfReflection.trim() || undefined,
         frequency:       isDistributionIndicator ? (frequency || undefined) : undefined,
@@ -939,14 +1231,15 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   // زر الحفظ نفسه. نوع "ملاحظة" يبقى معطَّلاً دوماً لهذا التدفّق تحديداً.
   const hasAttachment = writeFromScratch
     ? true
+    : isMulti ? doneItems.length > 0 && !failedItem && !multiBusy
     : currentTypeConfig.hasFile ? uploadSuccess
     : currentTypeConfig.hasLink ? linkUrl.trim().length > 0
     : false;
   const saveDisabled = isEdit
-    ? saving
-    : saving || uploading || linkImportLoading || (!!strategyId && !hasAttachment);
+    ? saving || multiBusy || linkImportLoading
+    : saving || uploading || multiBusy || linkImportLoading || (!!strategyId && !hasAttachment);
 
-  const isMedia = !writeFromScratch && (evidenceType === 'image' || evidenceType === 'video');
+  const isMedia = !writeFromScratch && (evidenceType === 'image' || evidenceType === 'video' || items.some(i => i.type === 'image'));
   const sectionTitle = section?.ttl ?? '';
   const sectionIcon = section?.icon ?? 'ti-folder';
 
@@ -1026,6 +1319,113 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       </>
     );
   }
+
+  // ── شبكة ملفات الصور والمستندات (الإضافة والتعديل) ────────────
+  const pickMulti = () => multiInputRef.current?.click();
+  const uploadingPos = batch ? Math.min(batch.done + 1, batch.total) : 0;
+  const filesField = (
+    <>
+      <input
+        type="file"
+        ref={multiInputRef}
+        className="hidden"
+        accept={MULTI_ACCEPT}
+        multiple={maxFiles > 1}
+        onChange={handleMultiChange}
+      />
+      {items.length === 0 ? (
+        <div className={`border-[1.5px] border-dashed rounded-[var(--r-md)] p-[18px] text-center text-[length:var(--fs-sm)] text-[var(--t3)] ${errors.file ? 'border-[var(--danger)]' : 'border-[var(--bd2)]'}`}>
+          <i className={`ti ${currentTypeConfig.icon} text-[24px]`} />
+          <div>{currentTypeConfig.hint}</div>
+          <button type="button" className={BTN_SM_CLS + ' mt-2'} disabled={linkImportLoading} onClick={pickMulti}>
+            <i className="ti ti-upload text-[20px]" /> {currentTypeConfig.pickLabel}
+          </button>
+        </div>
+      ) : (
+        <>
+          {batch && (
+            <div className="mb-2 flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--t2)]" aria-live="polite">
+              <i className={`ti ti-loader text-[16px] ${SPIN_CLS}`} /> جارٍ رفع {uploadingPos} من {batch.total}...
+            </div>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {items.map((it, idx) => {
+              // في التعديل لا يُحذف آخر ملف: الشاهد لا يبقى بلا غلاف
+              const removeDisabled = isEdit && items.length === 1;
+              return (
+                <div
+                  key={it.key}
+                  className={`relative flex flex-col rounded-[var(--r-md)] border bg-[var(--s2)] overflow-hidden ${it.status === 'failed' ? 'border-[var(--danger)]' : 'border-[var(--bd)]'}`}
+                >
+                  <span className="relative h-[88px] flex items-center justify-center bg-[var(--s3)] text-[24px] text-[var(--t2)]">
+                    {it.type === 'image' && it.thumb
+                      ? <img src={it.thumb} alt="" className="w-full h-full object-cover" />
+                      : <i className={`ti ${it.type === 'image' ? 'ti-photo' : fileIconFor(it.name)}`} />}
+                    {it.status === 'uploading' && (
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-[var(--t1)]">
+                        <i className={`ti ti-loader text-[24px] ${SPIN_CLS}`} />
+                      </span>
+                    )}
+                  </span>
+                  {/* 36px بصرياً، ومساحة الضغط 44px بحافة غير مرئية 4px من كل جهة */}
+                  <button
+                    type="button"
+                    aria-label={`إزالة ${it.name}`}
+                    disabled={removeDisabled}
+                    onClick={() => removeItem(it.key)}
+                    className="absolute top-2 left-2 w-9 h-9 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s1)] text-[var(--t2)] flex items-center justify-center text-[16px] cursor-pointer hover:text-[var(--t1)] disabled:opacity-40 disabled:cursor-not-allowed before:absolute before:-inset-1 before:content-['']"
+                  >
+                    <i className="ti ti-x" />
+                  </button>
+                  <div className="p-2 flex flex-col gap-1.5 min-w-0">
+                    <b dir="auto" className="block text-[length:var(--fs-xs)] font-bold text-[var(--t1)] truncate" title={it.name}>{it.name}</b>
+                    {it.status === 'failed' ? (
+                      <>
+                        <span className="text-[length:var(--fs-xs)] text-[var(--danger)]">تعذّر الرفع</span>
+                        {it.file && (
+                          <button type="button" className={BTN_SM_CLS + ' w-full'} onClick={() => retryItem(it.key)} disabled={multiBusy}>
+                            إعادة المحاولة
+                          </button>
+                        )}
+                      </>
+                    ) : it.status === 'uploading' ? (
+                      <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">جارٍ الرفع...</span>
+                    ) : idx === 0 ? (
+                      maxFiles > 1 && (
+                        <span className="self-start rounded-[var(--r-full)] bg-[var(--t1)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--bg)]">غلاف</span>
+                      )
+                    ) : (
+                      <button type="button" className={BTN_SM_CLS + ' w-full'} onClick={() => makeCover(it.key)}>
+                        اجعله الغلاف
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {canAddMore && (
+              <button
+                type="button"
+                onClick={pickMulti}
+                disabled={multiBusy || linkImportLoading}
+                className="min-h-[88px] flex flex-col items-center justify-center gap-1 rounded-[var(--r-md)] border-[1.5px] border-dashed border-[var(--bd2)] text-[length:var(--fs-sm)] font-bold text-[var(--t2)] cursor-pointer hover:text-[var(--t1)] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <i className="ti ti-plus text-[20px]" />
+                إضافة ملف
+                <small className="text-[length:var(--fs-xs)] font-normal text-[var(--t3)]">{items.length} من {maxFiles}</small>
+              </button>
+            )}
+          </div>
+        </>
+      )}
+      {limitHit && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--t2)]">
+          <i className="ti ti-info-circle text-[16px]" /> الحد 5 ملفات في الشاهد الواحد
+        </div>
+      )}
+      <FieldError msg={errors.file} />
+    </>
+  );
 
   // ── النموذج ───────────────────────────────────────────────────
   return (
@@ -1113,16 +1513,28 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
           </div>
         )}
 
-        {/* وضع التعديل: النوع والمرفق للعرض فقط — لا رفع ولا حذف لأي ملف */}
+        {/* وضع التعديل: النوع للعرض فقط (ويتبع الغلاف). ملفات شاهد الصور
+            والمستندات تُعدَّل، وغيره مرفقه للعرض فقط */}
         {isEdit && initial && <>
           <div className="mt-3.5">
             <Label>النوع</Label>
             <div className="flex items-center gap-1.5 text-[length:var(--fs-sm)] font-bold text-[var(--t2)]">
-              <i className={`ti ${typeMeta.icon} text-[16px]`} /> {typeMeta.label}
+              {(() => {
+                const coverCfg = isMulti && items[0] ? TYPE_CONFIG.find(t => t.id === items[0].type) : undefined;
+                const meta = coverCfg ? { icon: coverCfg.icon, label: coverCfg.label } : typeMeta;
+                return <><i className={`ti ${meta.icon} text-[16px]`} /> {meta.label}</>;
+              })()}
             </div>
           </div>
 
-          {(initial.file_url || initial.link_url) && (
+          {isMulti && (
+            <div className="mt-3.5" ref={el => { fieldRefs.current.file = el; }}>
+              <Label>الملفات</Label>
+              {filesField}
+            </div>
+          )}
+
+          {!isMulti && (initial.file_url || initial.link_url) && (
             <div className="mt-3.5">
               <Label>المرفق</Label>
               <div className="flex items-center gap-2.5 py-2.5 px-3 rounded-[var(--r-sm)] bg-[var(--s2)] border border-[var(--bd)]">
@@ -1174,56 +1586,59 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
           {currentTypeConfig.hasFile && (
             <div className="mt-3.5" ref={el => { fieldRefs.current.file = el; }}>
               <Label>المرفق</Label>
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept={currentTypeConfig.accept}
-                onChange={handleFileChange}
-              />
-              {uploadSuccess && fileUrl ? (
-                <div className="flex items-center gap-2.5 py-2.5 px-3 rounded-[var(--r-sm)] bg-[var(--s2)] border border-[var(--bd)]">
-                  <span className="w-11 h-11 rounded-[var(--r-sm)] bg-[var(--s3)] text-[var(--t2)] flex items-center justify-center text-[20px] shrink-0 overflow-hidden">
-                    {thumbUrl && evidenceType === 'image'
-                      ? <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
-                      : <i className={`ti ${currentTypeConfig.icon}`} />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <b className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] break-all" dir="auto">{fileName}</b>
-                    {fileSize > 0 && <small className="text-[length:var(--fs-xs)] text-[var(--t3)]" dir="ltr">{formatSize(fileSize)}</small>}
+              {/* الصور والمستندات: قائمة حتى 5 ملفات؛ الفيديو مرفق واحد كما كان */}
+              {isMulti ? filesField : <>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  className="hidden"
+                  accept={currentTypeConfig.accept}
+                  onChange={handleFileChange}
+                />
+                {uploadSuccess && fileUrl ? (
+                  <div className="flex items-center gap-2.5 py-2.5 px-3 rounded-[var(--r-sm)] bg-[var(--s2)] border border-[var(--bd)]">
+                    <span className="w-11 h-11 rounded-[var(--r-sm)] bg-[var(--s3)] text-[var(--t2)] flex items-center justify-center text-[20px] shrink-0 overflow-hidden">
+                      {thumbUrl && evidenceType === 'image'
+                        ? <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
+                        : <i className={`ti ${currentTypeConfig.icon}`} />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <b className="block text-[length:var(--fs-sm)] font-bold text-[var(--t1)] break-all" dir="auto">{fileName}</b>
+                      {fileSize > 0 && <small className="text-[length:var(--fs-xs)] text-[var(--t3)]" dir="ltr">{formatSize(fileSize)}</small>}
+                    </div>
+                    <button type="button" aria-label="إزالة الملف" className={ICON_BTN_SM_CLS} onClick={clearAttachment}>
+                      <i className="ti ti-x" />
+                    </button>
                   </div>
-                  <button type="button" aria-label="إزالة الملف" className={ICON_BTN_SM_CLS} onClick={clearAttachment}>
-                    <i className="ti ti-x" />
-                  </button>
-                </div>
-              ) : (
-                <div className={`border-[1.5px] border-dashed rounded-[var(--r-md)] p-[18px] text-center text-[length:var(--fs-sm)] text-[var(--t3)] ${errors.file ? 'border-[var(--danger)]' : 'border-[var(--bd2)]'}`}>
-                  {uploading ? (
-                    <>
-                      <i className={`ti ti-loader text-[24px] text-[var(--t2)] ${SPIN_CLS}`} />
-                      <div className="mt-1">جارٍ الرفع...</div>
-                      <div className="text-[length:var(--fs-xs)] mt-0.5 break-all" dir="auto">{fileName}</div>
-                    </>
-                  ) : (
-                    <>
-                      <i className={`ti ${currentTypeConfig.icon} text-[24px]`} />
-                      <div>{currentTypeConfig.hint}</div>
-                      <button
-                        type="button"
-                        className={BTN_SM_CLS + ' mt-2'}
-                        disabled={linkImportLoading}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <i className="ti ti-upload text-[20px]" /> {currentTypeConfig.pickLabel}
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-              <FieldError msg={errors.file} />
+                ) : (
+                  <div className={`border-[1.5px] border-dashed rounded-[var(--r-md)] p-[18px] text-center text-[length:var(--fs-sm)] text-[var(--t3)] ${errors.file ? 'border-[var(--danger)]' : 'border-[var(--bd2)]'}`}>
+                    {uploading ? (
+                      <>
+                        <i className={`ti ti-loader text-[24px] text-[var(--t2)] ${SPIN_CLS}`} />
+                        <div className="mt-1">جارٍ الرفع...</div>
+                        <div className="text-[length:var(--fs-xs)] mt-0.5 break-all" dir="auto">{fileName}</div>
+                      </>
+                    ) : (
+                      <>
+                        <i className={`ti ${currentTypeConfig.icon} text-[24px]`} />
+                        <div>{currentTypeConfig.hint}</div>
+                        <button
+                          type="button"
+                          className={BTN_SM_CLS + ' mt-2'}
+                          disabled={linkImportLoading}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <i className="ti ti-upload text-[20px]" /> {currentTypeConfig.pickLabel}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                <FieldError msg={errors.file} />
+              </>}
 
               {/* استيراد من رابط Drive (Beta) — بديل لاختيار ملف من الجهاز */}
-              {linkImportFeatureEnabled && !uploading && (
+              {linkImportFeatureEnabled && !uploading && (!isMulti || (canAddMore && !singleOnly)) && (
                 !showLinkImport ? (
                   <button
                     type="button"
@@ -1276,7 +1691,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
               )}
 
               {/* اقتراح تلقائي من الصورة (Beta) — بعد نجاح رفع صورة فقط */}
-              {isAiSuggestionEligible && uploadSuccess && aiSelectedFile && (
+              {isAiSuggestionEligible && aiImageFile && (
                 aiConsentPromptOpen ? (
                   <div className="mt-2.5 p-3 rounded-[var(--r-md)] bg-[var(--s2)] border border-[var(--bd)]">
                     <p className="text-[length:var(--fs-xs)] text-[var(--t2)] leading-[1.7]">{AI_CONSENT_TEXT}</p>

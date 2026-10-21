@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { SupabaseEvidence } from '../hooks/useSupabaseEvidence';
 import { formatDate } from '../utils';
-import { extractYouTubeId, publicKind, type PublicKind } from './EvidenceViewer';
+import { ExtraFilesBadge, ExtraFilesPrintLine, extractYouTubeId, publicKind, type PublicKind } from './EvidenceViewer';
 
 const KIND_ICON: Record<PublicKind, string> = {
   pdf: 'ti-file-text', img: 'ti-photo', vid: 'ti-video', audio: 'ti-microphone', link: 'ti-link', note: 'ti-notes',
@@ -52,6 +52,7 @@ export default function TopAchievementCard({ evidence, source, sectionName, indi
   const sourceLabel = source === 'ai' ? 'اعتمده المعلم' : 'اختاره المعلم';
   const meta = [sectionName, indicatorName, formatDate(evidence.created_at, 'long')].filter(Boolean).join(' · ');
   const description = evidence.description?.trim();
+  const extra = evidence.extra_files?.length ?? 0;
   const kind = publicKind(evidence);
   const ytId = kind === 'link' && evidence.link_url ? extractYouTubeId(evidence.link_url) : null;
   // معرّف الشاهد الذي تعذّر تحميل مرئيه — يسقط تلقائياً إن تغيّر الشاهد
@@ -68,6 +69,7 @@ export default function TopAchievementCard({ evidence, source, sectionName, indi
         <p className="mt-1.5 text-[length:var(--fs-sm)] leading-[1.8] text-[var(--t2)] whitespace-pre-line">{description}</p>
       )}
       <small className="block mt-2.5 text-[length:var(--fs-xs)] text-[var(--t3)]">{meta}</small>
+      <ExtraFilesPrintLine n={extra} />
     </>
   );
 
@@ -86,6 +88,7 @@ export default function TopAchievementCard({ evidence, source, sectionName, indi
           <div className="print:hidden relative min-h-[190px] bg-[var(--s2)] flex items-center justify-center">
             <FeatVisual evidence={evidence} ytId={ytId} onFail={() => setFailedId(evidence.id)} />
             <span className={`absolute top-3 right-3 ${RIBBON}`}>{sourceLabel}</span>
+            <ExtraFilesBadge n={extra} overlay />
           </div>
           <div className="p-4">{text}</div>
         </button>
@@ -97,6 +100,7 @@ export default function TopAchievementCard({ evidence, source, sectionName, indi
           </div>
           <div className="flex-1 min-w-0 p-4">
             <span className={`print:hidden inline-block mb-2 ${RIBBON}`}>{sourceLabel}</span>
+            {extra > 0 && <span className="ms-2 inline-block align-top"><ExtraFilesBadge n={extra} /></span>}
             <div className="flex items-start gap-3">
               {/* الجوال: أيقونة صغيرة بجانب العنوان */}
               <span className="print:hidden lg:hidden w-9 h-9 shrink-0 rounded-[var(--r-sm)] bg-[var(--s2)] flex items-center justify-center">

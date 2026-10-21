@@ -1,4 +1,4 @@
-import type { EvidenceType, SupabaseEvidence } from './useSupabaseEvidence';
+import type { EvidenceFile, EvidenceType, SupabaseEvidence } from './useSupabaseEvidence';
 
 type SupabaseEvidenceHook = ReturnType<typeof import('./useSupabaseEvidence').useSupabaseEvidence>;
 type AddEvidenceFn = SupabaseEvidenceHook['addEvidence'];
@@ -22,6 +22,8 @@ export interface SaveEvidencePayload {
   academic_term?: string;
   evidence_type: EvidenceType;
   file_url?: string;
+  /** الملفات بعد الغلاف (file_url) — نموذج الإضافة فقط */
+  extra_files?: EvidenceFile[];
   link_url?: string;
   self_reflection?: string;
   frequency?: 'weekly' | 'semester';

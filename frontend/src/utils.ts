@@ -246,6 +246,7 @@ export const AR_SCORE: CountForms = { one: 'درجة واحدة', two: 'درجت
 export const AR_POINT: CountForms = { one: 'نقطة واحدة', two: 'نقطتان', twoGen: 'نقطتين', few: 'نقاط', many: 'نقطة', single: 'نقطة' };
 export const AR_SECTION: CountForms = { one: 'شعبة واحدة', two: 'شعبتان', twoGen: 'شعبتين', few: 'شعب', many: 'شعبة', single: 'شعبة' };
 export const AR_SHEET: CountForms = { one: 'ورقة واحدة', two: 'ورقتان', twoGen: 'ورقتين', few: 'أوراق', many: 'ورقة', single: 'ورقة' };
+export const AR_FILE: CountForms = { one: 'ملف واحد', two: 'ملفان', twoGen: 'ملفين', few: 'ملفات', many: 'ملفاً', single: 'ملف' };
 
 /** كلمة المعدود وحدها لعدد يُكتب بجانبها (بطاقة رقم كبير وتحته الكلمة):
  *  1 ← طالب، 2 ← طالبان، 3-10 ← طلاب، 11-99 ← طالباً، 100 ← طالب. */
@@ -255,6 +256,12 @@ export function countWord(n: number, forms: CountForms, opts?: { genitive?: bool
   if (n === 0 || n === 1 || (n >= 100 && r <= 2)) return forms.single;
   if (r >= 3 && r <= 10) return forms.few;
   return forms.many;
+}
+
+/** كلمة المعدود بعد «+N» (سطر الطباعة «+4 ملفات»، «+1 ملف»): countWord نفسها،
+ *  إلا المثنى، فلا «+2 ملفان» بل «+2 ملفات». */
+export function plusCountWord(n: number, forms: CountForms): string {
+  return n === 2 ? forms.few : countWord(n, forms);
 }
 
 /** العدد مع معدوده: «طالب واحد»، «طالبان»، «3 طلاب»، «11 طالباً»، «100 طالب». */

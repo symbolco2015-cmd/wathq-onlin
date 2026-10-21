@@ -46,8 +46,9 @@ const OFFICE_EXTENSIONS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
 export type ViewerFile = { kind: 'img' | 'pdf'; url: string; name?: string };
 
 /** عنصر عرض واحد. url غائب للملاحظة فقط. meta: سطر «البند · التاريخ» تحت المحتوى.
- *  files: كل ملفات الشاهد (الغلاف أولاً) — أكثر من ملف ⇐ تنقل بينها. */
-export type ViewerItem = { kind: PublicKind; name: string; url?: string; description?: string | null; meta?: string; files?: ViewerFile[] };
+ *  files: كل ملفات الشاهد (الغلاف أولاً) — أكثر من ملف ⇐ تنقل بينها.
+ *  startIdx: الملف الذي تفتح عليه النافذة (صورة من شريط «لمحات»)، والغائب = 0. */
+export type ViewerItem = { kind: PublicKind; name: string; url?: string; description?: string | null; meta?: string; files?: ViewerFile[]; startIdx?: number };
 
 /** شارة «+N» لعدد الملفات بعد الغلاف. overlay: فوق صورة (خلفية داكنة شفافة) */
 export function ExtraFilesBadge({ n, overlay = false }: { n: number; overlay?: boolean }) {
@@ -132,12 +133,12 @@ export default function EvidenceViewer({ item, onClose }: { item: ViewerItem | n
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   // رمز مدخل السجل لهذا الفتح؛ null = لا مدخل (مغلقة، أو أُزيل المدخل)
   const tokenRef = useRef<string | null>(null);
-  // الملف المعروض من ملفات الشاهد — يعود إلى الأول مع كل عنصر جديد
-  const [fileIdx, setFileIdx] = useState(0);
+  // الملف المعروض من ملفات الشاهد — يعود إلى startIdx (أو الأول) مع كل عنصر جديد
+  const [fileIdx, setFileIdx] = useState(item?.startIdx ?? 0);
   // المفتاح نصي لا الكائن نفسه: بعض المستدعين يبنون item جديداً مع كل رسم
-  const itemKey = item ? `${item.name}|${item.url ?? ''}|${item.meta ?? ''}` : '';
+  const itemKey = item ? `${item.name}|${item.url ?? ''}|${item.meta ?? ''}|${item.startIdx ?? 0}` : '';
   const [idxKey, setIdxKey] = useState(itemKey);
-  if (idxKey !== itemKey) { setIdxKey(itemKey); setFileIdx(0); }
+  if (idxKey !== itemKey) { setIdxKey(itemKey); setFileIdx(item?.startIdx ?? 0); }
   const files = item?.files && item.files.length > 1 ? item.files : null;
   const fileCount = files?.length ?? 0;
   /** dir: +1 التالي، -1 السابق — بلا التفاف */

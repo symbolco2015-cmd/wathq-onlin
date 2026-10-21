@@ -73,6 +73,39 @@ body{
   100% { transform: translateX(60vw) skewX(-14deg); opacity: 0; }
 }
 
+/* شريط «لمحات» (PublicGallery): النسخة الثانية تُرصف يسار الأولى (RTL)،
+   فالانسياب يميناً بنصف عرض المسار يعيد المشهد نفسه بلا قفزة. كل نسخة تحمل
+   فراغها في آخرها، فنصف المسار = نسخة + فراغ. المدة = عدد البطاقات × زمن
+   بطاقة واحدة (عرضها + الفراغ ÷ 32px/s)، فالسرعة ثابتة مهما كثرت الصور. */
+@keyframes wathq-marquee{to{transform:translateX(50%)}}
+.gal-viewport{
+  overflow:hidden;
+  mask-image:linear-gradient(to right,transparent,black 48px,black calc(100% - 48px),transparent);
+}
+.gal-track{
+  display:flex;width:max-content;
+  animation:wathq-marquee calc(var(--n) * 6.9s) linear infinite;
+  will-change:transform;
+}
+.gal-copy{display:flex;gap:8px;padding-inline-end:8px}
+.gal-viewport:hover .gal-track,
+.gal-viewport:focus-within .gal-track,
+.gal-viewport:active .gal-track{animation-play-state:paused}
+@media (min-width:1024px){
+  .gal-track{animation-duration:calc(var(--n) * 9.5s)}
+  .gal-copy{gap:12px;padding-inline-end:12px}
+}
+/* صور لا تملأ العرض: ثابتة في المنتصف بلا نسخة ثانية */
+.gal-viewport--static{mask-image:none}
+.gal-viewport--static .gal-track{width:auto;justify-content:center;animation:none;will-change:auto}
+.gal-viewport--static .gal-copy{padding-inline-end:0}
+@media (prefers-reduced-motion:reduce){
+  .gal-viewport{overflow-x:auto;mask-image:none}
+  .gal-track{animation:none;will-change:auto}
+  .gal-copy{padding-inline-end:0}
+  .gal-copy + .gal-copy{display:none}
+}
+
 /*──────────────────────────────────────────────
   UTILITY CLASSES
 ──────────────────────────────────────────────*/

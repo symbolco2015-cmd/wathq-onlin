@@ -163,6 +163,10 @@ const fileIconFor = (name: string): string => {
   return 'ti-file';
 };
 
+/** اسم ملف داخل رسالة نصية: معزول باتجاه LTR (U+2066…U+2069)، فلا ينقلب
+ *  اسم بأرقام عربية داخل جملة عربية */
+const ltrName = (name: string): string => `⁦${name}⁩`;
+
 /** اسم الملف من رابطه العام (لملفات الشاهد الموجودة بلا name) */
 const nameFromUrl = (url: string): string => {
   try {
@@ -354,6 +358,8 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   /** تقدّم دفعة الرفع الحالية («جارٍ رفع 2 من 3») */
   const [batch,     setBatch]     = useState<{ done: number; total: number } | null>(null);
   const [limitHit,  setLimitHit]  = useState(false);
+  /** آخر اختيار فيه ملف مضاف مسبقاً (الاسم والحجم معاً) */
+  const [dupHit,    setDupHit]    = useState(false);
   /** ملف prefill: ملف واحد كما اليوم، فلا إضافة */
   const [singleOnly, setSingleOnly] = useState(false);
   const multiInputRef = useRef<HTMLInputElement>(null);
@@ -457,7 +463,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     setUploadSuccess(false); setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setItems(prev => { prev.forEach(i => revokeThumb(i.thumb)); return initItems; });
-    setBatch(null); setLimitHit(false); setSingleOnly(!ex && !!pf);
+    setBatch(null); setLimitHit(false); setDupHit(false); setSingleOnly(!ex && !!pf);
     if (multiInputRef.current) multiInputRef.current.value = '';
     setContextSubject(init.contextSubject); setFrequency(init.frequency); setWriteFromScratch(false); setSelectedTemplateId('');
     setShowLinkImport(false); setLinkImportUrl(''); setLinkImportLoading(false);
@@ -623,7 +629,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     discardCurrentUpload();
     itemsRef.current.forEach(i => { if (i.stored) discardStored(i.stored); revokeThumb(i.thumb); });
     setItems(() => []);
-    setBatch(null); setLimitHit(false);
+    setBatch(null); setLimitHit(false); setDupHit(false);
     if (multiInputRef.current) multiInputRef.current.value = '';
     setFileUrl(''); setFileName(''); setFileSize(0); setUploadSuccess(false);
     setThumbUrl(prev => { revokeThumb(prev); return ''; });
@@ -903,18 +909,27 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
   };
 
   const handleMultiChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = Array.from(e.target.files ?? []);
+    const all = Array.from(e.target.files ?? []);
     if (multiInputRef.current) multiInputRef.current.value = '';
-    if (picked.length === 0) return;
+    if (all.length === 0) return;
 
     clearErr('file');
+    // ملف مضاف مسبقاً (في القائمة أو مكرر في الاختيار نفسه) بالاسم والحجم معاً لا يُضاف
+    const seen = new Set(itemsRef.current.filter(i => i.size > 0).map(i => `${i.name}|${i.size}`));
+    const picked = all.filter(f => {
+      const sig = `${f.name}|${f.size}`;
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      return true;
+    });
+    setDupHit(picked.length < all.length);
     const tooBig = picked.filter(f => f.size > MULTI_MAX_MB * 1024 * 1024);
     const fits = picked.filter(f => f.size <= MULTI_MAX_MB * 1024 * 1024);
     const room = Math.max(0, maxFiles - itemsRef.current.length);
     const accepted = fits.slice(0, room);
     setLimitHit(fits.length > room && maxFiles > 1);
     if (tooBig.length > 0) {
-      setErrors(prev => ({ ...prev, file: `حجم الملف يتجاوز ${MULTI_MAX_MB}MB: ${tooBig.map(f => f.name).join('، ')}` }));
+      setErrors(prev => ({ ...prev, file: `حجم الملف يتجاوز ${MULTI_MAX_MB}MB: ${tooBig.map(f => ltrName(f.name)).join('، ')}` }));
     }
     if (accepted.length === 0) return;
 
@@ -948,7 +963,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     if (it.stored) discardStored(it.stored);
     revokeThumb(it.thumb);
     setItems(prev => prev.filter(i => i.key !== key));
-    setLimitHit(false);
+    setLimitHit(false); setDupHit(false);
     clearErr('file');
   };
 
@@ -1114,7 +1129,7 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
     if (!indicatorId) e.indicator = 'اختر المؤشر';
     if (isMulti) {
       // لا يُحفظ الشاهد ناقصاً بصمت: الملف الفاشل يُذكر باسمه
-      if (failedItem) e.file = `تعذّر رفع «${failedItem.name}». أعد المحاولة أو احذفه`;
+      if (failedItem) e.file = `تعذّر رفع «${ltrName(failedItem.name)}». أعد المحاولة أو احذفه`;
       else if (doneItems.length === 0) e.file = 'أرفق الملف أولاً';
     } else if (isEdit) {
       // الفيديو والرابط والملاحظة لا تتغيّر في وضع التعديل
@@ -1378,7 +1393,8 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
                     <i className="ti ti-x" />
                   </button>
                   <div className="p-2 flex flex-col gap-1.5 min-w-0">
-                    <b dir="auto" className="block text-[length:var(--fs-xs)] font-bold text-[var(--t1)] truncate" title={it.name}>{it.name}</b>
+                    {/* ltr: اسم بأرقام عربية لا ينقلب، والقص من آخره */}
+                    <b dir="ltr" className="block text-right text-[length:var(--fs-xs)] font-bold text-[var(--t1)] truncate" title={it.name}>{it.name}</b>
                     {it.status === 'failed' ? (
                       <>
                         <span className="text-[length:var(--fs-xs)] text-[var(--danger)]">تعذّر الرفع</span>
@@ -1421,6 +1437,11 @@ const EvidenceForm = forwardRef<EvidenceFormHandle, EvidenceFormProps>(function 
       {limitHit && (
         <div className="mt-1.5 flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--t2)]">
           <i className="ti ti-info-circle text-[16px]" /> الحد 5 ملفات في الشاهد الواحد
+        </div>
+      )}
+      {dupHit && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[var(--t2)]">
+          <i className="ti ti-info-circle text-[16px]" /> هذا الملف مضاف مسبقاً
         </div>
       )}
       <FieldError msg={errors.file} />

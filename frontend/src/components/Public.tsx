@@ -9,7 +9,8 @@ import type { PublicCustomIndicator } from '../hooks/usePublicCustomIndicators';
 import { findIndicatorByName } from '../indicators';
 import EvidenceViewer, { extractYouTubeId, publicKind, type ViewerItem } from './EvidenceViewer';
 import TopAchievementCard, { TopAchievementPlaceholder } from './TopAchievementCard';
-import PublicGallery, { pickGalleryItems } from './PublicGallery';
+import PublicGallery from './PublicGallery';
+import { pickGalleryImages, type GalleryImage } from './galleryImages';
 import PublicHero from './PublicHero';
 import PublicContinuity from './PublicContinuity';
 import {
@@ -192,11 +193,11 @@ export default function Public({ state, sections: allSections, continuity, evide
     ? sections.find(s => s.id === topEvidence.section_id)?.indicators.find(ind => ind.id === topEvidence.indicator_id)?.name_ar
     : undefined;
 
-  const galleryItems = useMemo(() => pickGalleryItems(evidence ?? [], topId), [evidence, topId]);
+  const galleryImages = useMemo(() => pickGalleryImages(evidence ?? [], topId), [evidence, topId]);
 
   /** شاهد من evidence ⇐ عنصر نافذة العرض، بسطر «البند · التاريخ». الرابط
    *  العادي (غير يوتيوب) يُفتح في تبويب جديد كما في نافذة البند. */
-  const openEvidence = (e: SupabaseEvidence) => {
+  const openEvidence = (e: SupabaseEvidence, startIdx?: number) => {
     if (publicKind(e) === 'link' && e.link_url && !extractYouTubeId(e.link_url)) {
       window.open(e.link_url, '_blank', 'noopener,noreferrer');
       return;
@@ -204,6 +205,7 @@ export default function Public({ state, sections: allSections, continuity, evide
     setViewerItem({
     ...toPublicRow(e),
       meta: [sectionName(e.section_id), formatDate(e.created_at, 'long')].filter(Boolean).join(' · '),
+      ...(startIdx ? { startIdx } : {}),
     });
   };
 
@@ -526,9 +528,9 @@ export default function Public({ state, sections: allSections, continuity, evide
             )}
           </div>
         )}
-        {galleryItems.length > 0 && (
+        {galleryImages.length > 0 && (
           <div className="print:hidden max-w-[1100px] mx-auto px-4 lg:px-8 pt-6">
-            <PublicGallery items={galleryItems} sectionName={sectionName} onOpen={openEvidence} />
+            <PublicGallery images={galleryImages} sectionName={sectionName} onOpen={(img: GalleryImage) => openEvidence(img.ev, img.fileIdx)} />
           </div>
         )}
 

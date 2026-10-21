@@ -271,8 +271,11 @@ export function EvRow({ ev, menuOpen, onToggleMenu, onCloseMenu, onEdit, onDelet
   const pinned = !!highlight && highlight.pinnedId === ev.id;
   // الشاهد غير المصنّف لا يظهر في الصفحة العامة، فلا يُثبَّت
   const canPin = !!highlight && ev.section_id !== null;
-  // المعرض للصور والفيديو فقط
-  const canGallery = !!highlight && (ev.evidence_type === 'image' || ev.evidence_type === 'video');
+  // شرط دخول «لمحات» نفسه (galleryImages.ts، عدا الإخفاء وأبرز إنجاز): له بند، وغلافه
+  // صورة، أو غلافه مستند وفيه صورة إضافية. الفيديو لا يدخل الشريط
+  const canGallery = !!highlight && ev.section_id !== null && !!ev.file_url
+    && (ev.evidence_type === 'image'
+      || (ev.evidence_type === 'file' && (ev.extra_files ?? []).some(f => f.type === 'image')));
   // شاهد شهر مقفل (isEvidenceLocked — قاعدة الأرشيف نفسها): يخفي «تعديل» و«حذف»،
   // ويبقى ما هو إعداد عرض (التثبيت واللمحات)
   const locked = isEvidenceLocked(ev.created_at);

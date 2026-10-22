@@ -73,7 +73,15 @@ export default function PdfPreview({ url, name, className }: PdfPreviewProps) {
       try {
         const pdfjsLib = await import('pdfjs-dist');
         configureWorker(pdfjsLib);
-        const loadingTask = pdfjsLib.getDocument({ url });
+        // الخطوط القياسية غير المضمّنة (Helvetica…) وcmaps من pdfjs-dist، تنسخها
+        // vite.config.ts إلى /pdfjs/. useSystemFonts: false لازم: بدونه يتجاهل pdf.js
+        // standardFontDataUrl ويرسم بخط الجهاز بمقاسات مختلفة فتتباعد الحروف.
+        const loadingTask = pdfjsLib.getDocument({
+          url,
+          standardFontDataUrl: '/pdfjs/standard_fonts/',
+          cMapUrl: '/pdfjs/cmaps/',
+          useSystemFonts: false,
+        });
         taskRef.current = loadingTask;
         const doc = await loadingTask.promise;
         if (cancelled) return;

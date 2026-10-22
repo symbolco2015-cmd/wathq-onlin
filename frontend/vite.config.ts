@@ -1,14 +1,49 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, type Plugin} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
+
+// خطوط pdf.js القياسية وcmaps (PdfPreview.tsx) تُقدَّم من /pdfjs/: في dev من
+// node_modules مباشرة، وفي البناء تُنسخ إلى dist/pdfjs/. لا تدخل الـ precache
+// (امتداداتها خارج globPatterns)، فتُحمَّل عند الحاجة فقط.
+const PDFJS_DIRS = ['standard_fonts', 'cmaps'];
+const PDFJS_ROOT = path.resolve(__dirname, 'node_modules/pdfjs-dist');
+
+function pdfjsAssets(): Plugin {
+  let outDir = 'dist';
+  return {
+    name: 'wathq-pdfjs-assets',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    configureServer(server) {
+      server.middlewares.use('/pdfjs', (req, res, next) => {
+        const rel = decodeURIComponent((req.url ?? '').split('?')[0]).replace(/^\/+/, '');
+        const [dir, ...rest] = rel.split('/');
+        if (!PDFJS_DIRS.includes(dir) || rest.length !== 1) return next();
+        const file = path.join(PDFJS_ROOT, dir, path.basename(rest[0]));
+        // ملف غير موجود 404، لا index.html، حتى لا يفشل pdf.js بصمت
+        if (!fs.existsSync(file)) { res.statusCode = 404; res.end(); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        fs.createReadStream(file).pipe(res);
+      });
+    },
+    writeBundle() {
+      for (const dir of PDFJS_DIRS) {
+        fs.cpSync(path.join(PDFJS_ROOT, dir), path.join(outDir, 'pdfjs', dir), {recursive: true});
+      }
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
     plugins: [
       react(),
       tailwindcss(),
+      pdfjsAssets(),
       VitePWA({
         registerType: 'autoUpdate',
         // 'script' (not inline) keeps SW registration compatible with the

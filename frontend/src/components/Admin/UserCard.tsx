@@ -56,6 +56,16 @@ export function DeletionBadge({ at }: { at: string }) {
   );
 }
 
+/** شارة «غير مؤكد»: لم يؤكّد المعلم بريده. يُحذف الحساب تلقائياً بعد 7 أيام من تسجيله */
+export function UnconfirmedBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-[var(--r-full)] border border-[var(--bd2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-bold text-[var(--t2)] whitespace-nowrap">
+      <span className="w-2 h-2 shrink-0 rounded-[var(--r-full)] bg-[var(--t3)]" aria-hidden="true" />
+      غير مؤكد
+    </span>
+  );
+}
+
 const ROW = 'flex items-center justify-between gap-3';
 const ROW_LABEL = 'shrink-0 text-[length:var(--fs-xs)] text-[var(--t3)]';
 const ROW_VALUE = 'min-w-0 truncate text-left text-[length:var(--fs-sm)] text-[var(--t2)]';
@@ -91,6 +101,7 @@ export default function UserCard({ user, onView, onCancelDeletion }: {
       >
         <UserAvatar user={user} />
         <span className="flex-1 min-w-0 truncate text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{user.name}</span>
+        {user.emailUnconfirmed && <UnconfirmedBadge />}
         {user.deletionScheduledAt && <DeletionBadge at={user.deletionScheduledAt} />}
         <i className={`ti ti-chevron-down shrink-0 text-[length:var(--fs-md)] text-[var(--t3)] transition-transform duration-[250ms] ${expanded ? 'rotate-180' : ''}`} />
       </button>

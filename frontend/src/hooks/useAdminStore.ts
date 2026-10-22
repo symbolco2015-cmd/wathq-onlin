@@ -39,6 +39,8 @@ export interface AdminUser {
   is_banned?: boolean;
   /** موعد الحذف النهائي إن جُدول، وإلا null */
   deletionScheduledAt: string | null;
+  /** البريد لم يُؤكَّد (email_confirmed_at فارغ صراحةً في admin_list_users) */
+  emailUnconfirmed: boolean;
 }
 
 export interface PortfolioFeatureOverride {
@@ -65,6 +67,8 @@ interface AuthUserRow {
   email: string | null;
   created_at: string;
   last_sign_in_at: string | null;
+  // قبل migration 20261022 لا يوجد العمود، فيكون undefined ولا تظهر الشارة
+  email_confirmed_at?: string | null;
 }
 
 export function useAdminStore(isAdmin: boolean) {
@@ -173,6 +177,7 @@ export function useAdminStore(isAdmin: boolean) {
           strategiesCount: strategiesCountByPortfolio.get(p.id) ?? 0,
           updated_at: p.updated_at || null,
           deletionScheduledAt: p.deletion_scheduled_at ?? null,
+          emailUnconfirmed: authUser?.email_confirmed_at === null,
         };
       });
 

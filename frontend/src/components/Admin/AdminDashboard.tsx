@@ -6,7 +6,7 @@ import { Modal, SelectDropdown } from '../UI';
 import type { ToastKind } from '../UI';
 import { FIELD, LABEL, HINT, BTN_2ND, toggleBtn } from '../formStyles';
 import { BTN_PRI, BTN_GH, BTN_DNG, BTN_DNGF, BTN_GH_SM } from '../SectionView';
-import UserCard, { UserAvatar, ActiveStatus, CountBadge, DeletionBadge, isUserActive } from './UserCard';
+import UserCard, { UserAvatar, ActiveStatus, CountBadge, DeletionBadge, UnconfirmedBadge, isUserActive } from './UserCard';
 
 const SEMESTER_BOUNDARY_OPTIONS = [
   { value: 'start', label: 'بداية الفصل' },
@@ -205,8 +205,11 @@ function UserRow({ user, onView, onCancelDeletion }: {
       <td className={TD}>
         <div className="text-[length:var(--fs-sm)] font-bold text-[var(--t1)]">{user.name}</div>
         <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1 text-right" dir="ltr">{user.email || '—'}</div>
-        {user.deletionScheduledAt && (
-          <div className="mt-1"><DeletionBadge at={user.deletionScheduledAt} /></div>
+        {(user.emailUnconfirmed || user.deletionScheduledAt) && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {user.emailUnconfirmed && <UnconfirmedBadge />}
+            {user.deletionScheduledAt && <DeletionBadge at={user.deletionScheduledAt} />}
+          </div>
         )}
       </td>
       <td className={TD}>
@@ -401,6 +404,12 @@ function UserDetailModal({ user, onClose, onDeleteNow, onReset, onScheduleDeleti
             <div id="umodal-title" className="text-[length:var(--fs-lg)] font-bold text-[var(--t1)]">{user.name}</div>
             <div className="text-[length:var(--fs-sm)] text-[var(--t2)] mt-1">{user.role} — {user.school}</div>
             <div className="text-[length:var(--fs-xs)] text-[var(--t3)] mt-1 text-right break-all" dir="ltr">{user.email}</div>
+            {user.emailUnconfirmed && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <UnconfirmedBadge />
+                <span className="text-[length:var(--fs-xs)] text-[var(--t3)]">يُحذف تلقائياً بعد 7 أيام من تسجيله إن لم يؤكّد بريده.</span>
+              </div>
+            )}
           </div>
           <button className={`${ICON_BTN} absolute left-3 top-3`} onClick={onClose} aria-label="إغلاق"><i className="ti ti-x" /></button>
         </div>

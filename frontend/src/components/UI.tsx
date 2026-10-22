@@ -74,24 +74,26 @@ interface ModalProps {
   confirmDisabled?: boolean;
   /** نص صغير يظهر بجانب زر "حفظ" أثناء تعطيله (يُتجاهل إن كان confirmDisabled غير مفعّل) */
   confirmHelperText?: string;
+  /** عملية لا تُقاطع (رفع الصورة عند «حفظ»): يعطّل «إلغاء» والإغلاق بالضغط خارج النافذة وEscape */
+  busy?: boolean;
   /** 'danger' = نافذة حذف: أيقونة الرأس بـ --danger وزر «حذف» بأيقونة سلة بدل «حفظ» */
   tone?: 'danger';
 }
 
-export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConfirm, confirmDisabled, confirmHelperText, tone }: ModalProps) {
+export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConfirm, confirmDisabled, confirmHelperText, busy, tone }: ModalProps) {
   // Esc يسلك مسار «إلغاء» نفسه، ولا يُغلق النافذة أثناء معالجة (confirmDisabled)
   useEffect(() => {
-    if (!isOpen || confirmDisabled) return;
+    if (!isOpen || confirmDisabled || busy) return;
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, confirmDisabled, onClose]);
+  }, [isOpen, confirmDisabled, busy, onClose]);
 
   if (!isOpen) return null;
   const danger = tone === 'danger';
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[500] flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ animation: 'fadeIn .2s both' }}>
+    <div className="fixed inset-0 bg-black/60 z-[500] flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }} style={{ animation: 'fadeIn .2s both' }}>
       <div className="bg-[var(--s1)] rounded-[var(--r-lg)] p-6 sm:p-8 w-full max-w-[500px] border border-[var(--bd2)] relative overflow-hidden" style={{ animation: 'scaleIn .35s var(--sp) both' }}>
         <div className="flex items-center gap-4 mb-6">
           <div className={`w-11 h-11 rounded-[var(--r-sm)] shrink-0 flex items-center justify-center text-[length:var(--fs-lg)] bg-[var(--s2)] border ${danger
@@ -114,7 +116,7 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, onConf
             </div>
           )}
           <div className="flex gap-2">
-            <button className="h-11 px-4 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-transparent cursor-pointer text-[length:var(--fs-sm)] font-bold text-[var(--t2)] transition-colors duration-[250ms] hover:bg-[var(--s2)] hover:text-[var(--t1)]" onClick={onClose}>إلغاء</button>
+            <button className={`h-11 px-4 rounded-[var(--r-sm)] border border-[var(--bd2)] bg-transparent text-[length:var(--fs-sm)] font-bold text-[var(--t2)] transition-colors duration-[250ms] ${busy ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-[var(--s2)] hover:text-[var(--t1)]'}`} onClick={onClose} disabled={busy}>إلغاء</button>
             <button
               className={danger
                 ? `flex items-center gap-2 h-11 px-4 rounded-[var(--r-sm)] border border-[var(--danger)] bg-[var(--danger)] text-[var(--bg)] text-[length:var(--fs-sm)] font-bold transition-opacity duration-[250ms] ${confirmDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`

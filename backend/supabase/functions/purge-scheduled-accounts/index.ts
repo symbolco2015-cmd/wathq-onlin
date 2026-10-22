@@ -16,7 +16,12 @@
 //   ذلك الحساب وحده، ويُعاد في التشغيل التالي.
 // الصفحة العامة مخفية منذ حلول الموعد (شرط في get_shared_*)، فلا كتابة هنا قبل الحذف.
 //
-// الرد: { ok, due, purged, failed: [{ id, stage, message }], skipped, stopped_early }
+// بعد المجدولين، وفي ما بقي من MAX_ACCOUNTS: الحسابات غير المؤكدة بعد 7 أيام من
+// التسجيل (list_unconfirmed_purge_candidates)، بالحذف نفسه، وسجلها
+// portfolio.unconfirmed_purge.
+//
+// الرد: { ok, due, purged, unconfirmed_due, unconfirmed_purged,
+//         failed: [{ id, stage, message }], skipped, stopped_early }
 // 200 إن لم يفشل شيء، و500 إن فشل حساب واحد على الأقل، فيظهر في net._http_response.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -170,16 +175,83 @@ Deno.serve(async (req: Request) => {
       if (logErr) console.error('[purge] audit log error:', row.id, logErr.message);
     }
 
+    // 5) الحسابات غير المؤكدة بعد 7 أيام، في ما بقي من الحد والوقت. الشروط في
+    // list_unconfirmed_purge_candidates (service_role فقط): البريد لم يُؤكَّد،
+    // ولم يدخل قط، وليس أدمن، ولا هوية غير البريد (فلا يُحذف حساب Google).
+    const handled = new Set((due ?? []).map((r: { id: string }) => r.id));
+    const unconfirmedPurged: string[] = [];
+    let unconfirmedDue = 0;
+    const slots = MAX_ACCOUNTS - handled.size;
+
+    if (!stoppedEarly && slots > 0 && Date.now() - startedAt <= TIME_BUDGET_MS) {
+      const { data: candidates, error: candErr } = await admin.rpc('list_unconfirmed_purge_candidates', {
+        p_limit: slots,
+      });
+      if (candErr) {
+        failed.push({ id: '-', stage: 'unconfirmed_lookup', message: candErr.message });
+      } else {
+        const rows = ((candidates ?? []) as { id: string; created_at: string }[]).filter(r => !handled.has(r.id));
+        unconfirmedDue = rows.length;
+
+        for (const row of rows) {
+          if (Date.now() - startedAt > TIME_BUDGET_MS) {
+            stoppedEarly = true;
+            break;
+          }
+          if (adminIds.has(row.id)) {
+            skipped++;
+            continue;
+          }
+
+          // إعادة فحص: قد يكون أكّد بريده أو ربط Google منذ السرد
+          const { data: authData, error: authErr } = await admin.auth.admin.getUserById(row.id);
+          if (authErr || !authData?.user) {
+            failed.push({ id: row.id, stage: 'unconfirmed_recheck', message: authErr?.message ?? 'user not found' });
+            continue;
+          }
+          const u = authData.user;
+          const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          const stillDue =
+            !u.email_confirmed_at &&
+            !u.last_sign_in_at &&
+            new Date(u.created_at).getTime() < sevenDaysAgo &&
+            (u.identities ?? []).every(i => i.provider === 'email');
+          if (!stillDue) {
+            skipped++;
+            continue;
+          }
+
+          const result = await purgeUserAccount(admin, row.id);
+          if (!result.ok) {
+            failed.push({ id: row.id, stage: result.stage, message: result.message });
+            continue;
+          }
+          unconfirmedPurged.push(row.id);
+
+          // السجل: النوع وتاريخ التسجيل فقط، بلا اسم ولا بريد
+          const { error: logErr } = await admin.from('admin_audit_log').insert({
+            admin_id: adminId,
+            action: 'portfolio.unconfirmed_purge',
+            target_portfolio_id: row.id,
+            details: { type: 'unconfirmed_purge', registered_at: u.created_at },
+          });
+          if (logErr) console.error('[purge] audit log error:', row.id, logErr.message);
+        }
+      }
+    }
+
     const summary = {
       ok: failed.length === 0,
       due: (due ?? []).length,
       purged: purged.length,
+      unconfirmed_due: unconfirmedDue,
+      unconfirmed_purged: unconfirmedPurged.length,
       failed,
       skipped,
       stopped_early: stoppedEarly,
       caller: isTrustedCron ? 'cron' : 'admin',
     };
-    console.log('[purge] run:', JSON.stringify({ ...summary, purged_ids: purged }));
+    console.log('[purge] run:', JSON.stringify({ ...summary, purged_ids: purged, unconfirmed_ids: unconfirmedPurged }));
 
     return jsonResponse(summary, failed.length === 0 ? 200 : 500);
   } catch (err) {

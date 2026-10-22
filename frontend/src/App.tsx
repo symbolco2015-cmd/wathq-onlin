@@ -68,7 +68,10 @@ export default function App() {
   );
   // رابط تأكيد من البريد (/auth/confirm?token_hash=…&type=…) — صفحة مستقلة
   // حتى يضغط المعلم «تأكيد» أو يرجع. الروابط القديمة (#access_token) على / لا تمر هنا.
-  const [confirmLink, setConfirmLink] = useState(() => window.location.pathname === '/auth/confirm');
+  // المسار يُوحَّد قبل المطابقة: «//auth/confirm» (SiteURL ينتهي بـ /) و«/auth/confirm/»
+  // كانا يفتحان صفحة الدخول أو لوحة التحكم بدل صفحة التأكيد
+  const [confirmLink, setConfirmLink] = useState(() =>
+    window.location.pathname.replace(/\/{2,}/g, '/').replace(/(.)\/$/, '$1') === '/auth/confirm');
   const [toastData, setToastData] = useState<{ msg: string; icon: string; show: boolean; action?: ToastAction; kind?: ToastKind; onClose?: () => void }>({ msg: '', icon: '✓', show: false });
   // فحص التحديث يعمل في كل المسارات؛ التنبيه وحده مقيَّد (انظر showUpdateToast)
   const swUpdateReady = useSwUpdate();
@@ -337,6 +340,7 @@ export default function App() {
     onConfirm: () => void;
     confirmDisabled?: boolean;
     confirmHelperText?: string;
+    busy?: boolean;
     tone?: 'danger';
   }>({
     isOpen: false,
@@ -659,14 +663,35 @@ export default function App() {
     // الصورة لحظة الفتح — إن لم يغيّرها المعلم تُؤخذ عند الحفظ من آخر حالة، فلا
     // يعيد المودال نصاً قديماً (data:) فوق رابط نقله useAppStore أثناء فتحه
     const openedAvatar = p.avatar;
+    // الصورة الجديدة لا تُرفع إلا عند «حفظ»، و«حذف» لا يمس Storage إلا عنده أيضاً،
+    // فـ«إلغاء» لا يترك أثراً. pendingAvatar لا يدخل p ولا state.profile أبداً.
+    let pendingAvatar: Blob | null = null;
+    let avatarRemoved = false;
+    let avatarSaving = false;
+    let bodyClosed = false;
+    let setBodyUploading: ((value: boolean) => void) | null = null;
     let yearStart = state.yearStartMonth ?? 9;
     let yearsOk = isValidYears(String(p.yearsOfExperience ?? 0));
     
     const Body = () => {
       const [localP, setLocalP] = useState(p);
-      const [isUploading, setIsUploading] = useState(false);
-      // معاينة فورية (رابط blob:) أثناء الرفع — للعرض فقط، لا تدخل profile.avatar
+      // معاينة الصورة المختارة (رابط blob:) حتى «حفظ» — للعرض فقط، لا تدخل profile.avatar
       const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+      const previewRef = useRef<string | null>(null);
+      previewRef.current = previewSrc;
+      // يضبطه onConfirm أثناء رفع الصورة عند «حفظ»
+      const [isUploading, setIsUploading] = useState(false);
+      // «إلغاء» أو أي إغلاق: تحرير رابط المعاينة، وإيقاف حفظ لم يكتمل رفعه
+      useEffect(() => {
+        // StrictMode يركّب ويفك مرتين في dev، فيُعاد الضبط هنا
+        bodyClosed = false;
+        setBodyUploading = setIsUploading;
+        return () => {
+          bodyClosed = true;
+          setBodyUploading = null;
+          if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+        };
+      }, []);
       const [localYearStart, setLocalYearStart] = useState(yearStart);
       const [localShareEnabled, setLocalShareEnabled] = useState(shareEnabled);
       const [shareToggleBusy, setShareToggleBusy] = useState(false);
@@ -703,18 +728,6 @@ export default function App() {
         if (yearsOk) handleUpdate('yearsOfExperience', Number(value));
       };
 
-      // يبثّ isUploading لأعلى إلى modalConfig نفسه — يعطّل زر "حفظ" بالمودال
-      // بالكامل (وليس فقط زر رفع الصورة) حتى لا يحفظ المستخدم قبل اكتمال رفع
-      // الصورة لـ Storage
-      const setUploading = (value: boolean) => {
-        setIsUploading(value);
-        setModalConfig(prev => ({
-          ...prev,
-          confirmDisabled: value,
-          confirmHelperText: value ? 'بانتظار اكتمال رفع الصورة...' : undefined,
-        }));
-      };
-
       const showPreview = (blob: Blob) => {
         setPreviewSrc(prev => {
           if (prev) URL.revokeObjectURL(prev);
@@ -728,39 +741,30 @@ export default function App() {
         });
       };
 
-      // كل رفع يمر بـ uploadAvatar (تصغير 512px وJPEG ثم Storage). profile.avatar لا
-      // يتغير إلا إلى رابط بعد نجاح الرفع؛ عند الفشل تبقى الصورة السابقة كما هي
-      const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      // الاختيار يعرض المعاينة فقط؛ الرفع (uploadAvatar) عند «حفظ»
+      const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file) return;
+        e.target.value = '';
+        if (!file || avatarSaving) return;
         if (!user || !supabase) {
           toastKind('سجّل الدخول لرفع صورة', 'error');
           return;
         }
-        const userId: string = user.id;
-
+        pendingAvatar = file;
+        avatarRemoved = false;
         showPreview(file);
-        setUploading(true);
-        try {
-          handleUpdate('avatar', await uploadAvatar(userId, file));
-        } catch (uploadErr) {
-          console.error('فشل رفع الصورة الشخصية إلى Storage:', uploadErr);
-          toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
-        }
-        clearPreview();
-        setUploading(false);
       };
 
-      const handleDeleteAvatar = async () => {
-        handleUpdate('avatar', '');
-        if (user && supabase) {
-          try {
-            const { error } = await supabase.storage.from('avatars').remove([`${user.id}/avatar.jpg`]);
-            if (error) console.error('فشل حذف الصورة الشخصية من Storage:', error);
-          } catch (err) {
-            console.error('فشل حذف الصورة الشخصية من Storage:', err);
-          }
+      // يلغي الصورة المختارة إن وُجدت، وإلا يُعلّم الحالية للحذف عند «حفظ»
+      const handleDeleteAvatar = () => {
+        if (avatarSaving) return;
+        if (pendingAvatar) {
+          pendingAvatar = null;
+          clearPreview();
+          return;
         }
+        avatarRemoved = true;
+        handleUpdate('avatar', '');
       };
 
       const shownAvatar = previewSrc ?? localP.avatar;
@@ -780,8 +784,8 @@ export default function App() {
                       <i className="ti ti-upload text-[16px]"></i>رفع صورة
                       <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isUploading} />
                     </label>
-                    {localP.avatar && (
-                      <button type="button" className={`${BTN_2ND} border-[var(--danger)]/35 text-[var(--danger)] cursor-pointer hover:bg-[var(--s2)]`} onClick={handleDeleteAvatar}>
+                    {shownAvatar && (
+                      <button type="button" className={`${BTN_2ND} border-[var(--danger)]/35 text-[var(--danger)] ${isUploading ? 'opacity-40 cursor-wait' : 'cursor-pointer hover:bg-[var(--s2)]'}`} onClick={handleDeleteAvatar} disabled={isUploading}>
                         حذف
                       </button>
                     )}
@@ -917,6 +921,42 @@ export default function App() {
       body: <Body />,
       onConfirm: async () => {
         if (!yearsOk) return; // الرسالة تحت حقل سنوات الخبرة، والمودال يبقى مفتوحاً
+        if (avatarSaving) return;
+        avatarSaving = true;
+        const setSaving = (value: boolean) => {
+          setBodyUploading?.(value);
+          setModalConfig(prev => ({
+            ...prev,
+            confirmDisabled: value,
+            confirmHelperText: value ? 'جاري رفع الصورة...' : undefined,
+            // لا «إلغاء» ولا إغلاق حتى ينتهي الرفع بنجاح أو بخطأ
+            busy: value,
+          }));
+        };
+        // الصورة المختارة تُرفع أولاً. فشلها يوقف الحفظ كله، فلا يُحفظ الملف الشخصي
+        // برابط ناقص، وتبقى المعاينة لإعادة المحاولة
+        if (pendingAvatar) {
+          if (!user || !supabase) {
+            avatarSaving = false;
+            toastKind('سجّل الدخول لرفع صورة', 'error');
+            return;
+          }
+          setSaving(true);
+          try {
+            p = { ...p, avatar: await uploadAvatar(user.id, pendingAvatar) };
+            // نجح الرفع: إعادة المحاولة بعد فشل saveState لا ترفع مجدداً
+            pendingAvatar = null;
+          } catch (uploadErr) {
+            console.error('فشل رفع الصورة الشخصية إلى Storage:', uploadErr);
+            toastKind('تعذّر رفع الصورة، حاول مجدداً', 'error');
+            avatarSaving = false;
+            setSaving(false);
+            return;
+          }
+          setSaving(false);
+          // أُغلق المودال أثناء الرفع: لا حفظ
+          if (bodyClosed) { avatarSaving = false; return; }
+        }
         // ندمج تعديلي profile وyearStartMonth في استدعاء saveState واحد بدل
         // استدعاءين منفصلين (updateProfile ثم updateYearStartMonth) — كل واحد
         // منهما كان يبني newState من نسخة state القديمة في الـ closure دون رؤية
@@ -928,9 +968,20 @@ export default function App() {
           yearStartMonth: yearStart,
         };
         const saved = await saveState(combinedState);
+        avatarSaving = false;
         if (!saved) {
           toastKind('فشل الحفظ، تحقق من اتصالك وحاول مجدداً', 'error');
           return; // لا نغلق المودال — يبقى تعديل المستخدم كما هو ليعيد المحاولة
+        }
+        // «حذف» الصورة: الملف يُحذف من Storage بعد حفظ الملف الشخصي بلا صورة فقط
+        if (avatarRemoved && !avatar && user && supabase) {
+          avatarRemoved = false;
+          try {
+            const { error } = await supabase.storage.from('avatars').remove([`${user.id}/avatar.jpg`]);
+            if (error) console.error('فشل حذف الصورة الشخصية من Storage:', error);
+          } catch (err) {
+            console.error('فشل حذف الصورة الشخصية من Storage:', err);
+          }
         }
         toastKind('تم تحديث الحساب بنجاح', 'success');
         closeModal();

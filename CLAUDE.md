@@ -229,6 +229,7 @@ email list in code. Adding an admin = inserting a row into `admin_users`.
 The admin panel gets real email / `created_at` / `last_sign_in_at` from
 `auth.users` via `admin_list_users()` (SECURITY DEFINER, raises `42501`
 for non-admins).
+`admin_list_users()` also returns `email_confirmed_at`, which drives the «غير مؤكد» badge in the admin panel.
 
 **Deleting a teacher = full deletion after a 10-day grace period**
 (`20261018_account_deletion_grace.sql`). Deletion removes the portfolio,
@@ -270,9 +271,11 @@ come back by registering again.
   response body, not the cron status. Deploy it with
   `--no-verify-jwt`. It accepts `X-Purge-Key`, matching
   `PURGE_ACCOUNTS_KEY`, which must be set and non-empty, or an admin JWT.
+- `purge-scheduled-accounts` also deletes unconfirmed accounts 7 days after sign-up (`list_unconfirmed_purge_candidates`: never signed in, not an admin, email identity only), logging each as `portfolio.unconfirmed_purge`.
 - **Audit details**: `details` holds only `{type, scheduled_at}`, where
   `type` is `schedule`, `cancel`, `restore`, `purge` or `immediate_delete`.
-  No name or email, so no personal trace remains after deletion.
+  The exception is `unconfirmed_purge`, which holds `{type, registered_at}`
+  (the sign-up date) instead. No name or email, so no personal trace remains after deletion.
 
 **Reset / immediate delete (`admin-portfolio-action` Edge Function).**
 Callable only by an admin: the caller is identified from its JWT and

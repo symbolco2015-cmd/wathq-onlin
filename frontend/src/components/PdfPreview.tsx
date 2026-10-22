@@ -159,8 +159,10 @@ export default function PdfPreview({ url, name, className }: PdfPreviewProps) {
         </div>
       )}
 
-      <div className={`flex-1 min-h-0 w-full overflow-auto flex items-start justify-center ${status === 'loading' ? 'hidden' : ''}`}>
-        <canvas ref={canvasRef} className="max-w-full rounded-[var(--r-md)]" />
+      {/* ltr على اللوحة وحاويتها: direction في canvas يرث rtl من الصفحة، فيرسم pdf.js
+          كل حرف بـ fillText محاذىً لليمين فتتباعد الحروف. أزرار التنقل تبقى rtl */}
+      <div dir="ltr" className={`flex-1 min-h-0 w-full overflow-auto flex items-start justify-center ${status === 'loading' ? 'hidden' : ''}`}>
+        <canvas ref={canvasRef} dir="ltr" className="max-w-full rounded-[var(--r-md)]" />
       </div>
 
       {status === 'ready' && numPages > 1 && (

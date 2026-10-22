@@ -1,10 +1,8 @@
 import Papa from 'papaparse';
-// ⚠️ حزمة xlsx (SheetJS) على npm تحمل ثغرتين معلَنتين بلا إصلاح متاح حتى الآن:
-// Prototype Pollution (GHSA-4r6h-8v6p-xvw6) وReDoS (GHSA-5pgg-2g8v-p4x9) —
-// راجع `npm audit`. المخاطرة هنا محدودة عملياً: الملف الذي تُشغَّل الحزمة عليه
-// هو دائماً الملف الذي يرفعه المعلم بنفسه من متصفحه (لا معالجة لملفات من مستخدمين
-// آخرين أو من الخادم)، وكل التنفيذ محلي في جلسته فقط. قرار مقصود بقبول هذه
-// المخاطرة المحدودة بدل تعطيل دعم XLSX بالكامل — أعد تقييمه إن ظهر إصلاح رسمي.
+// xlsx (SheetJS) 0.20.3 من cdn.sheetjs.com، نسخة محفوظة في frontend/vendor/
+// لأن npm متوقف عند 0.18.5. فيها إصلاح Prototype Pollution (CVE-2023-30533،
+// 0.19.3) وReDoS (CVE-2024-22363، 0.20.2). npm audit لا يفحص حزمة من ملف
+// محلي، فتابع https://cdn.sheetjs.com/advisories عند أي ترقية.
 import * as XLSX from 'xlsx';
 import type { RawSheet } from './types';
 

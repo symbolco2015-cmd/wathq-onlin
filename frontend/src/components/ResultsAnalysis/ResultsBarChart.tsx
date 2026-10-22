@@ -53,7 +53,7 @@ function resolveTone(t: BandTone): string {
 const TOOLTIP_CLS = 'rounded-[var(--r-sm)] border border-[var(--bd2)] bg-[var(--s2)] px-3 py-2';
 // ألوان SVG تُمرَّر خصائص لا أصنافاً؛ المتصفحات تقبل var() في سمات fill/stroke
 const AXIS_LINE = { stroke: 'var(--bd2)' };
-const X_TICK = { fill: 'var(--t2)', fontSize: 12, fontWeight: 700 };
+const X_TICK = { fill: 'var(--t2)', fontSize: 12, fontWeight: 400 };
 const Y_TICK = { fill: 'var(--t3)', fontSize: 12 };
 const CURSOR = { fill: 'var(--bd)' };
 

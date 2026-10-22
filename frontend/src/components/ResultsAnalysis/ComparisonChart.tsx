@@ -40,12 +40,11 @@ function LegendItem({ color, dashed, label }: { color: string; dashed?: boolean;
   );
 }
 
-/** تسمية المحور: الأولى تبدأ من نقطتها والأخيرة تنتهي عندها، فلا تُقص عند
- *  حافتي الرسم. ما بينهما في الوسط. */
 /** تسميات المحور الأفقي متمركزة، وpreserveStartEnd تُبقي الطرفين داخل الرسم.
+ *  الوزن 400 لأن Recharts تقيس عرض التسمية بخط body (400)، فيطابق القياسُ المرسومَ.
  *  capHeight = 12px يضع خط القاعدة على y+12 كما كان dy={12} في التسمية المخصصة
  *  السابقة (الافتراضي 0.71em)؛ verticalAnchor لا يمر عبر كائن tick. */
-const X_TICK = { fill: 'var(--t2)', fontSize: 12, fontWeight: 700, capHeight: '12px' };
+const X_TICK = { fill: 'var(--t2)', fontSize: 12, fontWeight: 400, capHeight: '12px' };
 
 const CELL = 'py-2.5 px-2 text-[length:var(--fs-xs)]';
 
@@ -66,8 +65,7 @@ export default function ComparisonChart({ title, points, onOpen }: ComparisonCha
           </div>
           <div className="mt-2 h-[220px] w-full">
             <ResponsiveContainer width="100%" height={220}>
-              {/* هامش أفقي 32: Recharts تقيس التسمية بوزن 400 والمرسوم 700، فيبقى للطرفين متّسع */}
-              <LineChart data={points} margin={{ top: 12, right: 32, left: 32, bottom: 0 }}>
+              <LineChart data={points} margin={{ top: 12, right: 16, left: 16, bottom: 0 }}>
                 <XAxis
                   dataKey="label"
                   axisLine={{ stroke: 'var(--bd2)' }}

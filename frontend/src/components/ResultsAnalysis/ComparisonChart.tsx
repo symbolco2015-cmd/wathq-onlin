@@ -42,17 +42,10 @@ function LegendItem({ color, dashed, label }: { color: string; dashed?: boolean;
 
 /** تسمية المحور: الأولى تبدأ من نقطتها والأخيرة تنتهي عندها، فلا تُقص عند
  *  حافتي الرسم. ما بينهما في الوسط. */
-function EdgeTick({ x, y, payload, index, visibleTicksCount }: {
-  x?: number; y?: number; payload?: { value: string }; index?: number; visibleTicksCount?: number;
-}) {
-  const last = (visibleTicksCount ?? 1) - 1;
-  const anchor = index === 0 ? 'start' : index === last ? 'end' : 'middle';
-  return (
-    <text x={x} y={y} dy={12} textAnchor={anchor} fill="var(--t2)" fontSize={12} fontWeight={700}>
-      {payload?.value}
-    </text>
-  );
-}
+/** تسميات المحور الأفقي متمركزة، وpreserveStartEnd تُبقي الطرفين داخل الرسم.
+ *  capHeight = 12px يضع خط القاعدة على y+12 كما كان dy={12} في التسمية المخصصة
+ *  السابقة (الافتراضي 0.71em)؛ verticalAnchor لا يمر عبر كائن tick. */
+const X_TICK = { fill: 'var(--t2)', fontSize: 12, fontWeight: 700, capHeight: '12px' };
 
 const CELL = 'py-2.5 px-2 text-[length:var(--fs-xs)]';
 
@@ -79,7 +72,7 @@ export default function ComparisonChart({ title, points, onOpen }: ComparisonCha
                   axisLine={{ stroke: 'var(--bd2)' }}
                   tickLine={false}
                   interval="preserveStartEnd"
-                  tick={<EdgeTick />}
+                  tick={X_TICK}
                 />
                 <YAxis
                   domain={[0, 100]}

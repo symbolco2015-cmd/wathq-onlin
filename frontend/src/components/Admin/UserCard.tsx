@@ -26,8 +26,17 @@ export function UserAvatar({ user, size = 'md' }: { user: AdminUser; size?: 'md'
   );
 }
 
-/** حالة النشاط: نقطة مع نص دائماً — لا معنى باللون وحده */
-export function ActiveStatus({ active }: { active: boolean }) {
+/** حالة النشاط: نقطة مع نص دائماً — لا معنى باللون وحده.
+ *  neverSignedIn: last_sign_in_at فارغ، فيظهر «لم يدخل» بلون محايد مهما كان updated_at */
+export function ActiveStatus({ active, neverSignedIn }: { active: boolean; neverSignedIn?: boolean }) {
+  if (neverSignedIn) {
+    return (
+      <span className="inline-flex items-center gap-2 whitespace-nowrap text-[length:var(--fs-xs)] font-bold text-[var(--t2)]">
+        <span className="w-2 h-2 shrink-0 rounded-[var(--r-full)] bg-[var(--t3)]" aria-hidden="true" />
+        لم يدخل
+      </span>
+    );
+  }
   return (
     <span className={`inline-flex items-center gap-2 whitespace-nowrap text-[length:var(--fs-xs)] font-bold ${active ? 'text-[var(--t1)]' : 'text-[var(--t3)]'}`}>
       <span className={`w-2 h-2 shrink-0 rounded-[var(--r-full)] ${active ? 'bg-[var(--accent)]' : 'bg-[var(--idle)]'}`} aria-hidden="true" />
@@ -122,7 +131,7 @@ export default function UserCard({ user, onView, onCancelDeletion }: {
           </div>
           <div className={ROW}>
             <span className={ROW_LABEL}>الحالة</span>
-            <ActiveStatus active={isUserActive(user)} />
+            <ActiveStatus active={isUserActive(user)} neverSignedIn={!user.last_sign_in_at} />
           </div>
           <div className={ROW}>
             <span className={ROW_LABEL}>الأدلة</span>

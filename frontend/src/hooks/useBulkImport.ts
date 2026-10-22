@@ -8,6 +8,10 @@ const MAX_FILES = 30;
 // PNG يبقى PNG (المكتبة لا تغيّر النوع)، ويُرفع الأصل إن لم يصغر الملف
 const COMPRESSION_OPTIONS = { maxSizeMB: 0.5, initialQuality: 0.85, maxWidthOrHeight: 1600, useWebWorker: false };
 
+/** امتداد اسم الملف من نوعه الفعلي بعد الضغط؛ أي نوع غير png/webp يبقى jpg كما كان */
+const extFromType = (type: string): string =>
+  type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : 'jpg';
+
 export interface BulkImportProgress {
   done: number;
   total: number;
@@ -72,7 +76,7 @@ export function useBulkImport({ userId, onToast, onClassificationSettled }: UseB
         }
 
         const rand = Math.random().toString(36).substring(2, 9);
-        const filePath = `${userId}/bulk/${Date.now()}_${rand}.jpg`;
+        const filePath = `${userId}/bulk/${Date.now()}_${rand}.${extFromType(fileToUpload.type || file.type)}`;
 
         const { error: upErr } = await supabase.storage
           .from('evidence')

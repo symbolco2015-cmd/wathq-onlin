@@ -460,11 +460,6 @@ export function fmtPct(n: number): string {
   return `${LRI}${fmtNum(n)}%${PDI}`;
 }
 
-/** «+5.2%» أو «-3%» معزولة الاتجاه — الإشارة تبقى قبل الرقم */
-export function fmtSignedPct(n: number): string {
-  return `${LRI}${n >= 0 ? '+' : ''}${fmtNum(n)}%${PDI}`;
-}
-
 /** «±5» معزولة الاتجاه */
 export function fmtPm(n: number): string {
   return `${LRI}±${fmtNum(n)}${PDI}`;

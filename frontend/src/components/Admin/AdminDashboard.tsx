@@ -225,7 +225,7 @@ function UserRow({ user, onView, onCancelDeletion }: {
         <CountBadge icon="ti-bulb" count={user.strategiesCount} />
       </td>
       <td className={TD}>
-        <ActiveStatus active={isUserActive(user)} />
+        <ActiveStatus active={isUserActive(user)} neverSignedIn={!user.last_sign_in_at} />
       </td>
       <td className={`${TD} text-[length:var(--fs-xs)] text-[var(--t3)] whitespace-nowrap`}>{lastActive}</td>
       <td className={TD}>

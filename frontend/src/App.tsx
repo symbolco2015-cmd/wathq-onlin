@@ -72,7 +72,7 @@ export default function App() {
   // كانا يفتحان صفحة الدخول أو لوحة التحكم بدل صفحة التأكيد
   const [confirmLink, setConfirmLink] = useState(() =>
     window.location.pathname.replace(/\/{2,}/g, '/').replace(/(.)\/$/, '$1') === '/auth/confirm');
-  const [toastData, setToastData] = useState<{ msg: string; icon: string; show: boolean; action?: ToastAction; kind?: ToastKind; onClose?: () => void }>({ msg: '', icon: '✓', show: false });
+  const [toastData, setToastData] = useState<{ msg: string; show: boolean; action?: ToastAction; kind?: ToastKind; onClose?: () => void }>({ msg: '', show: false });
   // فحص التحديث يعمل في كل المسارات؛ التنبيه وحده مقيَّد (انظر showUpdateToast)
   const swUpdateReady = useSwUpdate();
   const { 
@@ -362,16 +362,16 @@ export default function App() {
     if (updatePendingRef.current) showUpdateToastRef.current();
     else setToastData(prev => ({ ...prev, show: false }));
   }, []);
-  const showToast = useCallback((msg: string, icon = '✓', action?: ToastAction, durationMs?: number, kind?: ToastKind) => {
-    setToastData({ msg, icon, show: true, action, kind });
+  const showToast = useCallback((msg: string, action?: ToastAction, durationMs?: number, kind?: ToastKind) => {
+    setToastData({ msg, show: true, action, kind });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(
       hideOrRestoreToast,
       durationMs ?? (action ? INDICATOR_UNDO_MS : 3200),
     );
   }, [hideOrRestoreToast]);
-  // كل تنبيه يحدّد نوعه صراحةً؛ وسيط icon في showToast لم يعد يُقرأ
-  const toastKind = useCallback((msg: string, kind: ToastKind) => showToast(msg, '', undefined, undefined, kind), [showToast]);
+  // كل تنبيه يحدّد نوعه صراحةً
+  const toastKind = useCallback((msg: string, kind: ToastKind) => showToast(msg, undefined, undefined, kind), [showToast]);
   const hideToast = useCallback(() => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     hideOrRestoreToast();
@@ -395,7 +395,6 @@ export default function App() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastData({
       msg: 'يتوفر تحديث جديد',
-      icon: '',
       show: true,
       kind: 'info',
       // إعادة التحميل بضغطة المعلم فقط، لا تلقائياً
@@ -502,7 +501,7 @@ export default function App() {
 
     const msg = mode === 'move' ? 'حُذف المؤشر ونُقلت شواهده'
       : evidenceCount > 0 ? 'حُذف المؤشر وشواهده' : 'حُذف المؤشر';
-    showToast(msg, '', { label: 'تراجع', onClick: () => undoIndicatorOp(op) }, undefined, 'info');
+    showToast(msg, { label: 'تراجع', onClick: () => undoIndicatorOp(op) }, undefined, 'info');
   }, [commitIndicatorOp, undoIndicatorOp, showToast]);
 
   // إغلاق الصفحة أثناء المهلة: لا يُنفَّذ شيء، والمعلّق يسقط (الاتجاه الآمن)

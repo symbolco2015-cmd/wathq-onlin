@@ -107,7 +107,7 @@ export default function ResultsBarChart({ summary, bands }: ResultsBarChartProps
   return (
     <div>
       <div className="h-[220px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data} barCategoryGap="18%" margin={{ top: 18, right: 8, left: 8, bottom: 0 }}>
             <XAxis
               dataKey="label"

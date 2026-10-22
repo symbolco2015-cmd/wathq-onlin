@@ -123,9 +123,12 @@ currently in use.
 - **Deployment**: Netlify (frontend static build + `frontend/netlify/edge-functions/og-share.ts`
   for social-preview meta tags), Supabase (database + Edge Functions,
   deployed separately from Netlify)
-- **Key libs**: `@supabase/supabase-js`, `recharts`, `jspdf`,
-  `html-to-image`, `qrcode.react`, `@imgly/background-removal`,
-  `browser-image-compression`
+- **Key libs**: `@supabase/supabase-js`, `recharts`, `html-to-image`,
+  `qrcode.react`, `browser-image-compression`, `xlsx`, `papaparse`,
+  `pdfjs-dist`, `@tabler/icons-webfont`. (`jspdf`, `html2canvas`,
+  `lodash`, `lucide-react` and `motion` were removed in cleanup step 5
+  because nothing imported them; `@imgly/background-removal` is not
+  installed.)
 
 ### Page Routing
 
@@ -390,7 +393,10 @@ repo for its definition.
   (`--em0`–`--em9` emerald greens, `--gold`/`--gold2`/`--gold3`, `--surf0`–`--surf5`).
   Reference these, don't hardcode colors.
 - **Tailwind v4**: `@import "tailwindcss"` syntax, not the old `@tailwind` directives.
-- **Icons**: Tabler Icons via CDN (`<i class="ti ti-*">`), plus Lucide React for component icons.
+- **Icons**: Tabler Icons webfont bundled from npm (`@tabler/icons-webfont`,
+  imported in `src/main.tsx`; no CDN, nothing in the CSP for it), used as
+  `<i className="ti ti-*">`. Lucide is not installed. `DESIGN.md` targets
+  `@tabler/icons-react`; that migration is a separate, not-yet-done step.
 - **Typography**: Tajawal + Noto Naskh Arabic (Google Fonts).
 - **No modal/toast library**: `src/components/UI.tsx` exports the app-wide `Modal`/`Toast`.
 

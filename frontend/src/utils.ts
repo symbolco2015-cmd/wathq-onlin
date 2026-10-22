@@ -20,12 +20,6 @@ export const isProfileIncomplete = (profile: UserProfile): boolean => {
   );
 };
 
-export const getCompletionLabel = (pct: number): string => {
-  if (pct >= 70) return 'متقدم';
-  if (pct >= 35) return 'في التقدم';
-  return 'يحتاج عمل';
-};
-
 /** true إذا كان تاريخ اليوم ضمن آخر 5 أيام من الشهر الميلادي الحالي */
 export const isLastDaysOfMonth = (): boolean => {
   const today = new Date();

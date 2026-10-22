@@ -155,7 +155,7 @@ type DashboardProps = {
   /** يسجّل الشاهد في عدّاد الشهر بعد نجاح إدراجه — انظر onEvidenceSaved في App.tsx */
   onEvidenceSaved?: OnEvidenceSavedFn;
   /** showToast من App.tsx — kind صريح يُمرَّر عبر toastKind أدناه */
-  onToast?: (msg: string, icon?: string, action?: ToastAction, durationMs?: number, kind?: ToastKind) => void;
+  onToast?: (msg: string, action?: ToastAction, durationMs?: number, kind?: ToastKind) => void;
   aiConsentGiven?: boolean;
   onGiveAiConsent?: () => void;
   /** «أبرز إنجاز» و«اللمحات» في قائمة ⋯ للشاهد — المنفّذ في App.tsx */
@@ -434,7 +434,7 @@ export default function Dashboard({ state, sections, supabaseEv, onAddEvClick, o
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImportReviewOpen, setIsBulkImportReviewOpen] = useState(false);
   // تنبيه بنوع صريح للوحات الاستيراد الجماعي وتقرير الحصاد
-  const toastKind = useCallback((msg: string, kind: ToastKind) => onToast?.(msg, '', undefined, undefined, kind), [onToast]);
+  const toastKind = useCallback((msg: string, kind: ToastKind) => onToast?.(msg, undefined, undefined, kind), [onToast]);
   const [bulkImportReadyCount, setBulkImportReadyCount] = useState(0);
 
   // تقرير حصاد فصلي — مستقل تماماً عن الاستيراد الجماعي أعلاه (مصدر البيانات:

@@ -11,8 +11,6 @@ export type ToastKind = 'success' | 'error' | 'info';
 
 interface ToastProps {
   msg: string;
-  /** وسيط قديم لم يعد يُقرأ؛ النوع يأتي من kind فقط */
-  icon: string;
   show: boolean;
   action?: ToastAction;
   /** الافتراضي info */

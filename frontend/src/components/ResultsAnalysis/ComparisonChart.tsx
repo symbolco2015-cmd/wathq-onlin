@@ -72,13 +72,13 @@ export default function ComparisonChart({ title, points, onOpen }: ComparisonCha
             <LegendItem color={PASS_COLOR} dashed label="نسبة النجاح (60% فأكثر)" />
           </div>
           <div className="mt-2 h-[220px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={220}>
               <LineChart data={points} margin={{ top: 12, right: 16, left: 16, bottom: 0 }}>
                 <XAxis
                   dataKey="label"
                   axisLine={{ stroke: 'var(--bd2)' }}
                   tickLine={false}
-                  interval={0}
+                  interval="preserveStartEnd"
                   tick={<EdgeTick />}
                 />
                 <YAxis
